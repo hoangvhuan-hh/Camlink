@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Cầu nối giữa giao diện Android và lõi camlink_dt.py."""
-import json, os, re, time
+"""Cầu nối giữa giao diện Android và lõi camlink_dt.py — hỗ trợ nhiều dự án.
+
+Mỗi file khảo sát Excel = 1 dự án, lưu riêng ở <app>/duan/<mã>.json:
+  {"ten": tên dự án, "diem": {stt: {...}}, "toa_do": {stt: [lat, lng]}, "da_xong": {stt: "dd/mm hh:mm"}}
+User/pass cam + modem dùng chung cho mọi dự án (camlink_caidat.json).
+GPS tìm điểm gần nhất trên TẤT CẢ dự án → tự chọn đúng dự án + điểm.
+"""
+import json, os, re, time, unicodedata
 import camlink_dt as C
 
 GOC = None
@@ -11,33 +17,75 @@ def _cb(x):
     return getattr(x, "ghi", x)
 
 
+def _thu_muc_du_an():
+    return os.path.join(GOC, "duan")
+
+
 def khoi_tao(thu_muc):
     global GOC
     GOC = thu_muc
     os.makedirs(os.path.join(GOC, "ketqua"), exist_ok=True)
+    os.makedirs(_thu_muc_du_an(), exist_ok=True)
     C.thu_muc_ra = lambda: os.path.join(GOC, "ketqua")
-    _nap_diem()
+    _chuyen_du_lieu_cu()
 
 
-def _file_diem():
-    return os.path.join(GOC, "diem.json")
-
-
-def _nap_diem():
+def _chuyen_du_lieu_cu():
+    """Bản 1.0 chỉ có 1 dự án (diem.json) → chuyển thành dự án riêng, không mất gì."""
+    cu = os.path.join(GOC, "diem.json")
+    if not os.path.exists(cu) or _cac_du_an():
+        return
     try:
-        with open(_file_diem(), encoding="utf-8") as f:
-            C.PHU_LY.clear()
-            C.PHU_LY.update(json.load(f))
+        with open(cu, encoding="utf-8") as f:
+            diem = json.load(f)
     except (OSError, ValueError):
-        pass
+        return
+    cd = C.doc_cai_dat()
+    _ghi_du_an("du-an-1", {"ten": "Dự án 1", "diem": diem, "toa_do": cd.get("toa_do", {}),
+                           "da_xong": cd.get("da_xong", {})})
+
+
+def _ma(ten):
+    s = unicodedata.normalize("NFD", ten.lower()).replace("đ", "d")
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+    return re.sub(r"[^a-z0-9]+", "-", s).strip("-")[:40] or "du-an"
+
+
+def _ten_tu_file(ten_file):
+    t = os.path.splitext(os.path.basename(ten_file or "Dự án"))[0]
+    t = re.sub(r"^(ks|khao[ _-]?sat)[ _-]*", "", t, flags=re.I)
+    return re.sub(r"[_]+", " ", t).strip() or "Dự án"
+
+
+def _cac_du_an():
+    out = {}
+    for f in sorted(os.listdir(_thu_muc_du_an())):
+        if f.endswith(".json"):
+            try:
+                with open(os.path.join(_thu_muc_du_an(), f), encoding="utf-8") as fh:
+                    out[f[:-5]] = json.load(fh)
+            except (OSError, ValueError):
+                pass
+    return out
+
+
+def _doc_du_an(ma):
+    with open(os.path.join(_thu_muc_du_an(), ma + ".json"), encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _ghi_du_an(ma, da):
+    with open(os.path.join(_thu_muc_du_an(), ma + ".json"), "w", encoding="utf-8") as f:
+        json.dump(da, f, ensure_ascii=False)
 
 
 def _chuan(s):
     return re.sub(r"\s+", " ", str(s or "")).strip().lower()
 
 
-def nhap_excel(duong_dan, log):
-    """Đọc file khảo sát (cột No, Tên, Map, Camera, Camera BS, Domain, USER, PW)."""
+def nhap_excel(duong_dan, ten_file, log):
+    """Đọc file khảo sát (cột No, Tên, link bản đồ, Camera, Camera BS, Domain, USER, PW) thành 1 dự án.
+    Nhập lại file cùng tên = cập nhật dự án đó (giữ dấu điểm đã xong)."""
     import openpyxl
     log = _cb(log)
     C.LOG_CB = log
@@ -49,6 +97,7 @@ def nhap_excel(duong_dan, log):
                 break
         else:
             continue
+
         def tim(*ten):
             for t in ten:
                 for k, v in cot.items():
@@ -72,24 +121,50 @@ def nhap_excel(duong_dan, log):
                      "so": int(g(c_cam) or 0) + int(g(c_bs) or 0), "map": str(g(c_map) or "")}
         if not ds:
             continue
-        with open(_file_diem(), "w", encoding="utf-8") as f:
-            json.dump(ds, f, ensure_ascii=False)
-        _nap_diem()
-        cd = C.doc_cai_dat()
-        cd["toa_do"] = {}
-        log(f"Đọc được {len(ds)} điểm, {sum(v['so'] for v in ds.values())} cam. Đang lấy toạ độ từ link bản đồ ...")
+        ten = _ten_tu_file(ten_file)
+        ma = _ma(ten)
+        cu = {}
+        try:
+            cu = _doc_du_an(ma)
+        except (OSError, ValueError):
+            pass
+        log(f"Dự án: {ten} — {len(ds)} điểm, {sum(v['so'] for v in ds.values())} cam"
+            + (" (cập nhật dự án đã có)" if cu else ""))
+        log("Đang lấy toạ độ từ link bản đồ ...")
+        toa_do = {}
         for k, v in ds.items():
             td = C.toa_do_tu_link(v["map"]) if v["map"].startswith("http") else None
             if td:
-                cd["toa_do"][k] = td
+                toa_do[k] = td
             log(f"  {k}. {v['ten']}: {'%.5f, %.5f' % tuple(td) if td else 'không có toạ độ'}")
-        C.ghi_cai_dat(cd)
-        return f"{len(ds)} điểm"
+        _ghi_du_an(ma, {"ten": ten, "diem": ds, "toa_do": toa_do, "da_xong": cu.get("da_xong", {})})
+        canh = _diem_trung_vi_tri(ma, toa_do)
+        for c in canh:
+            log("⚠ " + c)
+        return f"{ten} ({len(ds)} điểm)"
     raise ValueError("Không thấy bảng có cột 'Domain' trong file.")
 
 
+def _diem_trung_vi_tri(ma_moi, toa_do_moi):
+    """Cảnh báo khi điểm của dự án mới nằm sát (< 400 m) điểm của dự án khác → GPS có thể nhầm."""
+    out = []
+    for ma, da in _cac_du_an().items():
+        if ma == ma_moi:
+            continue
+        for k1, a in toa_do_moi.items():
+            for k2, b in da.get("toa_do", {}).items():
+                m = C.khoang_cach(a, b)
+                if m < 400:
+                    out.append(f"Điểm {k1} gần điểm {k2} của dự án {da['ten']} ({int(m)} m) — tới đó app sẽ hỏi chọn.")
+    return out
+
+
 def co_du_lieu():
-    return bool(C.PHU_LY)
+    return bool(_cac_du_an())
+
+
+def so_du_an():
+    return len(_cac_du_an())
 
 
 def co_cai_dat():
@@ -107,35 +182,62 @@ def luu_cai_dat(cu, cp, mu, mp):
     C.ghi_cai_dat(cd)
 
 
+def _cac_diem():
+    """[(mã dự án, tên dự án, stt, điểm, đã xong)] theo thứ tự dự án → điểm."""
+    out = []
+    for ma, da in _cac_du_an().items():
+        for k, v in da["diem"].items():
+            out.append((ma, da["ten"], k, v, da.get("da_xong", {}).get(k)))
+    return out
+
+
 def danh_sach():
-    xong = C.doc_cai_dat().get("da_xong", {})
-    return [f"{k}. {v['ten']} ({v['so']} cam)" + (f"  ✔ {xong[k]}" if k in xong else "") for k, v in C.PHU_LY.items()]
+    nhieu = so_du_an() > 1
+    return [(f"[{ten}] " if nhieu else "") + f"{k}. {v['ten']} ({v['so']} cam)" + (f"  ✔ {xong}" if xong else "")
+            for ma, ten, k, v, xong in _cac_diem()]
 
 
 def khoa_theo_so_thu_tu(i):
-    return list(C.PHU_LY.keys())[i]
+    ma, _, k, _, _ = _cac_diem()[i]
+    return [ma, k]
 
 
 def diem_gan(lat, lng):
-    td = C.doc_cai_dat().get("toa_do", {})
-    if not td:
+    """Trả [mã dự án, stt, tên dự án, tên điểm, mét, có_điểm_khác_sát_bên] hoặc None."""
+    ung = []
+    for ma, da in _cac_du_an().items():
+        for k, td in da.get("toa_do", {}).items():
+            ung.append((C.khoang_cach((lat, lng), td), ma, k, da))
+    if not ung:
         return None
-    m, k = min((C.khoang_cach((lat, lng), v), k) for k, v in td.items())
-    return [k, C.PHU_LY[k]["ten"], int(m)]
+    ung.sort(key=lambda x: x[0])
+    m, ma, k, da = ung[0]
+    sat = len(ung) > 1 and ung[1][0] - m < 150 and ung[1][0] <= 400
+    return [ma, k, da["ten"], da["diem"][k]["ten"], int(m), sat]
 
 
-def chay(stt, may_ip, gw, log):
+def chay(ma, stt, may_ip, gw, log):
     log = _cb(log)
     C.LOG_CB, C.GW = log, gw or None
     if may_ip:
         os.environ["CAMLINK_MAY"] = may_ip
+    da = _doc_du_an(ma)
+    C.PHU_LY.clear()
+    C.PHU_LY.update(da["diem"])
     C.NHAT_KY.clear()
     C.CAN_MAU.clear()
+    log(f"Dự án: {da['ten']}")
     cd = C.doc_cai_dat()
     C.chay(stt, cd["cam_user"], cd["cam_pw"], cd["modem_user"], cd["modem_pw"])
     if any("ĐẠT" in l for l in C.NHAT_KY):
-        cd.setdefault("da_xong", {})[stt] = time.strftime("%d/%m %H:%M")
-        C.ghi_cai_dat(cd)
+        da.setdefault("da_xong", {})[stt] = time.strftime("%d/%m %H:%M")
+        _ghi_du_an(ma, da)
+    # đổi tên nhật ký cho có tên dự án, tránh lẫn giữa các dự án
+    d = os.path.join(GOC, "ketqua")
+    for f in sorted(os.listdir(d), key=lambda x: os.path.getmtime(os.path.join(d, x)), reverse=True)[:3]:
+        if f.startswith(f"camlink_diem{stt}_") and f.endswith(".txt"):
+            os.replace(os.path.join(d, f), os.path.join(d, f"camlink_{ma}_{f[len('camlink_'):]}"))
+            break
 
 
 def thu_mau(may_ip, gw, log):

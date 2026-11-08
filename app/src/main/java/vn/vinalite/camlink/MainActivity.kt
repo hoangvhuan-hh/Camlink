@@ -18,6 +18,7 @@ import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.OpenableColumns
 import android.text.InputType
 import android.widget.Button
 import android.widget.EditText
@@ -98,7 +99,7 @@ class MainActivity : Activity() {
         goc.addView(nut("CHẠY CÀI ĐIỂM NÀY", chinh = true) { batDauChay() })
         goc.addView(nut("Chọn điểm bằng tay") { chonDiemTay() })
         goc.addView(nut("Gửi kết quả (Zalo, Gmail…)") { guiKetQua() })
-        goc.addView(nut("Nhập file khảo sát (Excel)") { moFile() })
+        goc.addView(nut("Thêm / cập nhật dự án (file Excel)") { moFile() })
         goc.addView(nut("User / pass cam và modem") { hopCaiDat() })
         goc.addView(nut("Thu mẫu thiết bị") { thuMau() })
 
@@ -121,9 +122,9 @@ class MainActivity : Activity() {
         val coFile = core.callAttr("co_du_lieu").toBoolean()
         val coPass = core.callAttr("co_cai_dat").toBoolean()
         tieuDe.text = when {
-            !coFile -> "Bước 1: bấm \"Nhập file khảo sát (Excel)\"."
+            !coFile -> "Bước 1: bấm \"Thêm / cập nhật dự án (file Excel)\"."
             !coPass -> "Bước 2: bấm \"User / pass cam và modem\" (nhập một lần)."
-            else -> "Sẵn sàng. Tới điểm: vào WiFi modem rồi bấm CHẠY."
+            else -> "Sẵn sàng · ${core.callAttr("so_du_an").toInt()} dự án. Tới điểm: vào WiFi modem rồi bấm CHẠY."
         }
     }
 
@@ -145,6 +146,7 @@ class MainActivity : Activity() {
 
     // ---------------- Nhập file khảo sát ----------------
     private fun moFile() {
+        nhatKy.ghi("Chọn file khảo sát Excel của dự án (mỗi file = 1 dự án; nhập lại file cùng tên = cập nhật).")
         val i = Intent(Intent.ACTION_OPEN_DOCUMENT)
         i.addCategory(Intent.CATEGORY_OPENABLE)
         i.type = "*/*"
@@ -155,12 +157,17 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         val uri: Uri = data?.data ?: return
         if (requestCode != maFile || resultCode != RESULT_OK) return
+        var tenFile = "khao_sat.xlsx"
+        contentResolver.query(uri, null, null, null, null)?.use { c ->
+            val cot = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (cot >= 0 && c.moveToFirst()) tenFile = c.getString(cot) ?: tenFile
+        }
         val dich = File(cacheDir, "khao_sat.xlsx")
         contentResolver.openInputStream(uri)?.use { vao -> dich.outputStream().use { vao.copyTo(it) } }
         log.text = ""
         chayNen {
-            val kq = core.callAttr("nhap_excel", dich.absolutePath, nhatKy).toString()
-            nhatKy.ghi("Đã nhập file khảo sát: $kq")
+            val kq = core.callAttr("nhap_excel", dich.absolutePath, tenFile, nhatKy).toString()
+            nhatKy.ghi("✔ Đã lưu dự án: $kq")
         }
     }
 
@@ -220,13 +227,26 @@ class MainActivity : Activity() {
                 return@layViTri
             }
             val g = gan.asList()
-            val m = g[2].toInt()
-            if (m > 400) {
-                nhatKy.ghi("Điểm gần nhất (${g[0]}) cách $m m — chọn điểm bằng tay.")
-                chonDiemTay()
-            } else {
-                nhatKy.ghi("→ Đang ở điểm ${g[0]}: ${g[1]} (cách $m m)")
-                chayDiem(g[0].toString())
+            val ma = g[0].toString()
+            val stt = g[1].toString()
+            val nhan = "[${g[2]}] điểm $stt: ${g[3]}"
+            val m = g[4].toInt()
+            val sat = g[5].toBoolean()
+            when {
+                m > 400 -> {
+                    nhatKy.ghi("Điểm gần nhất $nhan cách $m m — chọn điểm bằng tay.")
+                    chonDiemTay()
+                }
+                sat -> AlertDialog.Builder(this)
+                    .setTitle("Có điểm khác ở sát bên")
+                    .setMessage("Đang ở $nhan (cách $m m)?")
+                    .setPositiveButton("Đúng, cài điểm này") { _, _ -> nhatKy.ghi("→ $nhan"); chayDiem(ma, stt) }
+                    .setNegativeButton("Chọn điểm khác") { _, _ -> chonDiemTay() }
+                    .show()
+                else -> {
+                    nhatKy.ghi("→ Đang ở $nhan (cách $m m)")
+                    chayDiem(ma, stt)
+                }
             }
         }
     }
@@ -266,7 +286,10 @@ class MainActivity : Activity() {
         val ds = core.callAttr("danh_sach").asList().map { it.toString() }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle("Đang ở điểm nào?")
-            .setItems(ds) { _, i -> chayDiem(core.callAttr("khoa_theo_so_thu_tu", i).toString()) }
+            .setItems(ds) { _, i ->
+                val k = core.callAttr("khoa_theo_so_thu_tu", i).asList()
+                chayDiem(k[0].toString(), k[1].toString())
+            }
             .show()
     }
 
@@ -288,7 +311,7 @@ class MainActivity : Activity() {
         cm.bindProcessToNetwork(wifi)
     }
 
-    private fun chayDiem(stt: String) {
+    private fun chayDiem(ma: String, stt: String) {
         val (may, gw) = mangWifi()
         if (may.isEmpty()) {
             nhatKy.ghi("✖ Điện thoại chưa vào WiFi của modem. Vào WiFi modem ở điểm này rồi bấm lại.")
@@ -300,7 +323,7 @@ class MainActivity : Activity() {
             khoa.acquire()
             gan_wifi(true)
             try {
-                core.callAttr("chay", stt, may, gw, nhatKy)
+                core.callAttr("chay", ma, stt, may, gw, nhatKy)
             } finally {
                 gan_wifi(false)
                 khoa.release()
