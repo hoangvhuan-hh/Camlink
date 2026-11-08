@@ -1,0 +1,49 @@
+name: Build APK
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+      - name: Build
+        run: gradle :app:assembleDebug --stacktrace --no-daemon 2>&1 | tee build.log
+      - name: Check
+        run: test -f app/build/outputs/apk/debug/app-debug.apk || (tail -80 build.log; exit 1)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: camlink
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            build.log
+      - name: Publish APK to branch apk
+        run: |
+          mkdir -p /tmp/out && cp app/build/outputs/apk/debug/app-debug.apk /tmp/out/CamLink.apk
+          cd /tmp/out && git init -q && git checkout -q -b apk
+          git config user.name "camlink-ci" && git config user.email "ci@users.noreply.github.com"
+          echo "${GITHUB_SHA}" > version.txt
+          git add . && git commit -qm "APK ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" apk
+      - name: Upload build log on failure
+        if: failure()
+        run: |
+          mkdir -p /tmp/log && cp build.log /tmp/log/build.log
+          cd /tmp/log && git init -q && git checkout -q -b buildlog
+          git config user.name "camlink-ci" && git config user.email "ci@users.noreply.github.com"
+          git add . && git commit -qm "log ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" buildlog
