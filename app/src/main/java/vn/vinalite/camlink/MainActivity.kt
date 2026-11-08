@@ -250,18 +250,21 @@ class MainActivity : Activity() {
         hop.setPadding(dp(20), dp(8), dp(20), 0)
         val nhan = listOf("User cam", "Pass cam", "User modem", "Pass modem")
         val o = nhan.mapIndexed { i, n ->
+            val dong = LinearLayout(this)
+            dong.orientation = LinearLayout.HORIZONTAL
+            dong.gravity = android.view.Gravity.CENTER_VERTICAL
             val tieuDeO = TextView(this)
             tieuDeO.text = "$n:"
-            tieuDeO.textSize = 14f
+            tieuDeO.textSize = 15f
             tieuDeO.setTypeface(null, Typeface.BOLD)
             tieuDeO.setTextColor(Color.parseColor("#0F5D8C"))
-            tieuDeO.setPadding(0, dp(if (i == 0) 4 else 12), 0, 0)
-            hop.addView(tieuDeO)
+            dong.addView(tieuDeO, LinearLayout.LayoutParams(dp(112), LinearLayout.LayoutParams.WRAP_CONTENT))
             val e = EditText(this)
             e.hint = "Nhập $n"
             e.setText(cu.getOrElse(i) { "" })
             e.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
-            hop.addView(e)
+            dong.addView(e, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            hop.addView(dong)
             e
         }
         AlertDialog.Builder(this)
