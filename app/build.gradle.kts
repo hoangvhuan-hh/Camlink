@@ -11,8 +11,8 @@ android {
         applicationId = "vn.vinalite.camlink"
         minSdk = 24
         targetSdk = 34
-        versionCode = 5
-        versionName = "1.3.1"
+        versionCode = 6
+        versionName = "1.4"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
     signingConfigs {
@@ -41,6 +41,7 @@ chaquopy {
         pip {
             install("requests")
             install("openpyxl")
+            install("rsa")
         }
     }
 }

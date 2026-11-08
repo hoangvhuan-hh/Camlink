@@ -132,6 +132,8 @@ class SoDoActivity : Activity() {
             ct.addView(chu("IP LAN ${c.optString("ip")} · HTTP ${c.optInt("http")} · RTSP ${c.optInt("rtsp")}", 13f))
             if (c.optString("mac").isNotEmpty()) ct.addView(chu("MAC ${c.optString("mac")}", 13f))
             ct.addView(chu("Xem web: http://${j.optString("domain")}:${c.optInt("http")}", 13f, mau = "#0F5D8C").apply { setTextIsSelectable(true) })
+            val ghiCai = c.optString("ghi")
+            if (ghiCai.isNotEmpty()) ct.addView(chu("Lúc cài: $ghiCai", 13f, mau = if (ghiCai.contains("CHƯA") || ghiCai.contains("LỖI")) "#9A5B00" else "#1D7A46"))
             val loi = c.optString("loi_ngoai")
             if (loi.isNotEmpty()) ct.addView(chu("⚠ $loi", 13f, mau = "#9A5B00"))
             val live = c.optString("live")

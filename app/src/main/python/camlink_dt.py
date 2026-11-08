@@ -17,6 +17,7 @@ try:
 except ImportError:
     sys.exit("Thiếu thư viện: chạy  pip install requests  rồi chạy lại.")
 requests.packages.urllib3.disable_warnings()
+import camlink_oryza
 
 HTTP = [8080, 8081, 8082, 8083, 8084, 8085]
 RTSP = [554, 5541, 5542, 5543, 5544, 5545]
@@ -258,6 +259,8 @@ def ddns_dahua(ip, port, user, pw, dom, du, dp):
 
 def nen_tang(ip, port):
     """Nhận nền tảng thật của cam (nhiều hãng VN dán nhãn lại Hikvision/Dahua)."""
+    if camlink_oryza.la_oryza(ip, port):
+        return "oryza"
     def lay(p):
         try:
             r = requests.get(f"http://{ip}:{port}{p}", timeout=4)
@@ -357,6 +360,26 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
         try:
             token, mac = ov.token_mang()
             kq["mac"] = mac
+            nt = nen_tang(ip, port)
+            if i == 0:
+                try:
+                    if nt == "oryza":
+                        kq["ghi"].append(camlink_oryza.dat_ddns(ip, port, cam_user, cam_pw, d["domain"], d["u"], d["p"]))
+                        log(f"   ✔ {kq['ghi'][-1]}")
+                    elif ip == ip_moi and port == http:
+                        pass  # Hik/Dahua đã đúng sẵn: giữ nguyên DDNS
+                    elif nt == "isapi":
+                        ddns_isapi(ip, port, cam_user, cam_pw, d["domain"], d["u"], d["p"])
+                        kq["ghi"].append("DDNS đã nhập")
+                    elif nt == "dahua":
+                        ddns_dahua(ip, port, cam_user, cam_pw, d["domain"], d["u"], d["p"])
+                        kq["ghi"].append("DDNS đã nhập")
+                    else:
+                        raise RuntimeError("hãng này chưa có lệnh DDNS — bấm 'Thu mẫu thiết bị' gửi Claude")
+                except Exception as e:
+                    kq["ghi"].append(f"DDNS CHƯA nhập: {e}")
+                    CAN_MAU.append("cam")
+                    log(f"   ⚠ DDNS: {e}")
             if ip == ip_moi and port == http and mo(ip, rtsp, 1):
                 kq["ok"] = True
                 kq["ghi"].append("Đã đúng sẵn — giữ nguyên, không đổi gì")
@@ -364,20 +387,6 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
                 log(f"   ✔ Cam {i + 1} đã đúng sẵn (IP {ip_moi}, HTTP {http}, RTSP {rtsp}) — giữ nguyên")
                 ket_qua.append(kq)
                 continue
-            nt = nen_tang(ip, port)
-            if i == 0:
-                try:
-                    if nt == "isapi":
-                        ddns_isapi(ip, port, cam_user, cam_pw, d["domain"], d["u"], d["p"])
-                    elif nt == "dahua":
-                        ddns_dahua(ip, port, cam_user, cam_pw, d["domain"], d["u"], d["p"])
-                    else:
-                        raise RuntimeError("hãng này chưa có lệnh DDNS — gửi file 'thu' cho Claude")
-                    kq["ghi"].append("DDNS đã nhập")
-                except Exception as e:
-                    kq["ghi"].append(f"DDNS CHƯA nhập: {e}")
-                    CAN_MAU.append("cam")
-                    log(f"   ⚠ DDNS: {e}")
             ov.dat_gw_dns(gw)
             ov.dat_port(http, rtsp)
             log(f"   port xong, chờ cam mở {ip}:{http} ...")
