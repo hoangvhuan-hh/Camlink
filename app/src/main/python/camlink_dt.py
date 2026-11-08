@@ -211,6 +211,19 @@ class Onvif:
                  f"<tds:NetworkProtocols><tt:Name>RTSP</tt:Name><tt:Enabled>true</tt:Enabled><tt:Port>{rtsp}</tt:Port></tds:NetworkProtocols>"
                  "</tds:SetNetworkProtocols>")
 
+    def doc_port(self):
+        t = self.goi("<tds:GetNetworkProtocols/>")
+        kq = {}
+        for ten, port in re.findall(r"<(?:\w+:)?Name>\s*(\w+)\s*</(?:\w+:)?Name>.*?<(?:\w+:)?Port>\s*(\d+)", t, re.S):
+            kq.setdefault(ten.upper(), int(port))
+        return kq
+
+    def khoi_dong(self):
+        try:
+            self.goi("<tds:SystemReboot/>", cho=6)
+        except requests.RequestException:
+            pass   # cam khởi động lại ngay, có thể cắt kết nối trước khi trả lời
+
     def dat_gw_dns(self, gw, dns="8.8.8.8"):
         self.goi(f"<tds:SetNetworkDefaultGateway><tds:IPv4Address>{gw}</tds:IPv4Address></tds:SetNetworkDefaultGateway>")
         self.goi("<tds:SetDNS><tds:FromDHCP>false</tds:FromDHCP><tds:DNSManual><tt:Type>IPv4</tt:Type>"

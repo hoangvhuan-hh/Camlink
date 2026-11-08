@@ -231,7 +231,13 @@ def chay(ma, stt, may_ip, gw, log):
     C.chay(stt, cd["cam_user"], cd["cam_pw"], cd["modem_user"], cd["modem_pw"])
     if any("ĐẠT" in l for l in C.NHAT_KY):
         da.setdefault("da_xong", {})[stt] = time.strftime("%d/%m %H:%M")
-        _ghi_du_an(ma, da)
+    if C.KQ_CUOI.get("stt") == stt:   # hồ sơ điểm: để sau này kiểm tra / sửa từ xa
+        k = C.KQ_CUOI
+        da.setdefault("ho_so", {})[stt] = {"luc": time.strftime("%d/%m/%Y %H:%M"), "wan": k.get("wan", ""),
+                                           "gw": k.get("gw", ""), "upnp": k.get("upnp"), "luat": k.get("luat", []),
+                                           "cam": [{"so": c["so"], "ip": c["ip"], "mac": c.get("mac", ""),
+                                                    "model": c.get("model", "")} for c in k.get("cam", [])]}
+    _ghi_du_an(ma, da)
     # đổi tên nhật ký cho có tên dự án, tránh lẫn giữa các dự án
     d = os.path.join(GOC, "ketqua")
     for f in sorted(os.listdir(d), key=lambda x: os.path.getmtime(os.path.join(d, x)), reverse=True)[:3]:
@@ -451,3 +457,49 @@ def so_do_gan_nhat():
         return ""
     with open(fs[0], encoding="utf-8") as f:
         return f.read()
+
+
+# ------------------------------------------------------------------ 1.5: kiểm tra từ xa cả dự án + sửa từ xa
+def ds_du_an():
+    return [[ma, da["ten"], str(len(da["diem"])), str(sum(int(v.get("so") or 0) for v in da["diem"].values()))]
+            for ma, da in _cac_du_an().items()]
+
+
+def tuxa_kiem(ma, log):
+    import camlink_tuxa as T
+    log = _cb(log)
+    kq = T.kiem_du_an(GOC, _doc_du_an(ma), ma, C.doc_cai_dat(), log)
+    return json.dumps(kq, ensure_ascii=False)
+
+
+def tuxa_kiem_diem(ma, stt, log):
+    import camlink_tuxa as T
+    log = _cb(log)
+    kq = T.kiem_du_an(GOC, _doc_du_an(ma), ma, C.doc_cai_dat(), log, chi_diem=[stt])
+    return json.dumps(kq["diem"][0], ensure_ascii=False)
+
+
+def tuxa_gan_nhat(ma):
+    import camlink_tuxa as T
+    try:
+        with open(T._f_lich_su(GOC, ma), encoding="utf-8") as fh:
+            return fh.read()
+    except OSError:
+        return ""
+
+
+def tuxa_sua(ma, stt, so, viec, log):
+    import camlink_tuxa as T
+    log = _cb(log)
+    ok, tb = T.sua(_doc_du_an(ma)["diem"][stt], int(so), viec, C.doc_cai_dat(), log)
+    return ["OK" if ok else "KHONG", tb]
+
+
+def tuxa_excel(json_kq):
+    import camlink_tuxa as T
+    return T.xuat_excel(GOC, json.loads(json_kq))
+
+
+def ten_sua(viec):
+    import camlink_tuxa as T
+    return T.TEN_SUA.get(viec, viec)

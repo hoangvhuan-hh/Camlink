@@ -34,9 +34,14 @@ class HuongDanActivity : Activity() {
             "Dòng \"Lúc cài: DDNS CHƯA nhập …\" → xem lý do ghi ở đó (sai user/pass No-IP, hãng cam chưa hỗ trợ…).",
             "\"CGNAT\" trong nhật ký → gọi nhà mạng xin IP public cho đường truyền đó."
         ),
-        "D. KIỂM TRA TỪ XA (ở đâu cũng được)" to listOf(
-            "Bấm \"Kiểm tra từ xa (không thay đổi gì)\" → chọn điểm trong danh sách (nhiều dự án thì đầu dòng ghi [tên dự án]; điểm đã cài có dấu ✔).",
-            "App gọi tên miền của điểm, chụp ảnh từng cam và mở sơ đồ. Không thay đổi gì trên cam/modem."
+        "D. KIỂM TRA TỪ XA + SỬA TỪ XA (ở đâu cũng được)" to listOf(
+            "Bấm \"Kiểm tra từ xa cả dự án\" → chọn dự án (hoặc nạp file Excel cấu hình cũ: tên miền, user/pass No-IP).",
+            "App kiểm tra TẤT CẢ điểm cùng lúc qua 4G (khoảng 1–2 phút), mỗi cam qua 5 tầng: tên miền → IP → đường truyền điểm → port cam → hình ảnh.",
+            "Đọc bảng: 🟢 đạt · 🟡 lỗi cấu hình (thường sửa từ xa được) · 🔴 lỗi phần cứng/mạng (phải có người tại điểm). Điểm lỗi nằm trên cùng. \"⬇ VỪA RỚT\" = cam mới hỏng so với lần kiểm trước.",
+            "Bấm vào cam: xem nguyên nhân, việc tiếp theo, ảnh chụp, link web, link xem trực tiếp, user/pass cam và No-IP. Có nút Mở web, ▶ Xem, Copy.",
+            "Cam có nút \"🔧 Sửa từ xa\" (khởi động lại cam, đặt lại port RTSP…): bấm → LÀM. App tự sửa rồi tự kiểm tra lại điểm đó và báo kết quả.",
+            "Không sửa từ xa được: làm theo \"Việc tiếp theo\" (gọi người tại điểm / gọi VNPT / cử thợ).",
+            "Bấm \"📤 Xuất Excel + gửi\" để gửi bảng kết quả qua Zalo/Gmail."
         ),
         "E. NÚT KHÁC" to listOf(
             "\"Chọn điểm bằng tay\": dùng khi GPS yếu hoặc dự án chưa có toạ độ.",

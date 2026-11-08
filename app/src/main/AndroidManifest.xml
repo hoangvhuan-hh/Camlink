@@ -21,6 +21,7 @@
         </activity>
         <activity android:name=".SoDoActivity" android:exported="false" />
         <activity android:name=".HuongDanActivity" android:exported="false" />
+        <activity android:name=".TuXaActivity" android:exported="false" />
         <activity android:name=".XemLiveActivity" android:exported="false"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
         <provider
