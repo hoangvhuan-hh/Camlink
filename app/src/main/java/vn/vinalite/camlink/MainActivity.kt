@@ -133,6 +133,7 @@ class MainActivity : Activity() {
         datTrangThai("Chưa chạy", XAM)
 
         goc.addView(nut("CHẠY CÀI ĐIỂM NÀY", chinh = true) { batDauChay() })
+        goc.addView(nut("📘 Hướng dẫn sử dụng") { startActivity(Intent(this, HuongDanActivity::class.java)) })
         goc.addView(nut("Kiểm tra từ xa (không thay đổi gì)") { chonDiem(chiKiemTra = true) })
         goc.addView(nut("Chọn điểm bằng tay") { chonDiem(chiKiemTra = false) })
         goc.addView(nut("Xem sơ đồ + ảnh lần chạy gần nhất") { moSoDoGanNhat() })
