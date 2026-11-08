@@ -32,22 +32,48 @@ import com.chaquo.python.android.AndroidPlatform
 import java.io.File
 import kotlin.concurrent.thread
 
+/**
+ * CamLink 1.2 — 3 chế độ, app tự nhận và báo rõ trước khi làm:
+ *  TẠI CHỖ  : GPS cách điểm ≤ 400 m + đang vào WiFi modem → cài đầy đủ.
+ *  TỪ XA    : cách điểm > 1 km → chỉ KIỂM TRA qua tên miền (không thay đổi gì).
+ *  CHƯA RÕ  : không có GPS / 400 m–1 km → hỏi xác nhận trước khi cài.
+ */
 class MainActivity : Activity() {
     private lateinit var core: PyObject
     private lateinit var log: TextView
     private lateinit var cuon: ScrollView
     private lateinit var tieuDe: TextView
+    private lateinit var trangThai: TextView
     private val cacNut = mutableListOf<Button>()
     private val ui = Handler(Looper.getMainLooper())
     private val maFile = 11
     private val maViTri = 12
+    private var viTriCuoi: Location? = null
+    private var dangChay = ""
 
-    /** Python gọi nhatKy.ghi("...") để in nhật ký lên màn hình. */
+    private val XANH = "#1D7A46"
+    private val DO = "#B42318"
+    private val VANG = "#9A5B00"
+    private val LAM = "#0F5D8C"
+    private val XAM = "#5B6776"
+
+    /** Python gọi nhatKy.ghi("...") để in nhật ký; dòng bước lớn đổi luôn thanh trạng thái. */
     inner class NhatKy {
         fun ghi(s: String) {
             ui.post {
                 log.append(s + "\n")
                 cuon.post { cuon.fullScroll(ScrollView.FOCUS_DOWN) }
+                val t = s.trim()
+                val buoc = when {
+                    t.startsWith("Quét mạng") -> "quét mạng tìm cam"
+                    t.startsWith("-- Cam") -> t.removePrefix("-- ").substringBefore(":") + ": đặt port, IP, DDNS"
+                    t.startsWith("-- Modem") -> "mở port trên modem"
+                    t.startsWith("-- Kiểm tra") -> "kiểm tra tên miền"
+                    t.startsWith("Gặp thiết bị") -> "lưu mẫu thiết bị lạ"
+                    t.startsWith("Đang lấy toạ độ") -> "lấy toạ độ các điểm"
+                    else -> null
+                }
+                if (buoc != null && dangChay.isNotEmpty()) datTrangThai("⏳ $dangChay\nĐang: $buoc", LAM)
             }
         }
     }
@@ -71,7 +97,7 @@ class MainActivity : Activity() {
         b.isAllCaps = false
         b.textSize = if (chinh) 20f else 16f
         if (chinh) {
-            b.setBackgroundColor(Color.parseColor("#0F5D8C"))
+            b.setBackgroundColor(Color.parseColor(LAM))
             b.setTextColor(Color.WHITE)
             b.setPadding(dp(8), dp(18), dp(8), dp(18))
         }
@@ -83,7 +109,7 @@ class MainActivity : Activity() {
     private fun dungGiaoDien() {
         val goc = LinearLayout(this)
         goc.orientation = LinearLayout.VERTICAL
-        goc.setPadding(dp(16), dp(24), dp(16), dp(16))
+        goc.setPadding(dp(16), dp(20), dp(16), dp(12))
 
         val ten = TextView(this)
         ten.text = "CamLink"
@@ -93,11 +119,22 @@ class MainActivity : Activity() {
 
         tieuDe = TextView(this)
         tieuDe.textSize = 14f
-        tieuDe.setPadding(0, dp(4), 0, dp(12))
+        tieuDe.setPadding(0, dp(2), 0, dp(8))
         goc.addView(tieuDe)
 
+        trangThai = TextView(this)
+        trangThai.textSize = 16f
+        trangThai.setTypeface(null, Typeface.BOLD)
+        trangThai.setTextColor(Color.WHITE)
+        trangThai.setPadding(dp(12), dp(10), dp(12), dp(10))
+        val lpTt = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        lpTt.bottomMargin = dp(10)
+        goc.addView(trangThai, lpTt)
+        datTrangThai("Chưa chạy", XAM)
+
         goc.addView(nut("CHẠY CÀI ĐIỂM NÀY", chinh = true) { batDauChay() })
-        goc.addView(nut("Chọn điểm bằng tay") { chonDiemTay() })
+        goc.addView(nut("Kiểm tra từ xa (không thay đổi gì)") { chonDiem(chiKiemTra = true) })
+        goc.addView(nut("Chọn điểm bằng tay") { chonDiem(chiKiemTra = false) })
         goc.addView(nut("Gửi kết quả (Zalo, Gmail…)") { guiKetQua() })
         goc.addView(nut("Thêm / cập nhật dự án (file Excel)") { moFile() })
         goc.addView(nut("User / pass cam và modem") { hopCaiDat() })
@@ -113,9 +150,14 @@ class MainActivity : Activity() {
         log.setTextIsSelectable(true)
         cuon.addView(log)
         val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
-        lp.topMargin = dp(12)
+        lp.topMargin = dp(10)
         goc.addView(cuon, lp)
         setContentView(goc)
+    }
+
+    private fun datTrangThai(chu: String, mau: String) {
+        trangThai.text = chu
+        trangThai.setBackgroundColor(Color.parseColor(mau))
     }
 
     private fun capNhatTieuDe() {
@@ -130,18 +172,44 @@ class MainActivity : Activity() {
 
     private fun khoaNut(khoa: Boolean) = ui.post { cacNut.forEach { it.isEnabled = !khoa } }
 
-    private fun chayNen(viec: () -> Unit) {
+    /** Chạy việc nặng ở luồng nền; xong thì hiện HỘP KẾT QUẢ rõ ràng (đạt / chưa / lỗi). */
+    private fun chayNen(viec: String, coTomTat: Boolean, lam: () -> List<String>?) {
+        dangChay = viec
+        datTrangThai("⏳ $viec\nĐang bắt đầu…", LAM)
         khoaNut(true)
         thread {
+            var kq: List<String>? = null
             try {
-                viec()
+                kq = lam()
             } catch (e: Exception) {
-                nhatKy.ghi("LỖI: " + (e.message ?: e.toString()))
+                kq = listOf("LOI", "Lỗi: " + (e.message ?: e.toString()))
+                nhatKy.ghi("✖ " + kq[1])
             } finally {
                 khoaNut(false)
-                ui.post { capNhatTieuDe() }
+                val ketQua = kq
+                ui.post {
+                    dangChay = ""
+                    capNhatTieuDe()
+                    if (coTomTat && ketQua != null) hienKetQua(viec, ketQua)
+                    else datTrangThai("✔ Xong: $viec", XANH)
+                }
             }
         }
+    }
+
+    private fun hienKetQua(viec: String, kq: List<String>) {
+        val (nhan, mau) = when (kq[0]) {
+            "DAT" -> Pair("✔ ĐẠT", XANH)
+            "CHUA" -> Pair("⚠ CHƯA XONG HẾT", VANG)
+            else -> Pair("✖ LỖI", DO)
+        }
+        datTrangThai("$nhan — $viec", mau)
+        AlertDialog.Builder(this)
+            .setTitle("$nhan\n$viec")
+            .setMessage(kq[1])
+            .setPositiveButton("Gửi kết quả") { _, _ -> guiKetQua() }
+            .setNegativeButton("Đóng", null)
+            .show()
     }
 
     // ---------------- Nhập file khảo sát ----------------
@@ -165,9 +233,10 @@ class MainActivity : Activity() {
         val dich = File(cacheDir, "khao_sat.xlsx")
         contentResolver.openInputStream(uri)?.use { vao -> dich.outputStream().use { vao.copyTo(it) } }
         log.text = ""
-        chayNen {
+        chayNen("Nhập dự án từ $tenFile", coTomTat = false) {
             val kq = core.callAttr("nhap_excel", dich.absolutePath, tenFile, nhatKy).toString()
             nhatKy.ghi("✔ Đã lưu dự án: $kq")
+            null
         }
     }
 
@@ -187,12 +256,12 @@ class MainActivity : Activity() {
             e
         }
         AlertDialog.Builder(this)
-            .setTitle("Nhập một lần, app nhớ cho các điểm sau")
+            .setTitle("Nhập một lần, app nhớ cho mọi dự án")
             .setView(hop)
             .setPositiveButton("Lưu") { _, _ ->
                 core.callAttr("luu_cai_dat", o[0].text.toString(), o[1].text.toString(),
                     o[2].text.toString(), o[3].text.toString())
-                nhatKy.ghi("Đã lưu user/pass.")
+                nhatKy.ghi("✔ Đã lưu user/pass.")
                 capNhatTieuDe()
             }
             .setNegativeButton("Huỷ", null)
@@ -206,55 +275,85 @@ class MainActivity : Activity() {
         return true
     }
 
+    private fun coQuyenViTri() =
+        checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
     private fun batDauChay() {
         if (!sanSang()) return
-        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+        if (!coQuyenViTri()) {
             requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), maViTri)
             return
         }
         log.text = ""
+        datTrangThai("⏳ Đang lấy vị trí GPS…", LAM)
         nhatKy.ghi("Đang lấy vị trí GPS ...")
         layViTri { vt ->
+            viTriCuoi = vt
             if (vt == null) {
+                datTrangThai("Không lấy được GPS — chọn điểm", VANG)
                 nhatKy.ghi("Không lấy được GPS — chọn điểm bằng tay.")
-                chonDiemTay()
+                chonDiem(chiKiemTra = false)
                 return@layViTri
             }
             val gan = core.callAttr("diem_gan", vt.latitude, vt.longitude)
             if (gan == null || gan.toString() == "None") {
-                nhatKy.ghi("File khảo sát không có toạ độ — chọn điểm bằng tay.")
-                chonDiemTay()
+                nhatKy.ghi("Dự án không có toạ độ — chọn điểm bằng tay.")
+                chonDiem(chiKiemTra = false)
                 return@layViTri
             }
             val g = gan.asList()
             val ma = g[0].toString()
             val stt = g[1].toString()
-            val nhan = "[${g[2]}] điểm $stt: ${g[3]}"
             val m = g[4].toInt()
             val sat = g[5].toBoolean()
             when {
-                m > 400 -> {
-                    nhatKy.ghi("Điểm gần nhất $nhan cách $m m — chọn điểm bằng tay.")
-                    chonDiemTay()
+                m > 1000 -> {
+                    datTrangThai("📍 TỪ XA — cách điểm gần nhất ${m / 1000} km", VANG)
+                    nhatKy.ghi("Đang cách điểm gần nhất ${m / 1000} km → không cài được, chỉ kiểm tra từ xa.")
+                    AlertDialog.Builder(this)
+                        .setTitle("Bạn đang ở XA điểm lắp")
+                        .setMessage("Điểm gần nhất: ${core.callAttr("ten_diem", ma, stt)}\ncách ${m / 1000} km.\n\n" +
+                            "Ở xa thì app KHÔNG cài được (chỉ cài được khi đứng tại điểm và vào WiFi modem của điểm).\n\n" +
+                            "Có thể KIỂM TRA TỪ XA: xem tên miền và từng camera có xem được từ Internet không. Không thay đổi gì.")
+                        .setPositiveButton("Kiểm tra từ xa") { _, _ -> chonDiem(chiKiemTra = true) }
+                        .setNegativeButton("Đóng", null)
+                        .show()
                 }
-                sat -> AlertDialog.Builder(this)
-                    .setTitle("Có điểm khác ở sát bên")
-                    .setMessage("Đang ở $nhan (cách $m m)?")
-                    .setPositiveButton("Đúng, cài điểm này") { _, _ -> nhatKy.ghi("→ $nhan"); chayDiem(ma, stt) }
-                    .setNegativeButton("Chọn điểm khác") { _, _ -> chonDiemTay() }
-                    .show()
-                else -> {
-                    nhatKy.ghi("→ Đang ở $nhan (cách $m m)")
-                    chayDiem(ma, stt)
-                }
+                m > 400 || sat -> xacNhanCai(ma, stt, m, if (sat) "Có điểm khác ở sát bên — kiểm tra đúng điểm." else "Cách hơi xa (${m} m).")
+                else -> xacNhanCai(ma, stt, m, null)
             }
         }
+    }
+
+    /** Bảng kiểm tra trước khi cài: chế độ, điểm, mạng WiFi, việc sẽ làm. */
+    private fun xacNhanCai(ma: String, stt: String, m: Int, canhBao: String?) {
+        val (may, gw) = mangWifi()
+        val ten = core.callAttr("ten_diem", ma, stt).toString()
+        val viTri = when {
+            m >= 0 -> "Cách điểm: $m m"
+            else -> "Vị trí: không rõ (không có GPS)"
+        }
+        val mang = if (may.isEmpty()) "WiFi: CHƯA VÀO WiFi nào" else "WiFi: máy $may · modem $gw"
+        val noiDung = StringBuilder()
+            .append("CHẾ ĐỘ: CÀI TẠI CHỖ\n").append(ten).append("\n").append(viTri).append("\n").append(mang).append("\n\n")
+            .append("App sẽ: tìm cam trong mạng này → đặt port, IP, DDNS (cam nào đã đúng thì giữ nguyên) → mở port trên modem → kiểm tra tên miền.\n")
+        if (canhBao != null) noiDung.append("\n⚠ ").append(canhBao).append("\n")
+        noiDung.append("\nChỉ bấm BẮT ĐẦU khi đang đứng tại điểm này và điện thoại đã vào WiFi modem của điểm.")
+        datTrangThai("📍 TẠI CHỖ — $ten", LAM)
+        AlertDialog.Builder(this)
+            .setTitle("Kiểm tra trước khi cài")
+            .setMessage(noiDung.toString())
+            .setPositiveButton("BẮT ĐẦU CÀI") { _, _ -> chayDiem(ma, stt, ten) }
+            .setNeutralButton("Chỉ kiểm tra từ xa") { _, _ -> kiemTraTuXa(ma, stt, ten) }
+            .setNegativeButton("Huỷ") { _, _ -> datTrangThai("Đã huỷ", XAM) }
+            .show()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == maViTri) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) batDauChay() else chonDiemTay()
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) batDauChay()
+            else chonDiem(chiKiemTra = false)
         }
     }
 
@@ -281,14 +380,29 @@ class MainActivity : Activity() {
         ui.postDelayed({ if (!daTra) { daTra = true; lm.removeUpdates(nghe); xong(null) } }, 25_000)
     }
 
-    private fun chonDiemTay() {
+    private fun chonDiem(chiKiemTra: Boolean) {
         if (!sanSang()) return
         val ds = core.callAttr("danh_sach").asList().map { it.toString() }.toTypedArray()
         AlertDialog.Builder(this)
-            .setTitle("Đang ở điểm nào?")
+            .setTitle(if (chiKiemTra) "Kiểm tra từ xa điểm nào?" else "Đang đứng ở điểm nào?")
             .setItems(ds) { _, i ->
                 val k = core.callAttr("khoa_theo_so_thu_tu", i).asList()
-                chayDiem(k[0].toString(), k[1].toString())
+                val ma = k[0].toString()
+                val stt = k[1].toString()
+                val ten = core.callAttr("ten_diem", ma, stt).toString()
+                if (chiKiemTra) { kiemTraTuXa(ma, stt, ten); return@setItems }
+                val vt = viTriCuoi
+                val m = if (vt != null) core.callAttr("khoang_cach_den", ma, stt, vt.latitude, vt.longitude).toInt() else -1
+                if (m > 1000) {
+                    AlertDialog.Builder(this)
+                        .setTitle("Không cài được từ xa")
+                        .setMessage("$ten\nĐang cách ${m / 1000} km.\n\nChỉ cài được khi đứng tại điểm và vào WiFi modem của điểm. Muốn kiểm tra từ xa điểm này?")
+                        .setPositiveButton("Kiểm tra từ xa") { _, _ -> kiemTraTuXa(ma, stt, ten) }
+                        .setNegativeButton("Đóng", null)
+                        .show()
+                } else {
+                    xacNhanCai(ma, stt, m, if (m < 0) "Không có GPS: app không tự xác nhận được bạn đang ở điểm này." else null)
+                }
             }
             .show()
     }
@@ -302,7 +416,7 @@ class MainActivity : Activity() {
     }
 
     /** Ép mọi kết nối của app đi qua WiFi modem (kể cả khi modem chưa có Internet). */
-    private fun gan_wifi(bat: Boolean) {
+    private fun ganWifi(bat: Boolean) {
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         if (!bat) { cm.bindProcessToNetwork(null); return }
         val wifi = cm.allNetworks.firstOrNull { n ->
@@ -311,23 +425,33 @@ class MainActivity : Activity() {
         cm.bindProcessToNetwork(wifi)
     }
 
-    private fun chayDiem(ma: String, stt: String) {
+    private fun chayDiem(ma: String, stt: String, ten: String) {
         val (may, gw) = mangWifi()
         if (may.isEmpty()) {
+            datTrangThai("✖ Chưa vào WiFi modem", DO)
             nhatKy.ghi("✖ Điện thoại chưa vào WiFi của modem. Vào WiFi modem ở điểm này rồi bấm lại.")
             return
         }
+        log.text = ""
         val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
         val khoa = wm.createMulticastLock("camlink")
-        chayNen {
+        chayNen("CÀI TẠI CHỖ · $ten", coTomTat = true) {
             khoa.acquire()
-            gan_wifi(true)
+            ganWifi(true)
             try {
                 core.callAttr("chay", ma, stt, may, gw, nhatKy)
+                core.callAttr("tom_tat").asList().map { it.toString() }
             } finally {
-                gan_wifi(false)
+                ganWifi(false)
                 khoa.release()
             }
+        }
+    }
+
+    private fun kiemTraTuXa(ma: String, stt: String, ten: String) {
+        log.text = ""
+        chayNen("KIỂM TRA TỪ XA · $ten", coTomTat = true) {
+            core.callAttr("kiem_tra_tu_xa", ma, stt, nhatKy).asList().map { it.toString() }
         }
     }
 
@@ -338,13 +462,14 @@ class MainActivity : Activity() {
             return
         }
         log.text = ""
-        chayNen {
-            gan_wifi(true)
+        chayNen("Thu mẫu thiết bị trong WiFi $gw (chỉ đọc)", coTomTat = false) {
+            ganWifi(true)
             try {
                 core.callAttr("thu_mau", may, gw, nhatKy)
             } finally {
-                gan_wifi(false)
+                ganWifi(false)
             }
+            null
         }
     }
 

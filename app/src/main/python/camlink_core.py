@@ -259,3 +259,104 @@ def file_ket_qua_moi_nhat():
         if f.endswith(".zip") and not co_zip and time.time() - os.path.getmtime(f) < 1800:
             out.append(f); co_zip = True
     return out
+
+
+# ------------------------------------------------------------------ 1.2: kiểm tra từ xa + tóm tắt kết quả
+def khoang_cach_den(ma, stt, lat, lng):
+    """Mét từ vị trí hiện tại tới điểm; -1 nếu điểm không có toạ độ."""
+    try:
+        td = _doc_du_an(ma).get("toa_do", {}).get(stt)
+    except (OSError, ValueError):
+        td = None
+    return int(C.khoang_cach((lat, lng), td)) if td else -1
+
+
+def ten_diem(ma, stt):
+    da = _doc_du_an(ma)
+    d = da["diem"][stt]
+    return f"[{da['ten']}] điểm {stt}: {d['ten']} ({d['so']} cam)"
+
+
+def tom_tat():
+    """Đọc nhật ký lượt vừa chạy → [trạng thái 'DAT'|'CHUA'|'LOI', nội dung ngắn]."""
+    nk = C.NHAT_KY
+    cam = [l for l in nk if re.match(r"^ Cam \d+:", l)]
+    dat = [l for l in cam if "ĐẠT" in l]
+    luat = next((l.strip() for l in nk if "luật" in l and ("Mở" in l or "UPnP" in l)), "")
+    loi = [l.strip() for l in nk if l.strip().startswith("✖")]
+    canh = [l.strip() for l in nk if l.strip().startswith("⚠") and "DDNS có thể mất" not in l]
+    dong = []
+    if cam:
+        dong.append(f"Cam đạt: {len(dat)}/{len(cam)}")
+    if luat:
+        dong.append(luat.lstrip("✔⚠ "))
+    dong += loi + canh
+    if loi or not cam:
+        tt = "LOI"
+    elif len(dat) < len(cam) or canh:
+        tt = "CHUA"
+    else:
+        tt = "DAT"
+    return [tt, "\n".join(dong) or "Không có kết quả."]
+
+
+def kiem_tra_tu_xa(ma, stt, log):
+    """Chỉ ĐỌC qua Internet (tên miền + port), không thay đổi gì trên thiết bị."""
+    import ipaddress, socket
+    log = _cb(log)
+    C.LOG_CB = log
+    C.NHAT_KY.clear()
+    global _TUXA
+    _TUXA = (ma, stt)
+    da = _doc_du_an(ma)
+    d = da["diem"][stt]
+    dom = d["domain"]
+    C.log(f"KIỂM TRA TỪ XA — [{da['ten']}] điểm {stt}: {d['ten']}")
+    C.log("Chỉ đọc qua Internet, không thay đổi gì trên cam hay modem.")
+    try:
+        ip = socket.gethostbyname(dom)
+    except OSError:
+        ip = None
+    if not ip:
+        C.log(f"✖ {dom} không phân giải được → tên miền chưa tạo / hết hạn No-IP, hoặc điện thoại chưa có Internet")
+        return tom_tat_tu_xa(0, d["so"])
+    a = ipaddress.ip_address(ip)
+    if a.is_private or a in ipaddress.ip_network("100.64.0.0/10"):
+        C.log(f"✖ {dom} đang trỏ IP nội bộ {ip} → DDNS trên cam 1 cập nhật sai")
+        return tom_tat_tu_xa(0, d["so"])
+    C.log(f"✔ {dom} → {ip}")
+    cd = C.doc_cai_dat()
+    tot = 0
+    for i in range(d["so"]):
+        http, rtsp = C.HTTP[i], C.RTSP[i]
+        mh, mr = C.mo(dom, http, 4), C.mo(dom, rtsp, 4)
+        ghi = ""
+        if mh:
+            ov = C.Onvif(dom, http, cd.get("cam_user", "admin"), cd.get("cam_pw", ""))
+            if ov.co():
+                try:
+                    tt = ov.thong_tin()
+                    ghi = f" — {tt['hang']} {tt['model']}".rstrip()
+                except Exception:
+                    ghi = " — vào được nhưng sai user/pass cam"
+        ok = mh and mr
+        tot += ok
+        C.log(f" Cam {i + 1}: HTTP {http} {'mở' if mh else 'ĐÓNG'} · RTSP {rtsp} {'mở' if mr else 'ĐÓNG'}{ghi}  {'ĐẠT' if ok else 'CHƯA'}")
+    if tot < d["so"]:
+        C.log("⚠ Port ĐÓNG: modem chưa mở port đó, cam đổi IP, hoặc cam mất điện/mất mạng")
+    return tom_tat_tu_xa(tot, d["so"])
+
+
+_TUXA = ("du-an", "0")
+
+
+def tom_tat_tu_xa(tot, so):
+    try:
+        f = os.path.join(GOC, "ketqua", f"camlink_{_TUXA[0]}_tuxa_diem{_TUXA[1]}_{time.strftime('%H%M')}.txt")
+        with open(f, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(C.NHAT_KY))
+    except OSError:
+        pass
+    loi = [l.strip() for l in C.NHAT_KY if l.strip().startswith(("✖", "⚠"))]
+    tt = "DAT" if tot == so and so else ("LOI" if tot == 0 else "CHUA")
+    return [tt, "\n".join([f"Cam xem được từ ngoài: {tot}/{so}"] + loi)]

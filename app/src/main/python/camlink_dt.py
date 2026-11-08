@@ -312,6 +312,13 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
         try:
             token, mac = ov.token_mang()
             kq["mac"] = mac
+            if ip == ip_moi and port == http and mo(ip, rtsp, 1):
+                kq["ok"] = True
+                kq["ghi"].append("Đã đúng sẵn — giữ nguyên, không đổi gì")
+                luat += [(f"cam{i + 1}", http, ip_moi), (f"cam{i + 1}_rtsp", rtsp, ip_moi)]
+                log(f"   ✔ Cam {i + 1} đã đúng sẵn (IP {ip_moi}, HTTP {http}, RTSP {rtsp}) — giữ nguyên")
+                ket_qua.append(kq)
+                continue
             nt = nen_tang(ip, port)
             if i == 0:
                 try:
@@ -350,13 +357,18 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
     wan = None
     igd = upnp_tim()
     if igd:
-        dem = 0
+        dem = co_san = 0
         for ten, p, ip in luat:
-            ma, _ = upnp_goi(igd, "AddPortMapping", {"NewRemoteHost": "", "NewExternalPort": p, "NewProtocol": "TCP",
+            ma, t = upnp_goi(igd, "AddPortMapping", {"NewRemoteHost": "", "NewExternalPort": p, "NewProtocol": "TCP",
                              "NewInternalPort": p, "NewInternalClient": ip, "NewEnabled": 1,
                              "NewPortMappingDescription": ten, "NewLeaseDuration": 0})
-            dem += ma == 200
-        log(f"   {'✔' if dem == len(luat) else '⚠'} Mở {dem}/{len(luat)} luật qua UPnP")
+            if ma == 200:
+                dem += 1
+            elif "718" in t or "Conflict" in t:
+                co_san += 1   # modem đã có luật cho port này (vd tạo tay) → giữ nguyên
+        tong = dem + co_san
+        log(f"   {'✔' if tong == len(luat) else '⚠'} Mở {tong}/{len(luat)} luật"
+            + (f" ({co_san} luật modem đã có sẵn, giữ nguyên)" if co_san else "") + " qua UPnP")
         ma, t = upnp_goi(igd, "GetExternalIPAddress", {})
         m = re.search(r"<NewExternalIPAddress>(.*?)<", t)
         wan = m and m.group(1)
