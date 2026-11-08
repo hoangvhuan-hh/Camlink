@@ -465,15 +465,15 @@ class MainActivity : Activity() {
     }
 
     /** Gọi tên miền qua 4G như IOC: chụp ảnh từng cam + lấy luồng live, rồi mở màn hình sơ đồ. */
-    private fun bangChung(ma: String, stt: String) {
+    private fun bangChung(ma: String, stt: String, thuLai: Boolean = true) {
         val di_dong = ganDiDong(true)
         if (!di_dong) nhatKy.ghi("⚠ Không bật được 4G — thử qua WiFi (một số modem không cho gọi tên miền của chính nó từ bên trong).")
         try {
             var j = ""
-            for (lan in 1..3) {   // DDNS vừa cập nhật có thể chậm 1–2 phút
+            for (lan in 1..(if (thuLai) 3 else 1)) {   // vừa cài xong: DDNS có thể chậm 1–2 phút
                 j = core.callAttr("bang_chung", ma, stt, nhatKy).toString()
                 if (j.contains("\"ngoai\": true")) break
-                if (lan < 3) { nhatKy.ghi("   chờ 40 giây cho tên miền cập nhật rồi thử lại…"); Thread.sleep(40_000) }
+                if (thuLai && lan < 3) { nhatKy.ghi("   chờ 40 giây cho tên miền cập nhật rồi thử lại…"); Thread.sleep(40_000) }
             }
             val du = j
             ui.post { startActivity(Intent(this, SoDoActivity::class.java).putExtra("du_lieu", du)) }
@@ -503,8 +503,12 @@ class MainActivity : Activity() {
     private fun kiemTraTuXa(ma: String, stt: String, ten: String) {
         log.text = ""
         chayNen("KIỂM TRA TỪ XA · $ten", coTomTat = true) {
-            val kq = core.callAttr("kiem_tra_tu_xa", ma, stt, nhatKy).asList().map { it.toString() }
-            if (kq[0] != "LOI") bangChung(ma, stt)
+            // đi đường 4G như IOC; đứng trong WiFi của chính điểm đó thì modem có thể chặn gọi tên miền của nó
+            if (!ganDiDong(true)) nhatKy.ghi("⚠ Không bật được 4G — đang kiểm tra qua WiFi. Nếu đang vào WiFi của chính điểm này, kết quả có thể báo ĐÓNG sai.")
+            val kq = try {
+                core.callAttr("kiem_tra_tu_xa", ma, stt, nhatKy).asList().map { it.toString() }
+            } finally { ganDiDong(false) }
+            if (kq[0] != "LOI") bangChung(ma, stt, thuLai = false)
             kq
         }
     }

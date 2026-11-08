@@ -323,12 +323,12 @@ def kiem_tra_tu_xa(ma, stt, log):
         C.log(f"✖ {dom} không phân giải được → tên miền chưa tạo / hết hạn No-IP, hoặc điện thoại chưa có Internet")
         return tom_tat_tu_xa(0, d["so"])
     a = ipaddress.ip_address(ip)
-    if a.is_private or a in ipaddress.ip_network("100.64.0.0/10"):
+    if (a.is_private or a in ipaddress.ip_network("100.64.0.0/10")) and not os.environ.get("CAMLINK_THU_NOI_BO"):
         C.log(f"✖ {dom} đang trỏ IP nội bộ {ip} → DDNS trên cam 1 cập nhật sai")
         return tom_tat_tu_xa(0, d["so"])
     C.log(f"✔ {dom} → {ip}")
     cd = C.doc_cai_dat()
-    tot = 0
+    tot = sai_pass = 0
     for i in range(d["so"]):
         http, rtsp = C.HTTP[i], C.RTSP[i]
         mh, mr = C.mo(dom, http, 4), C.mo(dom, rtsp, 4)
@@ -340,12 +340,15 @@ def kiem_tra_tu_xa(ma, stt, log):
                     tt = ov.thong_tin()
                     ghi = f" — {tt['hang']} {tt['model']}".rstrip()
                 except Exception:
-                    ghi = " — vào được nhưng sai user/pass cam"
-        ok = mh and mr
+                    ghi = " — port mở nhưng user/pass cam trong app SAI"
+                    sai_pass += 1
+        ok = mh and mr and "SAI" not in ghi
         tot += ok
         C.log(f" Cam {i + 1}: HTTP {http} {'mở' if mh else 'ĐÓNG'} · RTSP {rtsp} {'mở' if mr else 'ĐÓNG'}{ghi}  {'ĐẠT' if ok else 'CHƯA'}")
     if tot < d["so"]:
         C.log("⚠ Port ĐÓNG: modem chưa mở port đó, cam đổi IP, hoặc cam mất điện/mất mạng")
+    if sai_pass:
+        C.log("⚠ User/pass cam lưu trong app không đúng với cam → không chụp được ảnh; sửa ở nút \"User / pass cam và modem\"")
     return tom_tat_tu_xa(tot, d["so"])
 
 
@@ -428,7 +431,10 @@ def bang_chung(ma, stt, log):
             C.log(f"   {'✔' if c['ngoai'] else '⚠'} Cam {c['so']} qua {dom}:{c['http']}"
                   + (" — có ảnh chụp" if c["anh"] else "") + (f" — {c['loi_ngoai']}" if c["loi_ngoai"] else ""))
         except Exception as e:
-            c["loi_ngoai"] = str(e)[:160]
+            m = str(e)
+            if "not authorized" in m.lower() or "401" in m or "NotAuthorized" in m:
+                m = "port vẫn mở nhưng user/pass cam trong app SAI → sửa ở nút User / pass"
+            c["loi_ngoai"] = m[:160]
             C.log(f"   ✖ Cam {c['so']}: {c['loi_ngoai']}")
     kq["luc"] = time.strftime("%d/%m/%Y %H:%M")
     with open(_file_so_do(ma, stt), "w", encoding="utf-8") as fh:
