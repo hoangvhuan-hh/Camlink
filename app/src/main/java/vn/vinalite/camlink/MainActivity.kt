@@ -250,8 +250,15 @@ class MainActivity : Activity() {
         hop.setPadding(dp(20), dp(8), dp(20), 0)
         val nhan = listOf("User cam", "Pass cam", "User modem", "Pass modem")
         val o = nhan.mapIndexed { i, n ->
+            val tieuDeO = TextView(this)
+            tieuDeO.text = "$n:"
+            tieuDeO.textSize = 14f
+            tieuDeO.setTypeface(null, Typeface.BOLD)
+            tieuDeO.setTextColor(Color.parseColor("#0F5D8C"))
+            tieuDeO.setPadding(0, dp(if (i == 0) 4 else 12), 0, 0)
+            hop.addView(tieuDeO)
             val e = EditText(this)
-            e.hint = n
+            e.hint = "Nhập $n"
             e.setText(cu.getOrElse(i) { "" })
             e.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
             hop.addView(e)
