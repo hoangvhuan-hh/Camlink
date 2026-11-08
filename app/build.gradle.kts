@@ -11,11 +11,21 @@ android {
         applicationId = "vn.vinalite.camlink"
         minSdk = 24
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 5
+        versionName = "1.3.1"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
+    signingConfigs {
+        create("chung") {
+            // Khoá ký CỐ ĐỊNH: mọi bản build ra cùng chữ ký → cài đè được, không phải gỡ app.
+            storeFile = file("camlink.jks")
+            storePassword = "camlink123"
+            keyAlias = "camlink"
+            keyPassword = "camlink123"
+        }
+    }
     buildTypes {
+        getByName("debug") { signingConfig = signingConfigs.getByName("chung") }
         getByName("release") { isMinifyEnabled = false }
     }
     compileOptions {

@@ -112,7 +112,7 @@ class MainActivity : Activity() {
         goc.setPadding(dp(16), dp(20), dp(16), dp(12))
 
         val ten = TextView(this)
-        ten.text = "CamLink"
+        ten.text = "CamLink " + packageManager.getPackageInfo(packageName, 0).versionName
         ten.textSize = 26f
         ten.setTypeface(null, Typeface.BOLD)
         goc.addView(ten)
