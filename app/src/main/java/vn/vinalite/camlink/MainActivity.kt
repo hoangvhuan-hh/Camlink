@@ -135,6 +135,7 @@ class MainActivity : Activity() {
         goc.addView(nut("CHẠY CÀI ĐIỂM NÀY", chinh = true) { batDauChay() })
         goc.addView(nut("Kiểm tra từ xa (không thay đổi gì)") { chonDiem(chiKiemTra = true) })
         goc.addView(nut("Chọn điểm bằng tay") { chonDiem(chiKiemTra = false) })
+        goc.addView(nut("Xem sơ đồ + ảnh lần chạy gần nhất") { moSoDoGanNhat() })
         goc.addView(nut("Gửi kết quả (Zalo, Gmail…)") { guiKetQua() })
         goc.addView(nut("Thêm / cập nhật dự án (file Excel)") { moFile() })
         goc.addView(nut("User / pass cam và modem") { hopCaiDat() })
@@ -438,20 +439,62 @@ class MainActivity : Activity() {
         chayNen("CÀI TẠI CHỖ · $ten", coTomTat = true) {
             khoa.acquire()
             ganWifi(true)
+            val kq: List<String>
             try {
                 core.callAttr("chay", ma, stt, may, gw, nhatKy)
-                core.callAttr("tom_tat").asList().map { it.toString() }
+                kq = core.callAttr("tom_tat").asList().map { it.toString() }
             } finally {
                 ganWifi(false)
                 khoa.release()
             }
+            ui.post { datTrangThai("⏳ $dangChay\nĐang: chứng minh qua tên miền (4G)", LAM) }
+            bangChung(ma, stt)
+            kq
         }
+    }
+
+    /** Gọi tên miền qua 4G như IOC: chụp ảnh từng cam + lấy luồng live, rồi mở màn hình sơ đồ. */
+    private fun bangChung(ma: String, stt: String) {
+        val di_dong = ganDiDong(true)
+        if (!di_dong) nhatKy.ghi("⚠ Không bật được 4G — thử qua WiFi (một số modem không cho gọi tên miền của chính nó từ bên trong).")
+        try {
+            var j = ""
+            for (lan in 1..3) {   // DDNS vừa cập nhật có thể chậm 1–2 phút
+                j = core.callAttr("bang_chung", ma, stt, nhatKy).toString()
+                if (j.contains("\"ngoai\": true")) break
+                if (lan < 3) { nhatKy.ghi("   chờ 40 giây cho tên miền cập nhật rồi thử lại…"); Thread.sleep(40_000) }
+            }
+            val du = j
+            ui.post { startActivity(Intent(this, SoDoActivity::class.java).putExtra("du_lieu", du)) }
+        } finally {
+            ganDiDong(false)
+        }
+    }
+
+    /** Ép app đi đường 4G (để kiểm tra từ ngoài thật). Trả false nếu máy không có / không bật dữ liệu di động. */
+    private fun ganDiDong(bat: Boolean): Boolean {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        if (!bat) { cm.bindProcessToNetwork(null); return true }
+        val dd = cm.allNetworks.firstOrNull { n ->
+            val nc = cm.getNetworkCapabilities(n)
+            nc?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true &&
+                nc.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        } ?: return false
+        return cm.bindProcessToNetwork(dd)
+    }
+
+    private fun moSoDoGanNhat() {
+        val j = core.callAttr("so_do_gan_nhat").toString()
+        if (j.isEmpty()) { nhatKy.ghi("Chưa có lần chạy nào có sơ đồ."); return }
+        startActivity(Intent(this, SoDoActivity::class.java).putExtra("du_lieu", j))
     }
 
     private fun kiemTraTuXa(ma: String, stt: String, ten: String) {
         log.text = ""
         chayNen("KIỂM TRA TỪ XA · $ten", coTomTat = true) {
-            core.callAttr("kiem_tra_tu_xa", ma, stt, nhatKy).asList().map { it.toString() }
+            val kq = core.callAttr("kiem_tra_tu_xa", ma, stt, nhatKy).asList().map { it.toString() }
+            if (kq[0] != "LOI") bangChung(ma, stt)
+            kq
         }
     }
 

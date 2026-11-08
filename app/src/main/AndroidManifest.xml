@@ -19,6 +19,9 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".SoDoActivity" android:exported="false" />
+        <activity android:name=".XemLiveActivity" android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="vn.vinalite.camlink.files"

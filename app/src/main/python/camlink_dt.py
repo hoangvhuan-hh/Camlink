@@ -36,7 +36,8 @@ def thu_muc_ra():
 
 
 NHAT_KY = []
-CAN_MAU = []   # thiết bị app chưa biết cách điều khiển → tự thu mẫu cuối lượt
+CAN_MAU = []
+KQ_CUOI = {}   # thiết bị app chưa biết cách điều khiển → tự thu mẫu cuối lượt
 
 
 def ten_file(s):
@@ -100,7 +101,7 @@ def cho_len(ip, port, giay=120):
 
 # ------------------------------------------------------------------ ONVIF (chuẩn chung camera IP)
 NS = ('xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:tds="http://www.onvif.org/ver10/device/wsdl" '
-      'xmlns:tt="http://www.onvif.org/ver10/schema"')
+      'xmlns:tt="http://www.onvif.org/ver10/schema" xmlns:trt="http://www.onvif.org/ver10/media/wsdl"')
 
 
 class Onvif:
@@ -125,10 +126,10 @@ class Onvif:
                 '01/oasis-200401-wss-wssecurity-utility-1.0.xsd">' + created + '</Created></UsernameToken>'
                 '</Security></s:Header>')
 
-    def goi(self, than, xac_thuc=True, cho=8):
+    def goi(self, than, xac_thuc=True, cho=8, url=None):
         env = f'<?xml version="1.0" encoding="UTF-8"?><s:Envelope {NS}>' + \
               (self._bao_mat() if xac_thuc else "") + f"<s:Body>{than}</s:Body></s:Envelope>"
-        r = requests.post(self.url, data=env.encode(), timeout=cho,
+        r = requests.post(url or self.url, data=env.encode(), timeout=cho,
                           headers={"Content-Type": "application/soap+xml; charset=utf-8"})
         if r.status_code != 200 or "Fault" in r.text[:3000]:
             ly_do = re.search(r"<[^>]*Text[^>]*>(.*?)</", r.text)
@@ -158,6 +159,50 @@ class Onvif:
         m = re.search(r'NetworkInterfaces[^>]*token="([^"]+)"', t)
         mac = re.search(r"<[^>]*HwAddress>(.*?)<", t)
         return (m.group(1) if m else "eth0"), (mac.group(1) if mac else "")
+
+    # ---- Media: ảnh chụp + luồng video (dùng để CHỨNG MINH cam xem được qua tên miền) ----
+    def _doi_host(self, u, port):
+        """Cam trả địa chỉ LAN (192.168.x.x) → thay bằng host/port mình đang gọi (tên miền)."""
+        return re.sub(r"^(\w+://)(?:[^@/]*@)?[^/:]+(?::\d+)?", lambda m: f"{m.group(1)}{self.ip}:{port}", u, count=1)
+
+    def url_media(self):
+        try:
+            t = self.goi('<tds:GetCapabilities><tds:Category>Media</tds:Category></tds:GetCapabilities>')
+            m = re.search(r"<[^>]*Media[^>]*>.*?<[^>]*XAddr>(.*?)<", t, re.S)
+            if m:
+                return self._doi_host(m.group(1).strip(), self.port)
+        except Exception:
+            pass
+        return f"http://{self.ip}:{self.port}/onvif/media_service"
+
+    def profile_dau(self, url_media):
+        t = self.goi("<trt:GetProfiles/>", url=url_media)
+        m = re.search(r'Profiles[^>]*token="([^"]+)"', t)
+        if not m:
+            raise RuntimeError("cam không có profile video")
+        return m.group(1)
+
+    def anh_chup(self, url_media, token):
+        t = self.goi(f"<trt:GetSnapshotUri><trt:ProfileToken>{token}</trt:ProfileToken></trt:GetSnapshotUri>", url=url_media)
+        m = re.search(r"<(?:\w+:)?Uri>\s*(.*?)\s*<", t)
+        if not m:
+            raise RuntimeError("cam không cho lấy ảnh chụp")
+        u = self._doi_host(m.group(1).replace("&amp;", "&"), self.port)
+        for au in (HTTPDigestAuth(self.user, self.pw), (self.user, self.pw)):
+            r = requests.get(u, auth=au, timeout=12)
+            if r.status_code == 200 and r.content[:2] == b"\xff\xd8":
+                return r.content
+        raise RuntimeError(f"lấy ảnh lỗi {r.status_code}")
+
+    def luong_video(self, url_media, token, rtsp_port):
+        t = self.goi(f"<trt:GetStreamUri><trt:StreamSetup><tt:Stream>RTP-Unicast</tt:Stream><tt:Transport>"
+                     f"<tt:Protocol>RTSP</tt:Protocol></tt:Transport></trt:StreamSetup><trt:ProfileToken>{token}"
+                     f"</trt:ProfileToken></trt:GetStreamUri>", url=url_media)
+        m = re.search(r"<(?:\w+:)?Uri>\s*(.*?)\s*<", t)
+        if not m:
+            raise RuntimeError("cam không trả luồng RTSP")
+        u = self._doi_host(m.group(1).replace("&amp;", "&"), rtsp_port)
+        return u.replace("rtsp://", f"rtsp://{requests.utils.quote(self.user)}:{requests.utils.quote(self.pw)}@", 1)
 
     def dat_port(self, http, rtsp):
         self.goi("<tds:SetNetworkProtocols>"
@@ -389,6 +434,11 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
             except OSError:
                 ip_dom = None
             log(f"   {'✔' if ip_dom == wan else '⚠'} {d['domain']} → {ip_dom} (cần {wan}; DDNS có thể mất 1–5 phút)")
+    global KQ_CUOI
+    KQ_CUOI = {"stt": stt, "ten": d["ten"], "domain": d["domain"], "gw": gw, "wan": wan or "",
+               "upnp": bool(igd), "luat": [{"ten": t, "port": p, "ip": ip} for t, p, ip in luat],
+               "cam": [{"so": k["so"], "ip": k["ip"], "http": k["http"], "rtsp": k["rtsp"], "model": k.get("model", ""),
+                        "mac": k.get("mac", ""), "ok": bool(k.get("ok")), "ghi": "; ".join(k["ghi"])} for k in ket_qua]}
     log("")
     log(f"BẢNG KẾT QUẢ ĐIỂM {stt} — {d['domain']}")
     for k in ket_qua:

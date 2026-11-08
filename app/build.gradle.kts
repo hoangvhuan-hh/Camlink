@@ -11,8 +11,8 @@ android {
         applicationId = "vn.vinalite.camlink"
         minSdk = 24
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 4
+        versionName = "1.3"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
     buildTypes {
@@ -37,4 +37,7 @@ chaquopy {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.media3:media3-exoplayer:1.3.1")
+    implementation("androidx.media3:media3-exoplayer-rtsp:1.3.1")
+    implementation("androidx.media3:media3-ui:1.3.1")
 }

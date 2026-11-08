@@ -258,6 +258,8 @@ def file_ket_qua_moi_nhat():
             out.append(f); co_txt = True
         if f.endswith(".zip") and not co_zip and time.time() - os.path.getmtime(f) < 1800:
             out.append(f); co_zip = True
+        if f.endswith(".jpg") and os.path.basename(f).startswith("anh_") and time.time() - os.path.getmtime(f) < 1800:
+            out.append(f)
     return out
 
 
@@ -360,3 +362,86 @@ def tom_tat_tu_xa(tot, so):
     loi = [l.strip() for l in C.NHAT_KY if l.strip().startswith(("✖", "⚠"))]
     tt = "DAT" if tot == so and so else ("LOI" if tot == 0 else "CHUA")
     return [tt, "\n".join([f"Cam xem được từ ngoài: {tot}/{so}"] + loi)]
+
+
+# ------------------------------------------------------------------ 1.3: bằng chứng qua tên miền + dữ liệu sơ đồ
+def _file_so_do(ma, stt):
+    return os.path.join(GOC, "ketqua", f"sodo_{ma}_{stt}.json")
+
+
+def bang_chung(ma, stt, log):
+    """Gọi vào TÊN MIỀN:port như IOC: đăng nhập cam, chụp ảnh, lấy luồng RTSP.
+    Kotlin chạy hàm này qua mạng di động (4G) để là kiểm tra từ ngoài thật."""
+    import socket
+    log = _cb(log)
+    C.LOG_CB = log
+    da = _doc_du_an(ma)
+    d = da["diem"][stt]
+    dom = d["domain"]
+    cd = C.doc_cai_dat()
+    kq = dict(C.KQ_CUOI) if C.KQ_CUOI.get("stt") == stt and C.KQ_CUOI.get("domain") == dom else {}
+    kq.setdefault("domain", dom)
+    kq.setdefault("ten", d["ten"])
+    kq.setdefault("stt", stt)
+    kq["du_an"] = da["ten"]
+    kq.setdefault("cam", [{"so": i + 1, "ip": f"…{C.IP_TU + i}", "http": C.HTTP[i], "rtsp": C.RTSP[i],
+                           "model": "", "mac": "", "ok": None, "ghi": ""} for i in range(d["so"])])
+    C.log("")
+    C.log(f"BẰNG CHỨNG TỪ NGOÀI — gọi {dom} như IOC")
+    try:
+        ip = socket.gethostbyname(dom)
+    except OSError:
+        ip = ""
+    kq["ip_ten_mien"] = ip
+    C.log(f"   {dom} → {ip or 'không phân giải được'}")
+    anh_dir = os.path.join(GOC, "ketqua")
+    for c in kq["cam"]:
+        c["ngoai"] = False
+        c["anh"] = ""
+        c["live"] = ""
+        c["loi_ngoai"] = ""
+        if not ip:
+            c["loi_ngoai"] = "tên miền không phân giải được"
+            continue
+        ov = C.Onvif(dom, c["http"], cd.get("cam_user", "admin"), cd.get("cam_pw", ""))
+        try:
+            if not ov.co():
+                raise RuntimeError(f"không vào được {dom}:{c['http']} (port chưa mở / modem chặn)")
+            tt = ov.thong_tin()
+            c["model"] = c.get("model") or tt.get("model", "")
+            c["hang"] = tt.get("hang", "")
+            um = ov.url_media()
+            tk = ov.profile_dau(um)
+            try:
+                jpg = ov.anh_chup(um, tk)
+                f = os.path.join(anh_dir, f"anh_{ma}_{stt}_cam{c['so']}.jpg")
+                with open(f, "wb") as fh:
+                    fh.write(jpg)
+                c["anh"] = f
+            except Exception as e:
+                c["loi_ngoai"] = f"không lấy được ảnh: {e}"
+            try:
+                c["live"] = ov.luong_video(um, tk, c["rtsp"])
+            except Exception as e:
+                c["loi_ngoai"] = (c["loi_ngoai"] + "; " if c["loi_ngoai"] else "") + f"không lấy được RTSP: {e}"
+            c["ngoai"] = bool(c["anh"]) or (bool(c["live"]) and C.mo(dom, c["rtsp"], 4))
+            C.log(f"   {'✔' if c['ngoai'] else '⚠'} Cam {c['so']} qua {dom}:{c['http']}"
+                  + (" — có ảnh chụp" if c["anh"] else "") + (f" — {c['loi_ngoai']}" if c["loi_ngoai"] else ""))
+        except Exception as e:
+            c["loi_ngoai"] = str(e)[:160]
+            C.log(f"   ✖ Cam {c['so']}: {c['loi_ngoai']}")
+    kq["luc"] = time.strftime("%d/%m/%Y %H:%M")
+    with open(_file_so_do(ma, stt), "w", encoding="utf-8") as fh:
+        json.dump(kq, fh, ensure_ascii=False)
+    n = sum(1 for c in kq["cam"] if c["ngoai"])
+    C.log(f"   → Xem được từ ngoài: {n}/{len(kq['cam'])} cam")
+    return json.dumps(kq, ensure_ascii=False)
+
+
+def so_do_gan_nhat():
+    d = os.path.join(GOC, "ketqua")
+    fs = sorted((os.path.join(d, f) for f in os.listdir(d) if f.startswith("sodo_")), key=os.path.getmtime, reverse=True)
+    if not fs:
+        return ""
+    with open(fs[0], encoding="utf-8") as f:
+        return f.read()
