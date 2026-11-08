@@ -522,16 +522,25 @@ class MainActivity : Activity() {
         log.text = ""
         chayNen("Thu mẫu thiết bị trong WiFi $gw (chỉ đọc)", coTomTat = false) {
             ganWifi(true)
-            try {
-                core.callAttr("thu_mau", may, gw, nhatKy)
+            val zp = try {
+                core.callAttr("thu_mau", may, gw, nhatKy)?.toString() ?: ""
             } finally {
                 ganWifi(false)
             }
+            if (zp.isNotEmpty() && File(zp).exists()) ui.post { guiFile(File(zp), "Gửi file mẫu thiết bị cho Claude") }
             null
         }
     }
 
     // ---------------- Gửi kết quả ----------------
+    private fun guiFile(f: File, tieuDe: String) {
+        val i = Intent(Intent.ACTION_SEND)
+        i.type = "application/zip"
+        i.putExtra(Intent.EXTRA_STREAM, FileProvider.getUriForFile(this, "vn.vinalite.camlink.files", f))
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        startActivity(Intent.createChooser(i, tieuDe))
+    }
+
     private fun guiKetQua() {
         val fs = core.callAttr("file_ket_qua_moi_nhat").asList().map { File(it.toString()) }
         if (fs.isEmpty()) {

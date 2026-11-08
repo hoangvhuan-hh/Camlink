@@ -505,7 +505,8 @@ def thu(cam_user="", cam_pw=""):
                         z.writestr(f"{ip}_{port}/onvif_info.txt", json.dumps(ov.thong_tin(), ensure_ascii=False))
                     except Exception as e:
                         z.writestr(f"{ip}_{port}/onvif_info.txt", str(e))
-    log(f"Xong. Gửi file này cho Claude: {zp}")
+    log("Xong. Đã lưu file mẫu (chỉ đọc, không thay đổi gì). App sẽ mở bảng chia sẻ → chọn Zalo/Gmail gửi cho Claude.")
+    log("Mục đích: Claude đọc file này để dạy app điều khiển cam/modem loại mới.")
     return zp
 
 

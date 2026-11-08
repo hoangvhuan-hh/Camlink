@@ -41,7 +41,7 @@ class HuongDanActivity : Activity() {
         "E. NÚT KHÁC" to listOf(
             "\"Chọn điểm bằng tay\": dùng khi GPS yếu hoặc dự án chưa có toạ độ.",
             "\"Xem sơ đồ + ảnh lần chạy gần nhất\": mở lại kết quả lần trước.",
-            "\"Thu mẫu thiết bị\": khi app báo gặp cam/modem lạ — đứng tại điểm, vào WiFi modem, bấm nút này rồi gửi file zip vừa tạo cho Claude. Chỉ đọc, không thay đổi gì."
+            "\"Thu mẫu thiết bị\": khi app báo gặp cam/modem lạ — đứng tại điểm, vào WiFi modem, bấm nút này. Xong app tự mở bảng chia sẻ → chọn Zalo/Gmail gửi cho Claude (lỡ tắt thì bấm \"Gửi kết quả\", file mẫu có kèm trong đó). Mục đích: Claude đọc mẫu để dạy app điều khiển cam/modem loại mới. Chỉ đọc, không thay đổi gì."
         ),
         "F. LƯU Ý" to listOf(
             "Ở xa điểm hơn 1 km app không cho cài, chỉ cho kiểm tra từ xa.",
