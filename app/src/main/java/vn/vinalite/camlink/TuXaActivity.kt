@@ -54,7 +54,7 @@ class TuXaActivity : Activity() {
     private val TOI_DA_LIVE = 4
 
     /** Phát trực tiếp RTSP ngay trong thẻ cam. Quá TOI_DA_LIVE thì dừng cái cũ nhất. */
-    private fun phatLive(khungAnh: FrameLayout, url: String, trangThai: TextView) {
+    private fun phatLive(khungAnh: FrameLayout, url: String, trangThai: TextView, tcp: Boolean = true) {
         if (url.isEmpty()) { trangThai.text = "Không có link video"; return }
         dangPhat.remove(url)?.release()
         while (dangPhat.size >= TOI_DA_LIVE) { val k = dangPhat.keys.first(); dangPhat.remove(k)?.release() }
@@ -64,7 +64,7 @@ class TuXaActivity : Activity() {
         khungAnh.addView(pv, FrameLayout.LayoutParams(-1, dp(200)))
         val p = ExoPlayer.Builder(this).build()
         pv.player = p
-        p.setMediaSource(RtspMediaSource.Factory().setForceUseRtpTcp(true).createMediaSource(MediaItem.fromUri(url)))
+        p.setMediaSource(RtspMediaSource.Factory().setForceUseRtpTcp(tcp).setDebugLoggingEnabled(true).createMediaSource(MediaItem.fromUri(url)))
         p.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 trangThai.text = when (state) {
@@ -75,8 +75,26 @@ class TuXaActivity : Activity() {
                 }
             }
             override fun onPlayerError(error: PlaybackException) {
-                trangThai.text = "✖ KHÔNG XEM TRỰC TIẾP ĐƯỢC: ${error.errorCodeName} — port video chưa mở hoặc cam không phát"
+                var ng: Throwable? = error
+                val chuoi = StringBuilder()
+                while (ng != null) { chuoi.append(ng.javaClass.simpleName).append(": ").append(ng.message ?: "").append(" ← "); ng = ng.cause }
+                val ct = chuoi.toString().trimEnd(' ', '←')
+                if (tcp) {
+                    trangThai.text = "⏳ TCP không được ($ct) — thử lại kiểu UDP…"
+                    ui.postDelayed({ phatLive(khungAnh, url, trangThai, tcp = false) }, 500)
+                    return
+                }
+                trangThai.text = "✖ App không phát được luồng này.\nChi tiết: $ct\nBấm ▶ lần nữa để mở bằng VLC/app khác."
                 trangThai.setTextColor(Color.parseColor("#B42318"))
+                khungAnh.removeAllViews()
+                val b = Button(this@TuXaActivity)
+                b.text = "▶ Mở bằng VLC / app khác"
+                b.isAllCaps = false
+                b.setOnClickListener {
+                    try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).setDataAndType(Uri.parse(url), "video/*")) }
+                    catch (e: Exception) { copy(url); Toast.makeText(this@TuXaActivity, "Chưa có app phát RTSP (cài VLC). Đã copy link.", Toast.LENGTH_LONG).show() }
+                }
+                khungAnh.addView(b, FrameLayout.LayoutParams(-2, -2, android.view.Gravity.CENTER))
             }
         })
         p.prepare(); p.playWhenReady = true
@@ -219,14 +237,37 @@ class TuXaActivity : Activity() {
     private fun batDau() { kiem() }
 
     // ---------------- mạng 4G ----------------
+    private var yeuCau4G: ConnectivityManager.NetworkCallback? = null
+
     private fun gan4G(bat: Boolean): Boolean {
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        if (!bat) { cm.bindProcessToNetwork(null); return true }
-        val dd = cm.allNetworks.firstOrNull { n ->
+        if (!bat) {
+            cm.bindProcessToNetwork(null)
+            yeuCau4G?.let { try { cm.unregisterNetworkCallback(it) } catch (_: Exception) {} }
+            yeuCau4G = null
+            return true
+        }
+        fun tim() = cm.allNetworks.firstOrNull { n ->
             val nc = cm.getNetworkCapabilities(n)
             nc?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true && nc.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-        } ?: return false
-        return cm.bindProcessToNetwork(dd)
+        }
+        var dd = tim()
+        if (dd == null) {
+            // đang có WiFi → Android tắt 4G; phải yêu cầu rõ thì hệ thống mới bật lại
+            val khoa = java.util.concurrent.CountDownLatch(1)
+            val cb = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(n: android.net.Network) { dd = n; khoa.countDown() }
+            }
+            try {
+                cm.requestNetwork(android.net.NetworkRequest.Builder()
+                    .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build(), cb)
+                yeuCau4G = cb
+                khoa.await(8, java.util.concurrent.TimeUnit.SECONDS)
+            } catch (_: Exception) {}
+        }
+        val n = dd ?: return false
+        return cm.bindProcessToNetwork(n)
     }
 
     // ---------------- kiểm tra ----------------
@@ -270,7 +311,8 @@ class TuXaActivity : Activity() {
         tt.addView(chu("$dat cam ĐẠT (có ảnh)", 20f, true, if (dat >= tongFile && dat > 0) "#1D7A46" else "#B42318"))
         tt.addView(chu("File khảo sát ghi: $tongFile cam\nQuét thực tế trên các tên miền: $tongQuet cam" +
             (if (camLa > 0) "\n  = theo file $tongFile cam + $camLa CAM LẠ ngoài hồ sơ" else "") +
-            (if (k.optInt("khong_thay") > 0) "\nFile ghi nhưng không thấy cam: ${k.optInt("khong_thay")} vị trí" else ""), 14f))
+            "\nCam KHÔNG LÊN (có cam, không xem được): ${k.optInt("khong_len")}" +
+            (if (k.optInt("file_du") > 0) "\nFile ghi dư (file ghi có cam, quét không có, modem từ chối port): ${k.optInt("file_du")} vị trí — sửa file khảo sát" else ""), 14f))
         val dsLa = k.optJSONArray("cam_la")
         if (dsLa != null && dsLa.length() > 0) {
             val la = the("#7A1FA2", "#F3E8FA")

@@ -1,7 +1,7 @@
 """Kiểm tra từ xa cả dự án theo 5 tầng + sửa từ xa.
 Tầng: 1 tên miền · 2 IP trỏ về · 3 đường truyền điểm · 4 port từng cam · 5 hình ảnh.
 Chỉ ĐỌC, trừ khi người dùng bấm nút Sửa."""
-import errno, ipaddress, json, os, socket, time
+import errno, ipaddress, json, os, re, socket, time
 from concurrent.futures import ThreadPoolExecutor
 import camlink_dt as C
 import camlink_oryza
@@ -195,6 +195,12 @@ def kiem_diem(stt, d, cd, anh_dir, ma, ho_so=None):
         except Exception:
             c["live"] = f"rtsp://{cu}:{cp}@{dom}:{c['rtsp']}/"
         c["t_rtsp"], c["ms_rtsp"] = ket[c["rtsp"]] if c["rtsp"] in ket else cham_tg(dom, c["rtsp"])
+        if c["t_rtsp"] == "mo" and c.get("live"):
+            try:
+                duong = re.sub(r"^rtsp://[^/]*", "", c["live"]) or "/"
+                c["rtsp_ma"], c["codec"], c["rtsp_ghi"] = rtsp_describe(dom, c["rtsp"], duong, cu, cp)
+            except Exception:
+                pass
         if c["t_rtsp"] != "mo":
             if rtsp_cam and rtsp_cam != c["rtsp"]:
                 _ket(c, VANG, f"Có hình nhưng cam đang dùng RTSP {rtsp_cam} thay vì {c['rtsp']} → IOC không xem được video",
@@ -221,6 +227,23 @@ def kiem_diem(stt, d, cd, anh_dir, ma, ho_so=None):
                  "Cấu hình trong cam chưa đúng")
             continue
         _ket(c, XANH, "Xem được từ ngoài: có ảnh chụp qua tên miền, port web + video mở, cấu hình trong cam đúng", [], nhan="Đạt")
+    # Cùng điểm: số cam quét được = số theo file, có vị trí "không thấy" và có "cam lạ" → cam ĐỔI PORT,
+    # không phải cam lạ, cũng không phải cam mất
+    thieu = [c for c in cams if c.get("khong_thay")]
+    la = [c for c in cams if c.get("them")]
+    if thieu and la and len(cam_port) == so:
+        for ct, cl in zip(thieu, la):
+            cl.pop("them", None)
+            cl["doi_port"], cl["so"] = ct["http"], ct["so"]
+            cl["nhan"] = "Đạt (cam đang ở port khác cấu hình)"
+            if cl.get("anh"):
+                cl["muc"] = XANH
+            cl["nguyen_nhan"] = (f"Cam {ct['so']} đang chạy ở port {cl['http']} thay vì {ct['http']} như cấu hình "
+                                 f"(đổi port hoặc file ghi sai) — vẫn xem được; IOC phải dùng đúng port {cl['http']}")
+            cl["viec"] = [f"Xác nhận IOC đang dùng port {cl['http']} cho cam này; nếu IOC dùng {ct['http']}: bấm Sửa từ xa để đặt lại."]
+            cl["sua"] = ["dat_port_http"]
+            cams.remove(ct)
+        cams.sort(key=lambda x: x["so"])
     hong = [c for c in cams if c["muc"] != XANH]
     kq["muc"] = DO if any(c["muc"] == DO for c in cams) else (VANG if hong else XANH)
     kq["tong"] = "ĐẠT" if not hong else f"{len(cams) - len(hong)}/{len(cams)} cam đạt"
@@ -273,6 +296,61 @@ def doc_cau_hinh(c, ov, dom, d, cu, cp, ho_so, cam_dau):
     c["loi_cau_hinh"] = loi
 
 
+def rtsp_describe(host, port, path, user, pw, cho=6):
+    """DESCRIBE RTSP (Basic/Digest) → (mã, codec, ghi chú). Chỉ đọc — bằng chứng luồng video thật."""
+    import base64, hashlib
+    url = f"rtsp://{host}:{port}{path or '/'}"
+
+    def goi(hd):
+        sk = socket.create_connection((host, port), cho)
+        sk.settimeout(cho)
+        try:
+            sk.sendall((f"DESCRIBE {url} RTSP/1.0\r\nCSeq: 2\r\nAccept: application/sdp\r\n{hd}\r\n").encode())
+            d = b""
+            while b"\r\n\r\n" not in d:
+                x = sk.recv(4096)
+                if not x:
+                    break
+                d += x
+            hdr, _, body = d.partition(b"\r\n\r\n")
+            n = re.search(rb"Content-Length:\s*(\d+)", hdr, re.I)
+            while n and len(body) < int(n.group(1)):
+                x = sk.recv(4096)
+                if not x:
+                    break
+                body += x
+            return hdr.decode(errors="ignore"), body.decode(errors="ignore")
+        finally:
+            sk.close()
+    try:
+        h, b = goi("")
+        m = re.match(r"RTSP/1\.\d (\d+)", h)
+        ma = int(m.group(1)) if m else 0
+        if ma == 401:
+            if "Digest" in h:
+                f = dict(re.findall(r'(\w+)="([^"]*)"', h.split("Digest", 1)[1]))
+                ha1 = hashlib.md5(f"{user}:{f.get('realm', '')}:{pw}".encode()).hexdigest()
+                ha2 = hashlib.md5(f"DESCRIBE:{url}".encode()).hexdigest()
+                rs = hashlib.md5(f"{ha1}:{f.get('nonce', '')}:{ha2}".encode()).hexdigest()
+                au = (f'Authorization: Digest username="{user}", realm="{f.get("realm", "")}", nonce="{f.get("nonce", "")}", '
+                      f'uri="{url}", response="{rs}"\r\n')
+            else:
+                au = "Authorization: Basic " + base64.b64encode(f"{user}:{pw}".encode()).decode() + "\r\n"
+            h, b = goi(au)
+            m = re.match(r"RTSP/1\.\d (\d+)", h)
+            ma = int(m.group(1)) if m else 0
+        codec = ", ".join(sorted(set(re.findall(r"a=rtpmap:\d+ ([\w-]+)", b)))) or "?"
+        if ma == 200:
+            return ma, codec, f"Luồng video RTSP: DESCRIBE 200, codec {codec}"
+        if ma == 401:
+            return ma, codec, "Luồng video RTSP: 401 — cam từ chối user/pass cho video"
+        if ma == 404:
+            return ma, codec, "Luồng video RTSP: 404 — đường dẫn luồng không đúng"
+        return ma, codec, f"Luồng video RTSP trả mã {ma}"
+    except Exception as e:
+        return 0, "?", f"Luồng video RTSP: không kết nối được ({str(e)[:50]})"
+
+
 def _xong(kq):
     """Ghi bằng chứng cho từng cam: vào được hay không vào được đều có dữ kiện cụ thể."""
     for c in kq["cam"]:
@@ -297,6 +375,9 @@ def _xong(kq):
             b.append(txt)
         for x in c.get("da_sua", []):
             b.append("ĐÃ TỰ SỬA: " + x)
+        if c.get("rtsp_ghi"):
+            b.append(c["rtsp_ghi"] + (" — H.265: một số điện thoại không phát được trong app, IOC/VLC vẫn xem bình thường"
+                                      if "H265" in c.get("codec", "").upper() else ""))
         if c.get("anh") and os.path.exists(c["anh"]):
             b.append(f"ẢNH CHỤP qua {kq['domain']}:{c['http']} — {os.path.getsize(c['anh']) // 1024} KB")
         elif c["muc"] != XANH:
@@ -475,6 +556,9 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
     tong_file = sum(int(diem[p["stt"]].get("so") or 0) for p in kqs)
     tong_quet = sum(p.get("so_quet", 0) for p in kqs)
     khong_thay = sum(1 for p in kqs for c in p["cam"] if c.get("khong_thay"))
+    # tách: "cam KHÔNG LÊN" (có cam, không xem được) ≠ "file ghi dư" (quét đủ cam nhưng file ghi nhiều hơn)
+    file_du = sum(1 for p in kqs for c in p["cam"] if c.get("khong_thay") and c.get("t_http") == "tu_choi")
+    khong_len = sum(1 for p in kqs for c in p["cam"] if c["muc"] != XANH and not c.get("anh") and not (c.get("khong_thay") and c.get("t_http") == "tu_choi"))
     dem = {}
     for p in kqs:
         if p["muc"] == DO and not any(c["muc"] == XANH for c in p["cam"]) and p["tong"].isupper():
@@ -484,7 +568,7 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
                 if c["muc"] != XANH:
                     dem[c["nhan"]] = dem.get(c["nhan"], 0) + 1
     out = {"du_an": da["ten"], "ma": ma, "luc": time.strftime("%d/%m/%Y %H:%M"), "giay": round(time.time() - t0),
-           "tong_cam": tong_cam, "dat": dat, "tong_file": tong_file, "tong_quet": tong_quet, "khong_thay": khong_thay, "cam_la": ds_la, "so_cam_la": len(ds_la), "da_sua": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua")),
+           "tong_cam": tong_cam, "dat": dat, "tong_file": tong_file, "tong_quet": tong_quet, "khong_thay": khong_thay, "file_du": file_du, "khong_len": khong_len, "cam_la": ds_la, "so_cam_la": len(ds_la), "da_sua": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua")),
            "sua_xong": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua") and c["muc"] == XANH), "rot": sum(1 for p in kqs for c in p["cam"] if c.get("vua_rot")),
            "nhom_loi": dem, "ho_so": ho_so, "diem": sorted(kqs, key=lambda p: (int(p["stt"]) if str(p["stt"]).isdigit() else 0))}
     if not chi_diem:
@@ -614,7 +698,7 @@ def xuat_excel(goc, ket_qua):
 
 
 # ------------------------------------------------------------------ sửa từ xa
-TEN_SUA = {"khoi_phuc_mang": "Khôi phục gateway + DNS trong cam", "khoi_dong_cam": "Khởi động lại cam", "dat_port_rtsp": "Đặt lại port RTSP cho cam",
+TEN_SUA = {"dat_port_http": "Đặt lại port web/video đúng cấu hình", "khoi_phuc_mang": "Khôi phục gateway + DNS trong cam", "khoi_dong_cam": "Khởi động lại cam", "dat_port_rtsp": "Đặt lại port RTSP cho cam",
            "them_nat": "Thêm luật mở port trên modem", "khoi_dong_modem": "Khởi động lại modem",
            "nhap_lai_ddns": "Nhập lại DDNS trên cam 1"}
 
@@ -633,6 +717,19 @@ def sua(d, so, viec, cd, log=print, gw_dung=""):
             if C.cho_len(dom, http, 180):
                 return True, f"Cam {so} đã lên lại sau khởi động — bấm Kiểm tra lại để xem hình."
             return False, f"Cam {so} chưa lên lại sau 3 phút → ra điểm kiểm tra nguồn cam."
+        if viec == "dat_port_http":
+            for pth in [http] + list(range(8080, 8100)) + [80, 81, 82, 85, 88, 8000, 8001, 8002]:
+                o2 = C.Onvif(dom, pth, cd.get("cam_user", "admin"), cd.get("cam_pw", ""))
+                if C.mo(dom, pth, 2) and o2.co():
+                    o2.dat_port(http, rtsp)
+                    break
+            else:
+                return False, "Không tìm thấy cam để đặt lại port."
+            for _ in range(20):
+                if C.mo(dom, http, 3):
+                    return True, f"Cam đã về port web {http} / video {rtsp}."
+                time.sleep(3)
+            return False, f"Đã gửi lệnh nhưng port {http} chưa mở từ ngoài → modem thiếu luật NAT {http}."
         if viec == "dat_port_rtsp":
             ov.co()
             ov.dat_port(http, rtsp)
@@ -665,7 +762,7 @@ def sua(d, so, viec, cd, log=print, gw_dung=""):
 
 
 # ------------------------------------------------------------------ SỬA TẤT CẢ (người dùng bấm)
-CHAY_DUOC = ("khoi_dong_cam", "dat_port_rtsp", "khoi_phuc_mang", "nhap_lai_ddns")
+CHAY_DUOC = ("khoi_dong_cam", "dat_port_rtsp", "dat_port_http", "khoi_phuc_mang", "nhap_lai_ddns")
 
 
 def _bo_dong_bam(viec):
