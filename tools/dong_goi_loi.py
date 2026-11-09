@@ -18,6 +18,12 @@ with zipfile.ZipFile(zp, "w", zipfile.ZIP_DEFLATED) as z:
     for f in TEP:
         z.write(os.path.join(PY, f), f)
     z.writestr("manifest.json", json.dumps(mf, ensure_ascii=False))
+# gói một tệp .camlink (JSON) — điện thoại không tự giải nén như .zip
+import base64
+goi = {"loai": "camlink-loi", "phien_ban": pb, "tep": {f: {"sha256": tep[f], "b64": base64.b64encode(open(os.path.join(PY, f), "rb").read()).decode()} for f in TEP}}
+cl = os.path.join(out, f"CamLink-loi-{pb}.camlink")
+json.dump(goi, open(cl, "w"), ensure_ascii=False)
+print(cl, os.path.getsize(cl) // 1024, "KB")
 gr = os.path.join(G, "app/build.gradle.kts")
 code = int(re.search(r"versionCode = (\d+)", open(gr).read()).group(1)); ten = re.search(r'versionName = "([^"]+)"', open(gr).read()).group(1)
 cu = {}

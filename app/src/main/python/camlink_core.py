@@ -9,7 +9,7 @@ GPS tìm điểm gần nhất trên TẤT CẢ dự án → tự chọn đúng d
 import json, os, re, time, unicodedata
 import camlink_dt as C
 
-PHIEN_BAN_LOI = "1.5.17"
+PHIEN_BAN_LOI = "1.5.18"
 KENH_CAP_NHAT = "https://claude.ai/artifact/D5udnnkXEqbKMRBmsMhjGy"   # kênh cập nhật (đổi được bằng gói zip, không cần APK)   # phiên bản phần logic Python (cập nhật đè được, vài trăm KB)
 
 GOC = None
@@ -590,10 +590,32 @@ def phien_ban_loi():
 
 
 def nap_cap_nhat_zip(duong_zip):
-    """Nạp gói cập nhật .zip (chứa các .py + manifest.json có sha256) vào thư mục capnhat → áp dụng khi mở lại app."""
-    import hashlib, zipfile
+    """Nạp gói cập nhật: .zip HOẶC gói một tệp .camlink (JSON, không bị điện thoại tự giải nén) → áp dụng khi mở lại app."""
+    import base64, hashlib, zipfile
     th = os.path.join(GOC, "capnhat")
     os.makedirs(th, exist_ok=True)
+    with open(duong_zip, "rb") as fh:
+        dau = fh.read(4)
+    if dau[:1] == b"{":   # gói một tệp .camlink
+        with open(duong_zip, encoding="utf-8") as fh:
+            goi = json.load(fh)
+        if goi.get("loai") != "camlink-loi":
+            raise RuntimeError("Đây không phải gói cập nhật CamLink")
+        for f, nd in goi["tep"].items():
+            if f not in TEP_LOI:
+                raise RuntimeError(f"Gói chứa tệp lạ: {f}")
+            d = base64.b64decode(nd["b64"])
+            if hashlib.sha256(d).hexdigest() != nd["sha256"]:
+                raise RuntimeError(f"Tệp {f} sai chữ ký — gói hỏng")
+            with open(os.path.join(th, f), "wb") as fh:
+                fh.write(d)
+        with open(os.path.join(th, "manifest.json"), "w", encoding="utf-8") as fh:
+            json.dump({"phien_ban": goi["phien_ban"], "tep": {f: nd["sha256"] for f, nd in goi["tep"].items()}}, fh)
+        return f"Đã nạp lõi {goi['phien_ban']} ({len(goi['tep'])} tệp). Mở lại app để dùng."
+    if dau[:2] != b"PK":
+        ten = os.path.basename(duong_zip)
+        raise RuntimeError("Tệp đã chọn không phải gói cập nhật (có thể điện thoại đã tự giải nén và bạn chọn nhầm tệp bên trong). "
+                           "Hãy chọn đúng tệp CamLink-loi-x.y.z.camlink hoặc .zip còn nguyên.")
     with zipfile.ZipFile(duong_zip) as z:
         ten = z.namelist()
         if "manifest.json" not in ten:
