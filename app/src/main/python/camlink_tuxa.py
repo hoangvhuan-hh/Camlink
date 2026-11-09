@@ -204,9 +204,14 @@ def kiem_diem(stt, d, cd, anh_dir, ma, ho_so=None):
                      [f"Bấm Sửa từ xa để thêm luật NAT {c['rtsp']} (cần vào được web modem)."], ["them_nat"], "Thiếu NAT RTSP")
             continue
         if c.get("them"):
-            _ket(c, VANG, f"Cam chạy tốt nhưng ở port {c['http']} — KHÔNG có trong cấu hình điểm này",
-                 ["Kiểm tra cam này có phải của điểm này không (có thể tên miền bị đổi/gộp giữa các điểm).",
-                  "Đúng là của điểm này: cập nhật lại file khảo sát."], [], "Cam lạ ngoài cấu hình")
+            mac_hs = {x.get("mac", "").upper() for x in (ho_so or {}).get("cam", []) if x.get("mac")}
+            cua_minh = bool(c.get("mac")) and c["mac"].upper() in mac_hs
+            _ket(c, VANG, f"CAM LẠ: đang dùng tên miền {dom} ở port {c['http']} nhưng KHÔNG có trong hồ sơ điểm này"
+                 + (f" ({c['hang']} {c['model']}, MAC {c.get('mac', '')})" if c.get("model") else "")
+                 + (" — MAC trùng cam mình đã lắp (có thể bị đổi port)" if cua_minh else " — thiết bị không do mình lắp"),
+                 ["Hệ thống có thêm thiết bị mà hồ sơ không có: hoặc đơn vị khác nâng cấp/lắp thêm không báo, hoặc có người biết pass modem/cam đã thêm hoặc can thiệp.",
+                  "Xác minh với đơn vị quản lý điểm: ai lắp, khi nào. Nếu không ai nhận → đổi pass modem và pass cam cả điểm.",
+                  "Nếu là cam hợp lệ: bổ sung vào file khảo sát để lần sau không báo lạ."], [], "CAM LẠ (ngoài hồ sơ)")
             continue
         if c.get("loi_cau_hinh"):
             _ket(c, VANG, "Cam đang chạy (có hình) nhưng cấu hình trong cam chưa đúng: " + c["loi_cau_hinh"][0],
@@ -447,12 +452,23 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
             cu_m = tr_cam.get((p["stt"], c["so"]))
             c["vua_rot"] = cu_m == XANH and c["muc"] != XANH
             c["vua_len"] = cu_m is not None and cu_m != XANH and c["muc"] == XANH
+    cu_la = {(x["domain"], x["http"]): x for x in truoc.get("cam_la", [])}
+    ds_la = []
+    for p in kqs:
+        for c in p["cam"]:
+            if c.get("them"):
+                k = (p["domain"], c["http"])
+                ds_la.append({"stt": p["stt"], "ten": p["ten"], "domain": p["domain"], "http": c["http"], "web": c["web"],
+                              "hang": c.get("hang", ""), "model": c.get("model", ""), "mac": c.get("mac", ""),
+                              "serial": c.get("serial", ""), "anh": c.get("anh", ""),
+                              "lan_dau": cu_la[k]["lan_dau"] if k in cu_la else time.strftime("%d/%m/%Y %H:%M"),
+                              "moi": k not in cu_la})
+                c["cam_la_moi"] = k not in cu_la
     tong_cam = sum(len(p["cam"]) for p in kqs)
     dat = sum(1 for p in kqs for c in p["cam"] if c["muc"] == XANH)
     tong_file = sum(int(diem[p["stt"]].get("so") or 0) for p in kqs)
     tong_quet = sum(p.get("so_quet", 0) for p in kqs)
     khong_thay = sum(1 for p in kqs for c in p["cam"] if c.get("khong_thay"))
-    cam_la = sum(1 for p in kqs for c in p["cam"] if c.get("them"))
     dem = {}
     for p in kqs:
         if p["muc"] == DO and not any(c["muc"] == XANH for c in p["cam"]) and p["tong"].isupper():
@@ -462,12 +478,15 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
                 if c["muc"] != XANH:
                     dem[c["nhan"]] = dem.get(c["nhan"], 0) + 1
     out = {"du_an": da["ten"], "ma": ma, "luc": time.strftime("%d/%m/%Y %H:%M"), "giay": round(time.time() - t0),
-           "tong_cam": tong_cam, "dat": dat, "tong_file": tong_file, "tong_quet": tong_quet, "khong_thay": khong_thay, "cam_la": cam_la, "da_sua": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua")),
+           "tong_cam": tong_cam, "dat": dat, "tong_file": tong_file, "tong_quet": tong_quet, "khong_thay": khong_thay, "cam_la": ds_la, "so_cam_la": len(ds_la), "da_sua": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua")),
            "sua_xong": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua") and c["muc"] == XANH), "rot": sum(1 for p in kqs for c in p["cam"] if c.get("vua_rot")),
            "nhom_loi": dem, "diem": sorted(kqs, key=lambda p: (int(p["stt"]) if str(p["stt"]).isdigit() else 0))}
     if not chi_diem:
         with open(f, "w", encoding="utf-8") as fh:
             json.dump(out, fh, ensure_ascii=False)
+    if ds_la:
+        log(f"⚠ CAM LẠ: theo file {tong_file} cam + {len(ds_la)} cam lạ scan thấy ở "
+            + "; ".join(f"điểm {x['stt']} ({x['domain']}:{x['http']}{', MỚI' if x['moi'] else ''})" for x in ds_la))
     log(f"→ File ghi {tong_file} cam · quét thực tế thấy {tong_quet} cam · {dat} cam đạt · {out['rot']} cam vừa rớt so với lần trước · {out['giay']} giây")
     return out
 
@@ -546,6 +565,20 @@ def xuat_excel(goc, ket_qua):
             th.cell(th.max_row, 5).font = Font(bold=True, color="B42318")
     for col, w in zip("ABCDEFGHI", [5, 30, 30, 12, 14, 18, 9, 22, 50]):
         th.column_dimensions[col].width = w
+    # ---- Cam lạ
+    if ket_qua.get("cam_la"):
+        cl = wb.create_sheet("Cam la", 1)
+        cl.append([f"CAM LẠ — theo file {ket_qua.get('tong_file', '')} cam + {len(ket_qua['cam_la'])} cam lạ scan thấy — có thể nâng cấp không báo hoặc bị can thiệp"])
+        cl["A1"].font = Font(bold=True, size=13, color="B42318")
+        cl.append(["Điểm", "Tên điểm", "Domain", "Port", "Link web", "Hãng/Model", "MAC", "Serial", "Thấy lần đầu", "Mới phát hiện"])
+        for c in cl[2]:
+            c.font = Font(bold=True, color="FFFFFF")
+            c.fill = PatternFill("solid", fgColor="7A1FA2")
+        for x in ket_qua["cam_la"]:
+            cl.append([x["stt"], x["ten"], x["domain"], x["http"], x["web"], f"{x['hang']} {x['model']}".strip(), x["mac"], x["serial"], x["lan_dau"], "MỚI" if x["moi"] else ""])
+            cl.cell(cl.max_row, 5).hyperlink = x["web"]
+        for col, w in zip("ABCDEFGHIJ", [6, 28, 30, 6, 34, 22, 20, 22, 18, 12]):
+            cl.column_dimensions[col].width = w
     # ---- Báo cáo sửa tất cả
     if ket_qua.get("bao_cao_sua"):
         bs = wb.create_sheet("Bao cao sua", 1)
@@ -634,7 +667,7 @@ def _tinh_lai(kq, diem):
     kq["dat"] = sum(1 for p in ds for c in p["cam"] if c["muc"] == XANH)
     kq["tong_quet"] = sum(p.get("so_quet", 0) for p in ds)
     kq["khong_thay"] = sum(1 for p in ds for c in p["cam"] if c.get("khong_thay"))
-    kq["cam_la"] = sum(1 for p in ds for c in p["cam"] if c.get("them"))
+    kq["so_cam_la"] = sum(1 for p in ds for c in p["cam"] if c.get("them"))
     dem = {}
     for p in ds:
         if p["muc"] == DO and not any(c["muc"] == XANH for c in p["cam"]) and p["tong"].isupper():

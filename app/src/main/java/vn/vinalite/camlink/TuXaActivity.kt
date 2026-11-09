@@ -262,11 +262,27 @@ class TuXaActivity : Activity() {
         tt.addView(chu("Kiểm lúc ${k.optString("luc")} · ${k.optInt("giay")} giây", 12f, mau = "#5B6776"))
         val tongFile = k.optInt("tong_file")
         val tongQuet = k.optInt("tong_quet")
-        val camLa = k.optInt("cam_la")
+        val camLa = k.optInt("so_cam_la")
         tt.addView(chu("$dat cam ĐẠT (có ảnh)", 20f, true, if (dat >= tongFile && dat > 0) "#1D7A46" else "#B42318"))
         tt.addView(chu("File khảo sát ghi: $tongFile cam\nQuét thực tế trên các tên miền: $tongQuet cam" +
-            (if (camLa > 0) "\n  trong đó $camLa cam ở port ngoài cấu hình (app vẫn kiểm, không bỏ sót)" else "") +
+            (if (camLa > 0) "\n  = theo file $tongFile cam + $camLa CAM LẠ ngoài hồ sơ" else "") +
             (if (k.optInt("khong_thay") > 0) "\nFile ghi nhưng không thấy cam: ${k.optInt("khong_thay")} vị trí" else ""), 14f))
+        val dsLa = k.optJSONArray("cam_la")
+        if (dsLa != null && dsLa.length() > 0) {
+            val la = the("#7A1FA2", "#F3E8FA")
+            la.addView(chu("⚠ CAM LẠ — hệ thống có thêm thiết bị ngoài hồ sơ", 16f, true, "#7A1FA2"))
+            la.addView(chu("Theo file $tongFile cam + ${dsLa.length()} cam lạ scan thấy. Có thể đơn vị khác nâng cấp/lắp thêm không báo, hoặc có người biết pass đã thêm/can thiệp.", 14f))
+            for (i in 0 until dsLa.length()) {
+                val x = dsLa.getJSONObject(i)
+                la.addView(chu("• Điểm ${x.optString("stt")}. ${x.optString("ten")} — ${x.optString("domain")}:${x.optInt("http")}" +
+                    (if (x.optString("model").isNotEmpty()) " — ${x.optString("hang")} ${x.optString("model")}" else "") +
+                    (if (x.optString("mac").isNotEmpty()) " — MAC ${x.optString("mac")}" else "") +
+                    "\n  thấy lần đầu ${x.optString("lan_dau")}" + (if (x.optBoolean("moi")) "   🆕 MỚI PHÁT HIỆN" else ""), 14f, x.optBoolean("moi"), "#17202B"))
+                la.addView(link("🌐 ${x.optString("web")}") { moLink(x.optString("web")) })
+            }
+            la.addView(chu("Việc cần làm: xác minh với đơn vị quản lý điểm ai lắp, khi nào. Không ai nhận → đổi pass modem + pass cam cả điểm. Hợp lệ → bổ sung file khảo sát.", 13f, true, "#7A1FA2"))
+            tt.addView(la)
+        }
         val bcs = k.optJSONArray("bao_cao_sua")
         if (bcs != null) {
             var xong = 0
