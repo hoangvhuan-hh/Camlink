@@ -1,0 +1,130 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.7/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+
+> Configure project :app
+Warning: Python version 3.11 may have fewer packages available. If you experience problems, try switching to version 3.8.
+
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :app:checkKotlinGradlePluginConfigurationErrors
+> Task :app:generateDebugResValues
+> Task :app:checkDebugAarMetadata
+> Task :app:mapDebugSourceSetPaths
+> Task :app:generateDebugResources
+> Task :app:packageDebugResources
+> Task :app:mergeDebugResources
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug
+> Task :app:parseDebugLocalResources
+> Task :app:processDebugMainManifest
+> Task :app:processDebugManifest
+> Task :app:extractDebugPythonBuildPackages
+> Task :app:processDebugManifestForPackage
+> Task :app:processDebugResources
+
+> Task :app:generateDebugPythonRequirements
+Chaquopy: Installing for arm64-v8a
+Looking in indexes: https://pypi.org/simple, https://chaquo.com/pypi-13.1
+Collecting requests
+  Downloading requests-2.34.2-py3-none-any.whl (73 kB)
+Collecting openpyxl
+  Downloading openpyxl-3.1.5-py2.py3-none-any.whl (250 kB)
+Collecting rsa
+  Downloading rsa-4.9.1-py3-none-any.whl (34 kB)
+Collecting pillow
+  Downloading https://chaquo.com/pypi-13.1/pillow/pillow-11.0.0-0-cp311-cp311-android_24_arm64_v8a.whl (582 kB)
+Collecting idna<4,>=2.5
+  Downloading idna-3.20-py3-none-any.whl (69 kB)
+Collecting charset_normalizer<4,>=2
+  Downloading charset_normalizer-3.5.2-py3-none-any.whl (68 kB)
+Collecting urllib3<3,>=1.26
+  Downloading urllib3-2.8.0-py3-none-any.whl (135 kB)
+Collecting certifi>=2023.5.7
+  Downloading certifi-2026.10.23-py3-none-any.whl (135 kB)
+Collecting et-xmlfile
+  Downloading et_xmlfile-2.0.0-py3-none-any.whl (18 kB)
+Collecting pyasn1>=0.1.3
+  Downloading pyasn1-0.6.5-py3-none-any.whl (84 kB)
+Collecting chaquopy-freetype>=2.9.1
+  Downloading https://chaquo.com/pypi-13.1/chaquopy-freetype/chaquopy_freetype-2.9.1-2-py3-none-android_21_arm64_v8a.whl (533 kB)
+Collecting chaquopy-libjpeg>=1.5.3
+  Downloading https://chaquo.com/pypi-13.1/chaquopy-libjpeg/chaquopy_libjpeg-1.5.3-1-py3-none-android_21_arm64_v8a.whl (176 kB)
+Installing collected packages: idna, charset-normalizer, urllib3, certifi, requests, et-xmlfile, openpyxl, pyasn1, rsa, chaquopy-freetype, chaquopy-libjpeg, pillow
+Successfully installed certifi-2026.10.23 chaquopy-freetype-2.9.1 chaquopy-libjpeg-1.5.3 charset-normalizer-3.5.2 et-xmlfile-2.0.0 idna-3.20 openpyxl-3.1.5 pillow-11.0.0 pyasn1-0.6.5 requests-2.34.2 rsa-4.9.1 urllib3-2.8.0
+Chaquopy: Installing for armeabi-v7a
+Looking in indexes: https://pypi.org/simple, https://chaquo.com/pypi-13.1
+Collecting chaquopy-freetype==2.9.1
+  Downloading https://chaquo.com/pypi-13.1/chaquopy-freetype/chaquopy_freetype-2.9.1-2-py3-none-android_16_armeabi_v7a.whl (508 kB)
+Collecting chaquopy-libjpeg==1.5.3
+  Downloading https://chaquo.com/pypi-13.1/chaquopy-libjpeg/chaquopy_libjpeg-1.5.3-1-py3-none-android_16_armeabi_v7a.whl (122 kB)
+Collecting pillow==11.0.0
+  Downloading https://chaquo.com/pypi-13.1/pillow/pillow-11.0.0-0-cp311-cp311-android_24_armeabi_v7a.whl (527 kB)
+Installing collected packages: chaquopy-freetype, chaquopy-libjpeg, pillow
+Successfully installed chaquopy-freetype-2.9.1 chaquopy-libjpeg-1.5.3 pillow-11.0.0
+Chaquopy: Installing for x86_64
+Looking in indexes: https://pypi.org/simple, https://chaquo.com/pypi-13.1
+Collecting chaquopy-freetype==2.9.1
+  Downloading https://chaquo.com/pypi-13.1/chaquopy-freetype/chaquopy_freetype-2.9.1-2-py3-none-android_21_x86_64.whl (567 kB)
+Collecting chaquopy-libjpeg==1.5.3
+  Downloading https://chaquo.com/pypi-13.1/chaquopy-libjpeg/chaquopy_libjpeg-1.5.3-1-py3-none-android_21_x86_64.whl (147 kB)
+Collecting pillow==11.0.0
+  Downloading https://chaquo.com/pypi-13.1/pillow/pillow-11.0.0-0-cp311-cp311-android_24_x86_64.whl (603 kB)
+Installing collected packages: chaquopy-freetype, chaquopy-libjpeg, pillow
+Successfully installed chaquopy-freetype-2.9.1 chaquopy-libjpeg-1.5.3 pillow-11.0.0
+
+> Task :app:mergeDebugPythonSources
+> Task :app:generateDebugPythonProxies
+> Task :app:javaPreCompileDebug
+> Task :app:mergeDebugShaders
+> Task :app:compileDebugShaders NO-SOURCE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :app:generateDebugPythonMiscAssets
+> Task :app:generateDebugPythonRequirementsAssets
+> Task :app:generateDebugPythonSourceAssets
+> Task :app:generateDebugPythonBuildAssets
+> Task :app:mergeDebugAssets
+> Task :app:compressDebugAssets
+> Task :app:mergeDebugStartupProfile
+> Task :app:checkDebugDuplicateClasses
+> Task :app:generateDebugPythonJniLibs
+> Task :app:mergeLibDexDebug
+> Task :app:mergeDebugJniLibFolders
+> Task :app:validateSigningDebug
+> Task :app:writeDebugAppMetadata
+> Task :app:writeDebugSigningConfigVersions
+> Task :app:mergeDebugNativeLibs
+> Task :app:desugarDebugFileDependencies
+
+> Task :app:stripDebugDebugSymbols
+Unable to strip the following libraries, packaging them as they are: libc++_shared.so, libchaquopy_java.so, libcrypto_chaquopy.so, libpython3.11.so, libsqlite3_chaquopy.so, libssl_chaquopy.so, libvlc.so, libvlcjni.so.
+
+> Task :app:mergeExtDexDebug
+
+> Task :app:compileDebugKotlin
+w: file:///home/runner/work/Camlink/Camlink/app/src/main/java/vn/vinalite/camlink/MainActivity.kt:434:23 'getter for allNetworks: Array<(out) Network!>' is deprecated. Deprecated in Java
+w: file:///home/runner/work/Camlink/Camlink/app/src/main/java/vn/vinalite/camlink/MainActivity.kt:489:21 'getter for allNetworks: Array<(out) Network!>' is deprecated. Deprecated in Java
+w: file:///home/runner/work/Camlink/Camlink/app/src/main/java/vn/vinalite/camlink/RtspCau.kt:95:17 Variable 'truoc' is assigned but never accessed
+w: file:///home/runner/work/Camlink/Camlink/app/src/main/java/vn/vinalite/camlink/RtspCau.kt:101:17 The value 'c' assigned to 'var truoc: Int defined in vn.vinalite.camlink.RtspCau.chuyen' is never used
+w: file:///home/runner/work/Camlink/Camlink/app/src/main/java/vn/vinalite/camlink/TuXaActivity.kt:309:24 'getter for allNetworks: Array<(out) Network!>' is deprecated. Deprecated in Java
+w: file:///home/runner/work/Camlink/Camlink/app/src/main/java/vn/vinalite/camlink/TuXaActivity.kt:555:58 Unchecked cast: Triple<*, *, *> to Triple<FrameLayout, String, TextView>
+
+> Task :app:compileDebugJavaWithJavac NO-SOURCE
+> Task :app:dexBuilderDebug
+> Task :app:mergeDebugGlobalSynthetics
+> Task :app:processDebugJavaRes
+> Task :app:mergeProjectDexDebug
+> Task :app:mergeDebugJavaResource
+> Task :app:packageDebug
+> Task :app:createDebugApkListingFileRedirect
+> Task :app:assembleDebug
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run-1794203327852.json
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/8.7/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 1m 8s
+46 actionable tasks: 46 executed
