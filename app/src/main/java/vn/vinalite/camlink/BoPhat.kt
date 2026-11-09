@@ -25,7 +25,7 @@ class BoPhat(private val act: Activity) {
     private fun dp(v: Int) = (v * act.resources.displayMetrics.density).toInt()
 
     /** Phát url vào khung; trangThai nhận dòng trạng thái. Lỗi → hiện lý do + nút mở VLC ngoài. */
-    fun phat(khung: FrameLayout, url: String, trangThai: TextView, chieuCao: Int = 200) {
+    fun phat(khung: FrameLayout, url: String, trangThai: TextView, chieuCao: Int = 200, khiLoi: (() -> Unit)? = null) {
         dung(url)
         khung.removeAllViews()
         if (url.isEmpty()) { trangThai.text = "Không có luồng video"; return }
@@ -49,13 +49,14 @@ class BoPhat(private val act: Activity) {
                     trangThai.text = "🔴 TRỰC TIẾP · ${java.text.SimpleDateFormat("HH:mm:ss").format(java.util.Date())} · ${(System.currentTimeMillis() - t0) / 1000}s"
                     trangThai.setTextColor(Color.parseColor("#1D7A46"))
                 }
-                MediaPlayer.Event.EncounteredError -> ui.post { loi(khung, url, trangThai, "libVLC báo lỗi luồng (sau ${(System.currentTimeMillis() - t0) / 1000}s)") }
-                MediaPlayer.Event.EndReached -> ui.post { loi(khung, url, trangThai, "Luồng kết thúc sớm — cam ngắt kết nối") }
+                MediaPlayer.Event.EncounteredError -> ui.post { loi(khung, url, trangThai, "libVLC báo lỗi luồng (sau ${(System.currentTimeMillis() - t0) / 1000}s)"); khiLoi?.invoke() }
+                MediaPlayer.Event.EndReached -> ui.post { loi(khung, url, trangThai, "Luồng kết thúc sớm — cam ngắt kết nối"); khiLoi?.invoke() }
             }
         }
         ui.postDelayed({
-            if (dang[url] === mp && !mp.isPlaying && mp.vlcVout?.areViewsAttached() == true && trangThai.text.startsWith("⏳"))
-                loi(khung, url, trangThai, "Không nhận được hình sau 20 giây")
+            if (dang[url] === mp && !mp.isPlaying && mp.vlcVout?.areViewsAttached() == true && trangThai.text.startsWith("⏳")) {
+                loi(khung, url, trangThai, "Không nhận được hình sau 20 giây"); khiLoi?.invoke()
+            }
         }, 20000)
         mp.play()
         dang[url] = mp

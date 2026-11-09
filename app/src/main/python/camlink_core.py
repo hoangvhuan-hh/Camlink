@@ -9,7 +9,7 @@ GPS tìm điểm gần nhất trên TẤT CẢ dự án → tự chọn đúng d
 import json, os, re, time, unicodedata
 import camlink_dt as C
 
-PHIEN_BAN_LOI = "1.7.0"
+PHIEN_BAN_LOI = "1.7.1"
 KENH_CAP_NHAT = "https://claude.ai/artifact/D5udnnkXEqbKMRBmsMhjGy"   # kênh cập nhật (đổi được bằng gói zip, không cần APK)   # phiên bản phần logic Python (cập nhật đè được, vài trăm KB)
 
 GOC = None
@@ -501,11 +501,12 @@ def ds_du_an():
             for ma, da in _cac_du_an().items()]
 
 
-def tuxa_kiem(ma, log):
+def tuxa_kiem(ma, log, nhanh=True):
+    """nhanh=True: điểm lần trước toàn ĐẠT lấy lại từ lịch sử (live xác minh), chỉ quét lại điểm có sự cố. nhanh=False: quét hết."""
     import camlink_tuxa as T
     log = _cb(log)
     da = _doc_du_an(ma)
-    kq = T.kiem_du_an(GOC, da, ma, C.doc_cai_dat(), log)
+    kq = T.kiem_du_an(GOC, da, ma, C.doc_cai_dat(), log, nhanh=bool(nhanh))
     # tự ghi hiệu chỉnh vào hồ sơ dự án (giữ giá trị gốc của file để đối chiếu)
     doi = False
     for h in kq.get("hieu_chinh", []):
@@ -598,7 +599,18 @@ def tuxa_kiem_diem(ma, stt, log):
     import camlink_tuxa as T
     log = _cb(log)
     kq = T.kiem_du_an(GOC, _doc_du_an(ma), ma, C.doc_cai_dat(), log, chi_diem=[stt], tu_sua=False)
-    return json.dumps(kq["diem"][0], ensure_ascii=False)
+    p = kq["diem"][0]
+    # cập nhật điểm này vào lịch sử để lần kiểm nhanh sau không lấy lại kết quả cũ sai
+    try:
+        f = T._f_lich_su(GOC, ma)
+        with open(f, encoding="utf-8") as fh:
+            ls = json.load(fh)
+        ls["diem"] = [p if x["stt"] == p["stt"] else x for x in ls.get("diem", [])]
+        with open(f, "w", encoding="utf-8") as fh:
+            json.dump(ls, fh, ensure_ascii=False)
+    except (OSError, ValueError, KeyError):
+        pass
+    return json.dumps(p, ensure_ascii=False)
 
 
 def tuxa_gan_nhat(ma):

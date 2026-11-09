@@ -18,6 +18,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -140,7 +141,9 @@ class GiamSatActivity : Activity() {
             oCam.addView(tt)
             if (c.optString("muc") == "xanh" && c.optString("live").isNotEmpty() && soPhat < 4) {
                 soPhat++
-                boPhat.phat(khung, c.optString("live"), tt, cao)
+                val lichSu = c.optString("tu_lich_su")
+                if (lichSu.isNotEmpty()) oCam.addView(chu("↺ lấy từ lần kiểm $lichSu — live lên = còn tốt; không lên app tự kiểm lại điểm", 10f, false, "#9AA8B5"), 1)
+                boPhat.phat(khung, c.optString("live"), tt, cao, if (lichSu.isNotEmpty() && !daXacMinh.contains(p.optString("stt"))) ({ xacMinhDiem(p) }) else null)
             } else {
                 khung.setBackgroundColor(Color.parseColor("#5A1F1A"))
                 val ly = c.optString("nguyen_nhan").take(140)
@@ -168,6 +171,25 @@ class GiamSatActivity : Activity() {
         if (mapUrl.isNotEmpty()) hang.addView(Button(this).apply { text = "📍 Dẫn đường"; isAllCaps = false; setOnClickListener { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(mapUrl))) } }, LinearLayout.LayoutParams(0, -2, 1f))
         hang.addView(Button(this).apply { text = "📋 Chi tiết / sửa"; isAllCaps = false; setOnClickListener { setResult(RESULT_OK, Intent().putExtra("stt", p.optString("stt"))); finish() } }, LinearLayout.LayoutParams(0, -2, 1f))
         goc.addView(hang)
+    }
+
+    private val daXacMinh = HashSet<String>()
+
+    /** Cam lấy từ lịch sử mà live không lên → kiểm đầy đủ lại điểm đó ngay (một lần), cập nhật ô. */
+    private fun xacMinhDiem(p: JSONObject) {
+        val stt = p.optString("stt")
+        if (!daXacMinh.add(stt)) return
+        Toast.makeText(this, "Điểm $stt: live không lên → đang kiểm lại điểm này…", Toast.LENGTH_SHORT).show()
+        Thread {
+            try {
+                val core = com.chaquo.python.Python.getInstance().getModule("camlink_core")
+                val moi = JSONObject(core.callAttr("tuxa_kiem_diem", ma, stt, null).toString())
+                val ds = kq.optJSONArray("diem")!!
+                for (i in 0 until ds.length()) if (ds.getJSONObject(i).optString("stt") == stt) ds.put(i, moi)
+                File(intent.getStringExtra("file")!!).writeText(kq.toString())
+                runOnUiThread { if (dangMo == stt) moDiem(moi) }
+            } catch (e: Exception) { runOnUiThread { Toast.makeText(this, "Kiểm lại điểm $stt lỗi: ${e.message?.take(80)}", Toast.LENGTH_LONG).show() } }
+        }.start()
     }
 
     private fun hanhDong(p: JSONObject, c: JSONObject, id: String) {

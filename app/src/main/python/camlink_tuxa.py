@@ -478,14 +478,31 @@ def tu_sua_diem(p, d, cd, anh_dir, ma, ho_so, log):
     return _xong(moi)
 
 
-def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
+def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True, nhanh=False):
     anh_dir = os.path.join(goc, "ketqua")
     os.makedirs(anh_dir, exist_ok=True)
     diem = da["diem"]
     ds = [k for k in diem if not chi_diem or k in chi_diem]
     ho_so = da.get("ho_so", {})
     toa_do = da.get("toa_do", {})
-    log(f"KIỂM TRA TỪ XA — {da['ten']}: {len(ds)} điểm (chỉ đọc, qua Internet)")
+    # chế độ NHANH: điểm lần trước toàn ĐẠT → lấy lại từ lịch sử, phát live để xác minh; chỉ quét lại điểm có sự cố
+    ls_truoc = {}
+    try:
+        with open(_f_lich_su(goc, ma), encoding="utf-8") as fh:
+            ls_truoc = json.load(fh)
+    except (OSError, ValueError):
+        pass
+    tai_su_dung = {}
+    if nhanh and not chi_diem and ls_truoc.get("diem") and not ls_truoc.get("khong_tin_cay"):
+        for p in ls_truoc["diem"]:
+            if p["cam"] and all(c["muc"] == XANH for c in p["cam"]) and p["stt"] in diem and p["domain"] == diem[p["stt"]]["domain"]:
+                tai_su_dung[p["stt"]] = p
+    quet_ds = [k for k in ds if k not in tai_su_dung]
+    if tai_su_dung:
+        log(f"KIỂM TRA NHANH — {da['ten']}: {len(tai_su_dung)} điểm lần trước ({ls_truoc.get('luc', '')}) toàn ĐẠT → lấy lại, phát live để xác minh; "
+            f"quét lại {len(quet_ds)} điểm có sự cố")
+    else:
+        log(f"KIỂM TRA TỪ XA — {da['ten']}: {len(ds)} điểm (chỉ đọc, qua Internet)")
     t0 = time.time()
     mang_truoc = mang_dien_thoai_ok()
     if not mang_truoc:
@@ -511,7 +528,17 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
         return r
 
     with ThreadPoolExecutor(4) as ex:
-        kqs = list(ex.map(mot, ds))
+        kq_quet = dict(zip(quet_ds, ex.map(mot, quet_ds)))
+    kqs = []
+    for k in ds:
+        if k in kq_quet:
+            kqs.append(kq_quet[k])
+        else:
+            p = dict(tai_su_dung[k])
+            p["tu_lich_su"] = ls_truoc.get("luc", "")
+            for c in p["cam"]:
+                c["tu_lich_su"] = p["tu_lich_su"]
+            kqs.append(p)
     mang_sau = mang_dien_thoai_ok()
     # ---- LƯỢT 2 (tuần tự, không dồn mạng): mọi cam/điểm im lặng ở lượt 1 đo lại 2 lần × 6 giây rồi mới kết luận
     nghi_ngo = [i for i, p in enumerate(kqs) if any(c["muc"] != XANH and c.get("t_http") != "mo" for c in p["cam"]) or not p["cam"]]
@@ -747,6 +774,7 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
                 if c["muc"] != XANH:
                     dem[c["nhan"]] = dem.get(c["nhan"], 0) + 1
     out = {"du_an": da["ten"], "ma": ma, "luc": time.strftime("%d/%m/%Y %H:%M"), "giay": round(time.time() - t0), "khong_tin_cay": khong_tin_cay,
+           "che_do": "nhanh" if tai_su_dung else "day_du", "so_tai_su_dung": len(tai_su_dung), "so_quet_lai": len(quet_ds),
            "tong_cam": tong_cam, "dat": dat, "tong_file": tong_file, "tong_quet": tong_quet, "khong_thay": khong_thay, "file_du": file_du, "chua_xac_nhan": chua_xac_nhan, "khong_len": khong_len,
            "tung_thay": sorted(list(x) for x in tung_thay), "hieu_chinh": hieu_chinh, "tong_hc": tong_hc, "cam_la": ds_la, "so_cam_la": len(ds_la), "da_sua": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua")),
            "sua_xong": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua") and c["muc"] == XANH), "rot": sum(1 for p in kqs for c in p["cam"] if c.get("vua_rot")),

@@ -307,7 +307,7 @@ class TuXaActivity : Activity() {
         goc.addView(chu("Kiểm tra từ xa  ·  CamLink ${packageManager.getPackageInfo(packageName, 0).versionName}", 22f, true))
         val hang = LinearLayout(this)
         hang.orientation = LinearLayout.HORIZONTAL
-        hang.addView(nut("🔄 Kiểm tra lại") { kiem() }, LinearLayout.LayoutParams(0, -2, 1f))
+        hang.addView(nut("🔄 Kiểm tra lại") { kiem() }.apply { setOnLongClickListener { kiem(false); true } }, LinearLayout.LayoutParams(0, -2, 1f))
         hang.addView(nut("📤 Xuất Excel + gửi") { xuat() }, LinearLayout.LayoutParams(0, -2, 1f))
         goc.addView(hang)
         goc.addView(nut("📁 Chọn dự án / nạp file cấu hình") { chonDuAn() })
@@ -417,17 +417,19 @@ class TuXaActivity : Activity() {
     }
 
     // ---------------- kiểm tra ----------------
-    private fun kiem() {
+    /** nhanh=true (mặc định): điểm lần trước toàn ĐẠT lấy từ lịch sử, phát live xác minh; chỉ quét lại điểm có sự cố. Giữ lâu nút = quét đầy đủ. */
+    private fun kiem(nhanh: Boolean = true) {
         if (ma.isEmpty() || dangChay) return
         dangChay = true
         ketQua = null
         khung.removeAllViews()   // xoá sạch kết quả cũ trước khi kiểm tra lại
-        khung.addView(chu("⏳ Đang kiểm tra $tenDuAn…\nCam đang chạy tốt: chỉ đọc và báo cáo.\nCam có vấn đề: app tự sửa rồi kiểm tra lại cấu hình.", 15f, mau = "#0F5D8C"))
+        khung.addView(chu(if (nhanh) "⏳ Kiểm tra nhanh $tenDuAn…\nĐiểm lần trước toàn đạt: lấy lại, phát live để xác minh.\nĐiểm có sự cố: quét lại đầy đủ, tự sửa nếu được.\n(Giữ lâu nút Kiểm tra lại = quét đầy đủ mọi điểm)"
+                          else "⏳ Đang quét ĐẦY ĐỦ $tenDuAn…\nCam đang chạy tốt: chỉ đọc và báo cáo.\nCam có vấn đề: app tự sửa rồi kiểm tra lại cấu hình.", 15f, mau = "#0F5D8C"))
         nk.ghi("⏳ Đang kiểm tra $tenDuAn qua Internet…")
         thread {
             val co4G = gan4G(true)
             try {
-                val j = core.callAttr("tuxa_kiem", ma, nk).toString()
+                val j = core.callAttr("tuxa_kiem", ma, nk, nhanh).toString()
                 ui.post {
                     ketQua = JSONObject(j)
                     veBang(if (co4G) "Đã kiểm tra qua 4G (như IOC gọi từ ngoài)" else "⚠ Không bật được 4G — đã kiểm tra qua WiFi; nếu đang ở trong WiFi của chính điểm, kết quả có thể sai")
