@@ -234,8 +234,8 @@ class TuXaActivity : Activity() {
         goc.addView(nut("📁 Chọn dự án / nạp file cấu hình") { chonDuAn() })
         val hang2 = LinearLayout(this)
         hang2.orientation = LinearLayout.HORIZONTAL
-        hang2.addView(nut("🗺 Bản đồ điểm lỗi") { moBanDo() }, LinearLayout.LayoutParams(0, -2, 1f))
-        hang2.addView(nut("🔴 Live tất cả") { liveTatCa() }, LinearLayout.LayoutParams(0, -2, 1f))
+        hang2.addView(nut("🖥 Màn hình giám sát") { moGiamSat() }, LinearLayout.LayoutParams(0, -2, 1f))
+        hang2.addView(nut("🗺 Bản đồ") { moBanDo() }, LinearLayout.LayoutParams(0, -2, 1f))
         goc.addView(hang2)
         tienDo = chu("", 13f, mau = "#0F5D8C")
         tienDo.setPadding(dp(4), dp(4), dp(4), dp(4))
@@ -273,6 +273,12 @@ class TuXaActivity : Activity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == maGiamSat) {
+            val stt = data?.getStringExtra("stt") ?: return
+            val v = khung.findViewWithTag<View>("diem_$stt") ?: return
+            (khung.parent as? ScrollView)?.post { (khung.parent as ScrollView).smoothScrollTo(0, v.top) }
+            return
+        }
         val uri: Uri = data?.data ?: return
         if (requestCode != maFile || resultCode != RESULT_OK) return
         var tenFile = "khao_sat.xlsx"
@@ -345,6 +351,7 @@ class TuXaActivity : Activity() {
                 ui.post {
                     ketQua = JSONObject(j)
                     veBang(if (co4G) "Đã kiểm tra qua 4G (như IOC gọi từ ngoài)" else "⚠ Không bật được 4G — đã kiểm tra qua WiFi; nếu đang ở trong WiFi của chính điểm, kết quả có thể sai")
+                    moGiamSat()
                 }
             } catch (e: Exception) {
                 ui.post { nk.ghi("✖ Lỗi kiểm tra: ${e.message}") }
@@ -432,6 +439,7 @@ class TuXaActivity : Activity() {
     private fun theDiem(p: JSONObject): LinearLayout {
         val muc = p.optString("muc")
         val t = the(mauVien[muc] ?: "#5B6776", mauNen[muc] ?: "#FFFFFF")
+        t.tag = "diem_${p.optString("stt")}"
         t.addView(chu("${bieu[muc]} Điểm ${p.optString("stt")}. ${p.optString("ten")}", 16f, true))
         t.addView(chu("${p.optString("tong")}  ·  ${p.optString("domain")}${if (p.optString("ip").isNotEmpty()) " → " + p.optString("ip") else ""}", 13f, mau = "#3B4654"))
         val mapUrl = p.optString("map")
@@ -526,6 +534,14 @@ class TuXaActivity : Activity() {
         }
         hop.addView(ct)
         return hop
+    }
+
+    private val maGiamSat = 41
+    private fun moGiamSat() {
+        val k = ketQua ?: run { Toast.makeText(this, "Kiểm tra trước đã", Toast.LENGTH_SHORT).show(); return }
+        val f = File(cacheDir, "giamsat.json")
+        f.writeText(k.toString())
+        startActivityForResult(Intent(this, GiamSatActivity::class.java).putExtra("file", f.absolutePath).putExtra("ma", ma), maGiamSat)
     }
 
     private fun moBanDo() {

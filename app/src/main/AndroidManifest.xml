@@ -24,6 +24,7 @@
         <activity android:name=".HuongDanActivity" android:exported="false" />
         <activity android:name=".TuXaActivity" android:exported="false" />
         <activity android:name=".BanDoActivity" android:exported="false" />
+        <activity android:name=".GiamSatActivity" android:exported="false" android:configChanges="orientation|screenSize" />
         <activity android:name=".XemLiveActivity" android:exported="false"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
         <provider

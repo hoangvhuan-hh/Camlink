@@ -36,6 +36,7 @@ class HuongDanActivity : Activity() {
         ),
         "D. KIỂM TRA TỪ XA + SỬA TỪ XA (ở đâu cũng được)" to listOf(
             "Bấm \"Kiểm tra từ xa cả dự án\" → chọn dự án (hoặc nạp file Excel cấu hình cũ: tên miền, user/pass No-IP).",
+            "Kiểm xong app mở MÀN HÌNH GIÁM SÁT: mỗi điểm một khung thu nhỏ (lên/tổng, ảnh từng cam). Bấm khung → phóng to: bấy nhiêu cam bấy nhiêu ô, cam lên phát TRỰC TIẾP ngay, cam lỗi ghi lý do trong ô. ‹ Lưới để quay lại; 📋 Chi tiết/sửa để xem bằng chứng, link, user/pass và nút sửa.",
             "App kiểm tra TẤT CẢ điểm cùng lúc qua 4G (khoảng 1–2 phút), mỗi điểm QUÉT chính tên miền (hơn 40 port) để đếm số cam THẬT đang gắn, không tin số trong file; mỗi cam qua 5 tầng: tên miền → IP → đường truyền → port → ảnh. App tự đối chiếu chéo: cùng một cam ở 2 tên miền, cam khác lần trước, nhiều tên miền trỏ cùng IP, cam lạ ngoài cấu hình → báo ⚠.",
             "Đọc bảng: 🟢 đạt · 🟡 lỗi cấu hình (thường sửa từ xa được) · 🔴 lỗi phần cứng/mạng (phải có người tại điểm). Điểm lỗi nằm trên cùng. \"⬇ VỪA RỚT\" = cam mới hỏng so với lần kiểm trước.",
             "Bấm vào cam: xem nguyên nhân, việc tiếp theo, ảnh chụp, link web, link xem trực tiếp, user/pass cam và No-IP. Có nút Mở web, ▶ Xem, Copy.",
