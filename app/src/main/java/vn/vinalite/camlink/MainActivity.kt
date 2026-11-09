@@ -83,6 +83,12 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (!Python.isStarted()) Python.start(AndroidPlatform(this))
+        // Lõi Python cập nhật đè: nếu có thư mục capnhat (đã kiểm sha256) thì ưu tiên nạp từ đó
+        run {
+            val py = Python.getInstance()
+            val th = File(filesDir, "capnhat")
+            if (File(th, "manifest.json").exists()) py.getModule("sys")["path"]!!.callAttr("insert", 0, th.absolutePath)
+        }
         core = Python.getInstance().getModule("camlink_core")
         core.callAttr("khoi_tao", filesDir.absolutePath)
         dungGiaoDien()
@@ -112,7 +118,7 @@ class MainActivity : Activity() {
         goc.setPadding(dp(16), dp(20), dp(16), dp(12))
 
         val ten = TextView(this)
-        ten.text = "CamLink " + packageManager.getPackageInfo(packageName, 0).versionName
+        ten.text = "CamLink " + packageManager.getPackageInfo(packageName, 0).versionName + " · lõi " + core.callAttr("phien_ban_loi").toString()
         ten.textSize = 26f
         ten.setTypeface(null, Typeface.BOLD)
         goc.addView(ten)
@@ -134,6 +140,7 @@ class MainActivity : Activity() {
 
         goc.addView(nut("CHẠY CÀI ĐIỂM NÀY", chinh = true) { batDauChay() })
         goc.addView(nut("📘 Hướng dẫn sử dụng") { startActivity(Intent(this, HuongDanActivity::class.java)) })
+        goc.addView(nut("⬆ Cập nhật (lõi vài trăm KB; APK chỉ khi cần)") { capNhat() })
         goc.addView(nut("Kiểm tra từ xa cả dự án (xem lỗi + sửa từ xa)") { if (sanSang()) startActivity(Intent(this, TuXaActivity::class.java)) })
         goc.addView(nut("Chọn điểm bằng tay") { chonDiem(chiKiemTra = false) })
         goc.addView(nut("Xem sơ đồ + ảnh lần chạy gần nhất") { moSoDoGanNhat() })
@@ -226,6 +233,7 @@ class MainActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         val uri: Uri = data?.data ?: return
+        if (requestCode == maZip && resultCode == RESULT_OK) { napZip(uri); return }
         if (requestCode != maFile || resultCode != RESULT_OK) return
         var tenFile = "khao_sat.xlsx"
         contentResolver.query(uri, null, null, null, null)?.use { c ->
@@ -533,6 +541,61 @@ class MainActivity : Activity() {
     }
 
     // ---------------- Gửi kết quả ----------------
+    // ---------------- cập nhật đè ----------------
+    private val maZip = 31
+    private val kenhCapNhat = "https://raw.githubusercontent.com/hoangvhuan-hh/camlink-capnhat/main"
+
+    private fun capNhat() {
+        AlertDialog.Builder(this).setTitle("Cập nhật CamLink")
+            .setMessage("• Tự động: tải phần logic mới (vài trăm KB) từ kênh cập nhật; chỉ tải APK khi phần Android thay đổi.\n• Từ file: nạp gói .zip Claude gửi (vài trăm KB).")
+            .setPositiveButton("Tự động") { _, _ ->
+                thread {
+                    try {
+                        val pc = packageManager.getPackageInfo(packageName, 0).longVersionCode
+                        val j = org.json.JSONObject(core.callAttr("kiem_cap_nhat", kenhCapNhat, pc).toString())
+                        ui.post {
+                            val loi = j.optString("loi_moi", "")
+                            val apk = j.optJSONObject("apk_moi")
+                            val sb = StringBuilder()
+                            if (loi.isNotEmpty() && loi != "null") sb.append("✔ Đã tải lõi $loi — mở lại app để dùng.\n")
+                            if (apk != null) sb.append("Có APK mới ${apk.optString("ten")} (${apk.optString("mb")} MB): ${apk.optString("ly_do")}\n")
+                            if (sb.isEmpty()) sb.append("Đang là bản mới nhất.")
+                            val d = AlertDialog.Builder(this).setTitle("Cập nhật").setMessage(sb.toString())
+                            if (apk != null) d.setPositiveButton("Tải APK") { _, _ -> startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(apk.optString("url")))) }
+                            if (loi.isNotEmpty() && loi != "null") d.setNeutralButton("Mở lại app") { _, _ -> khoiDongLai() }
+                            d.setNegativeButton("Đóng", null).show()
+                        }
+                    } catch (e: Exception) {
+                        ui.post { AlertDialog.Builder(this).setTitle("Cập nhật").setMessage("Không nối được kênh cập nhật: ${e.message}\nDùng 'Từ file' nếu Claude đã gửi gói .zip.").setPositiveButton("Đóng", null).show() }
+                    }
+                }
+            }
+            .setNeutralButton("Từ file .zip") { _, _ ->
+                val i = Intent(Intent.ACTION_OPEN_DOCUMENT); i.addCategory(Intent.CATEGORY_OPENABLE); i.type = "*/*"
+                startActivityForResult(i, maZip)
+            }
+            .setNegativeButton("Đóng", null).show()
+    }
+
+    private fun napZip(uri: android.net.Uri) {
+        val dich = File(cacheDir, "capnhat.zip")
+        contentResolver.openInputStream(uri)?.use { vao -> dich.outputStream().use { vao.copyTo(it) } }
+        try {
+            val tb = core.callAttr("nap_cap_nhat_zip", dich.absolutePath).toString()
+            AlertDialog.Builder(this).setTitle("Cập nhật").setMessage(tb).setPositiveButton("Mở lại app") { _, _ -> khoiDongLai() }.setNegativeButton("Để sau", null).show()
+        } catch (e: Exception) {
+            AlertDialog.Builder(this).setTitle("Cập nhật").setMessage("Không nạp được: ${e.message}").setPositiveButton("Đóng", null).show()
+        }
+    }
+
+    private fun khoiDongLai() {
+        val i = packageManager.getLaunchIntentForPackage(packageName)!!
+        i.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(i)
+        finishAffinity()
+        android.os.Process.killProcess(android.os.Process.myPid())
+    }
+
     private fun guiFile(f: File, tieuDe: String) {
         val i = Intent(Intent.ACTION_SEND)
         i.type = "application/zip"

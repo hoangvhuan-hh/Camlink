@@ -9,6 +9,8 @@ GPS tìm điểm gần nhất trên TẤT CẢ dự án → tự chọn đúng d
 import json, os, re, time, unicodedata
 import camlink_dt as C
 
+PHIEN_BAN_LOI = "1.5.16"   # phiên bản phần logic Python (cập nhật đè được, vài trăm KB)
+
 GOC = None
 
 
@@ -576,3 +578,62 @@ def tuxa_phieu(ma, json_kq, stt):
     kq = json.loads(json_kq)
     p = next(x for x in kq["diem"] if x["stt"] == stt)
     return T.phieu_bao_mang(kq, p, (_doc_du_an(ma).get("ho_so") or {}).get(stt))
+
+
+# ------------------------------------------------------------------ cập nhật đè phần logic (không cần cài lại APK)
+TEP_LOI = ["camlink_core.py", "camlink_dt.py", "camlink_tuxa.py", "camlink_oryza.py"]
+
+
+def phien_ban_loi():
+    return PHIEN_BAN_LOI
+
+
+def nap_cap_nhat_zip(duong_zip):
+    """Nạp gói cập nhật .zip (chứa các .py + manifest.json có sha256) vào thư mục capnhat → áp dụng khi mở lại app."""
+    import hashlib, zipfile
+    th = os.path.join(GOC, "capnhat")
+    os.makedirs(th, exist_ok=True)
+    with zipfile.ZipFile(duong_zip) as z:
+        ten = z.namelist()
+        if "manifest.json" not in ten:
+            raise RuntimeError("Gói không có manifest.json")
+        mf = json.loads(z.read("manifest.json").decode("utf-8"))
+        for f, sha in mf["tep"].items():
+            if f not in TEP_LOI:
+                raise RuntimeError(f"Gói chứa tệp lạ: {f}")
+            d = z.read(f)
+            if hashlib.sha256(d).hexdigest() != sha:
+                raise RuntimeError(f"Tệp {f} sai chữ ký — gói hỏng")
+        for f in mf["tep"]:
+            with open(os.path.join(th, f), "wb") as fh:
+                fh.write(z.read(f))
+        with open(os.path.join(th, "manifest.json"), "w", encoding="utf-8") as fh:
+            json.dump(mf, fh, ensure_ascii=False)
+    return f"Đã nạp lõi {mf.get('phien_ban')} ({len(mf['tep'])} tệp, {sum(os.path.getsize(os.path.join(th, f)) for f in mf['tep']) // 1024} KB). Mở lại app để dùng."
+
+
+def kiem_cap_nhat(url_goc, phien_ban_apk_code):
+    """Hỏi kênh cập nhật: có lõi mới (tải vài trăm KB) hay APK mới (chỉ khi phần Android đổi)."""
+    import hashlib
+    import requests
+    r = requests.get(url_goc.rstrip("/") + "/phien_ban.json", timeout=15)
+    r.raise_for_status()
+    pb = r.json()
+    kq = {"loi_moi": None, "apk_moi": None}
+    if pb.get("loi") and pb["loi"] != PHIEN_BAN_LOI:
+        th = os.path.join(GOC, "capnhat")
+        os.makedirs(th, exist_ok=True)
+        for f, sha in pb["tep"].items():
+            if f not in TEP_LOI:
+                continue
+            d = requests.get(url_goc.rstrip("/") + "/py/" + f, timeout=30).content
+            if hashlib.sha256(d).hexdigest() != sha:
+                raise RuntimeError(f"{f} tải về sai chữ ký")
+            with open(os.path.join(th, f), "wb") as fh:
+                fh.write(d)
+        with open(os.path.join(th, "manifest.json"), "w", encoding="utf-8") as fh:
+            json.dump({"phien_ban": pb["loi"], "tep": pb["tep"]}, fh)
+        kq["loi_moi"] = pb["loi"]
+    if int(pb.get("apk_code") or 0) > int(phien_ban_apk_code):
+        kq["apk_moi"] = {"ten": pb.get("apk_ten"), "url": pb.get("apk_url"), "mb": pb.get("apk_mb"), "ly_do": pb.get("apk_ly_do", "")}
+    return json.dumps(kq, ensure_ascii=False)
