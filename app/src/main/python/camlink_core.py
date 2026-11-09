@@ -9,7 +9,8 @@ GPS tìm điểm gần nhất trên TẤT CẢ dự án → tự chọn đúng d
 import json, os, re, time, unicodedata
 import camlink_dt as C
 
-PHIEN_BAN_LOI = "1.5.16"   # phiên bản phần logic Python (cập nhật đè được, vài trăm KB)
+PHIEN_BAN_LOI = "1.5.17"
+KENH_CAP_NHAT = "https://claude.ai/artifact/D5udnnkXEqbKMRBmsMhjGy"   # kênh cập nhật (đổi được bằng gói zip, không cần APK)   # phiên bản phần logic Python (cập nhật đè được, vài trăm KB)
 
 GOC = None
 
@@ -616,9 +617,15 @@ def kiem_cap_nhat(url_goc, phien_ban_apk_code):
     """Hỏi kênh cập nhật: có lõi mới (tải vài trăm KB) hay APK mới (chỉ khi phần Android đổi)."""
     import hashlib
     import requests
-    r = requests.get(url_goc.rstrip("/") + "/phien_ban.json", timeout=15)
-    r.raise_for_status()
-    pb = r.json()
+    url_goc = KENH_CAP_NHAT or url_goc
+    try:
+        r = requests.get(url_goc.rstrip("/") + "/phien_ban.json", timeout=15, headers={"Accept": "application/json"})
+        r.raise_for_status()
+        pb = r.json()
+    except Exception as e:
+        return json.dumps({"loi_moi": None, "apk_moi": None,
+                           "ghi_chu": f"Kênh cập nhật tự động chưa mở được ({type(e).__name__}). Đang chạy lõi {PHIEN_BAN_LOI} — là bản mới nhất đã cài. "
+                                      "Khi Claude gửi gói .zip, dùng 'Từ file .zip'."}, ensure_ascii=False)
     kq = {"loi_moi": None, "apk_moi": None}
     if pb.get("loi") and pb["loi"] != PHIEN_BAN_LOI:
         th = os.path.join(GOC, "capnhat")
@@ -626,7 +633,8 @@ def kiem_cap_nhat(url_goc, phien_ban_apk_code):
         for f, sha in pb["tep"].items():
             if f not in TEP_LOI:
                 continue
-            d = requests.get(url_goc.rstrip("/") + "/py/" + f, timeout=30).content
+            duong = (pb.get("url_tep") or {}).get(f, "py/" + f)
+            d = requests.get(duong if duong.startswith("http") else url_goc.rstrip("/") + "/" + duong, timeout=30).content
             if hashlib.sha256(d).hexdigest() != sha:
                 raise RuntimeError(f"{f} tải về sai chữ ký")
             with open(os.path.join(th, f), "wb") as fh:

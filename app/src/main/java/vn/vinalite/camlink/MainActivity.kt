@@ -559,7 +559,8 @@ class MainActivity : Activity() {
                             val sb = StringBuilder()
                             if (loi.isNotEmpty() && loi != "null") sb.append("✔ Đã tải lõi $loi — mở lại app để dùng.\n")
                             if (apk != null) sb.append("Có APK mới ${apk.optString("ten")} (${apk.optString("mb")} MB): ${apk.optString("ly_do")}\n")
-                            if (sb.isEmpty()) sb.append("Đang là bản mới nhất.")
+                            val gc = j.optString("ghi_chu", "")
+                            if (sb.isEmpty()) sb.append(if (gc.isNotEmpty() && gc != "null") gc else "Đang là bản mới nhất.")
                             val d = AlertDialog.Builder(this).setTitle("Cập nhật").setMessage(sb.toString())
                             if (apk != null) d.setPositiveButton("Tải APK") { _, _ -> startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(apk.optString("url")))) }
                             if (loi.isNotEmpty() && loi != "null") d.setNeutralButton("Mở lại app") { _, _ -> khoiDongLai() }
