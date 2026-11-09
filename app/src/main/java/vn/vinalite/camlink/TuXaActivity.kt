@@ -206,6 +206,85 @@ class TuXaActivity : Activity() {
         return t
     }
 
+    // ---------------- LiteMark: lấy ghim thực tế, đẩy cảnh báo lên bản đồ công trình ----------------
+    private fun liteMark() {
+        if (ma.isEmpty()) { Toast.makeText(this, "Chọn dự án trước", Toast.LENGTH_SHORT).show(); return }
+        val tt = JSONObject(core.callAttr("lm_trang_thai", ma).toString())
+        if (!tt.optBoolean("co_khoa")) { nhapKhoa(); return }
+        val daNoi = tt.optString("ten").isNotEmpty()
+        val dong = ArrayList<String>()
+        dong.add(if (daNoi) "🔄 Đồng bộ lại ghim từ LiteMark" else "🔗 Chọn công trình LiteMark để nối")
+        if (daNoi) { dong.add("🔁 Đổi sang công trình khác"); dong.add("🌐 Mở công trình trên LiteMark"); dong.add("✂ Ngắt nối (về toạ độ Excel)") }
+        dong.add("🔑 Đổi khoá kết nối")
+        val ghiChu = tt.optJSONArray("ghi_chu")?.let { a -> (0 until a.length()).joinToString("\n") { "· " + a.getString(it) } } ?: ""
+        AlertDialog.Builder(this)
+            .setTitle(if (daNoi) "LiteMark: «${tt.optString("ten")}»" else "LiteMark: dự án chưa nối")
+            .setMessage(if (daNoi) "${tt.optInt("so_ghim")} ghim · đồng bộ ${tt.optString("luc_dong_bo")}\nBản đồ, dẫn đường, phiếu báo mạng đang dùng ghim LiteMark.\n$ghiChu".trim()
+                        else "Chọn đúng công trình đã khảo sát/thi công trên LiteMark; CamLink sẽ dùng ghim của công trình đó làm vị trí điểm và đẩy cam lỗi lên bản đồ LiteMark.")
+            .setItems(dong.toTypedArray()) { _, i ->
+                when (dong[i]) {
+                    "🔗 Chọn công trình LiteMark để nối", "🔁 Đổi sang công trình khác" -> chonCongTrinh()
+                    "🔄 Đồng bộ lại ghim từ LiteMark" -> thread { goiLm("lm_dong_bo", ma, nk) }
+                    "🌐 Mở công trình trên LiteMark" -> startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("${tt.optString("may_chu")}/ct/${tt.optString("id")}")))
+                    "✂ Ngắt nối (về toạ độ Excel)" -> { core.callAttr("lm_ngat", ma); nk.ghi("Đã ngắt nối LiteMark, dùng lại toạ độ Excel") }
+                    "🔑 Đổi khoá kết nối" -> nhapKhoa()
+                }
+            }
+            .setNegativeButton("Đóng", null).show()
+    }
+
+    private fun nhapKhoa() {
+        val o = android.widget.EditText(this)
+        o.hint = "Dán khoá kết nối (LiteMark → Tài khoản → Kết nối CamLink)"
+        o.setPadding(dp(16), dp(12), dp(16), dp(12))
+        AlertDialog.Builder(this).setTitle("Khoá kết nối LiteMark")
+            .setMessage("Mở LiteMark → Tài khoản → Kết nối CamLink → Sao chép khoá, rồi dán vào đây. Khoá chỉ cho phép đọc công trình và ghi cảnh báo camera.")
+            .setView(o)
+            .setPositiveButton("Lưu") { _, _ ->
+                val k = core.callAttr("lm_luu_khoa", o.text.toString()).toString()
+                if (k.length < 16) { Toast.makeText(this, "Khoá quá ngắn — dán lại", Toast.LENGTH_LONG).show(); return@setPositiveButton }
+                chonCongTrinh()
+            }
+            .setNegativeButton("Huỷ", null).show()
+    }
+
+    private fun chonCongTrinh() {
+        nk.ghi("Đang lấy danh sách công trình từ LiteMark…")
+        thread {
+            try {
+                val ds = JSONArray(core.callAttr("lm_ds_cong_trinh", ma).toString())
+                ui.post {
+                    if (ds.length() == 0) { nk.ghi("LiteMark: tài khoản chưa có công trình nào"); return@post }
+                    val tenTT = mapOf("dang_thi_cong" to "đang thi công", "dang_khao_sat" to "đang khảo sát", "da_khoa" to "đã khoá KS", "xong" to "xong")
+                    val nhan = (0 until ds.length()).map { i ->
+                        val c = ds.getJSONObject(i)
+                        (if (c.optInt("diem_khop") >= 3) "⭐ " else "") + "${c.optString("ten")} — ${c.optInt("so_diem")} điểm · ${tenTT[c.optString("trang_thai")] ?: c.optString("trang_thai")}"
+                    }
+                    AlertDialog.Builder(this).setTitle("Nối «$tenDuAn» với công trình LiteMark nào? (⭐ = khớp tên/số điểm)")
+                        .setItems(nhan.toTypedArray()) { _, i ->
+                            val c = ds.getJSONObject(i)
+                            thread { goiLm("lm_noi", ma, c.optString("id"), c.optString("ten"), nk) }
+                        }
+                        .setNegativeButton("Huỷ", null).show()
+                }
+            } catch (e: Exception) { ui.post { nk.ghi("✖ LiteMark: ${e.message?.substringAfterLast("RuntimeError: ")?.take(160)}") } }
+        }
+    }
+
+    private fun goiLm(ham: String, vararg thamSo: Any) {
+        try {
+            val r = JSONObject(core.callAttr(ham, *thamSo).toString())
+            ui.post {
+                val gc = r.optJSONArray("ghi_chu")
+                val chuoi = if (gc != null && gc.length() > 0) "\n" + (0 until gc.length()).joinToString("\n") { "· " + gc.getString(it) } else ""
+                AlertDialog.Builder(this).setTitle("Đã nối LiteMark «${r.optString("ten")}»")
+                    .setMessage("${r.optInt("so_ghim")} ghim đã dùng làm vị trí điểm. Kết quả kiểm tra từ nay tự đẩy lên bản đồ LiteMark.$chuoi")
+                    .setPositiveButton("Kiểm tra lại ngay") { _, _ -> kiem() }
+                    .setNegativeButton("Đóng", null).show()
+            }
+        } catch (e: Exception) { ui.post { nk.ghi("✖ LiteMark: ${e.message?.substringAfterLast("RuntimeError: ")?.take(160)}") } }
+    }
+
     private fun nut(s: String, bam: () -> Unit): Button {
         val b = Button(this)
         b.text = s
@@ -236,6 +315,7 @@ class TuXaActivity : Activity() {
         hang2.orientation = LinearLayout.HORIZONTAL
         hang2.addView(nut("🖥 Màn hình giám sát") { moGiamSat() }, LinearLayout.LayoutParams(0, -2, 1f))
         hang2.addView(nut("🗺 Bản đồ") { moBanDo() }, LinearLayout.LayoutParams(0, -2, 1f))
+        hang2.addView(nut("🔗 LiteMark") { liteMark() }, LinearLayout.LayoutParams(0, -2, 1f))
         goc.addView(hang2)
         tienDo = chu("", 13f, mau = "#0F5D8C")
         tienDo.setPadding(dp(4), dp(4), dp(4), dp(4))

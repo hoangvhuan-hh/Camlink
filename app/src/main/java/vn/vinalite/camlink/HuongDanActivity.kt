@@ -43,7 +43,8 @@ class HuongDanActivity : Activity() {
             "Cam đang chạy tốt: app CHỈ ĐỌC (kể cả cấu hình bên trong: DDNS cam 1, gateway, DNS, giờ) và báo cáo, không thay đổi gì. Cam có vấn đề (treo, đổi port…): app TỰ SỬA, sửa xong kiểm tra lại cấu hình, mất/sai thì khôi phục, rồi ghi \"ĐÃ TỰ SỬA\" vào bằng chứng.",
             "Cam có nút \"🔧 Sửa từ xa\" (khởi động lại cam, đặt lại port RTSP…): bấm → LÀM. App tự sửa rồi tự kiểm tra lại điểm đó và báo kết quả.",
             "Không sửa từ xa được: làm theo \"Việc tiếp theo\" (gọi người tại điểm / gọi VNPT / cử thợ).",
-            "Bấm \"📤 Xuất Excel + gửi\" để gửi bảng kết quả qua Zalo/Gmail."
+            "Bấm \"📤 Xuất Excel + gửi\" để gửi bảng kết quả qua Zalo/Gmail.",
+            "🔗 LiteMark (một lần cho mỗi dự án): bấm \"🔗 LiteMark\" → dán khoá kết nối (lấy trong LiteMark → Tài khoản → Kết nối CamLink) → chọn đúng công trình trong danh sách (⭐ = khớp tên/số điểm). Từ đó vị trí điểm lấy theo ghim thực tế của LiteMark; mỗi lần kiểm xong, cam lỗi tự hiện đỏ/vàng trên bản đồ công trình LiteMark; ở màn giám sát có nút \"🔗 LiteMark\" mở thẳng điểm đó."
         ),
         "E. NÚT KHÁC" to listOf(
             "\"Chọn điểm bằng tay\": dùng khi GPS yếu hoặc dự án chưa có toạ độ.",

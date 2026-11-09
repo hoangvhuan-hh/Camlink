@@ -163,6 +163,8 @@ class GiamSatActivity : Activity() {
         val hang = LinearLayout(this)
         hang.orientation = LinearLayout.HORIZONTAL
         val mapUrl = p.optString("map")
+        val lmLink = p.optString("lm_link")
+        if (lmLink.isNotEmpty()) hang.addView(Button(this).apply { text = "🔗 LiteMark"; isAllCaps = false; setOnClickListener { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(lmLink))) } }, LinearLayout.LayoutParams(0, -2, 1f))
         if (mapUrl.isNotEmpty()) hang.addView(Button(this).apply { text = "📍 Dẫn đường"; isAllCaps = false; setOnClickListener { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(mapUrl))) } }, LinearLayout.LayoutParams(0, -2, 1f))
         hang.addView(Button(this).apply { text = "📋 Chi tiết / sửa"; isAllCaps = false; setOnClickListener { setResult(RESULT_OK, Intent().putExtra("stt", p.optString("stt"))); finish() } }, LinearLayout.LayoutParams(0, -2, 1f))
         goc.addView(hang)

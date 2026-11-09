@@ -9,7 +9,7 @@ GPS tìm điểm gần nhất trên TẤT CẢ dự án → tự chọn đúng d
 import json, os, re, time, unicodedata
 import camlink_dt as C
 
-PHIEN_BAN_LOI = "1.6.3"
+PHIEN_BAN_LOI = "1.7.0"
 KENH_CAP_NHAT = "https://claude.ai/artifact/D5udnnkXEqbKMRBmsMhjGy"   # kênh cập nhật (đổi được bằng gói zip, không cần APK)   # phiên bản phần logic Python (cập nhật đè được, vài trăm KB)
 
 GOC = None
@@ -27,6 +27,8 @@ def _thu_muc_du_an():
 
 
 def khoi_tao(thu_muc):
+    import camlink_litemark as L
+    L.khoi_tao(thu_muc)
     global GOC
     GOC = thu_muc
     os.makedirs(os.path.join(GOC, "ketqua"), exist_ok=True)
@@ -516,7 +518,75 @@ def tuxa_kiem(ma, log):
             log(f"✎ Đã tự hiệu chỉnh điểm {h['stt']}: {h['cu']} → {h['moi']} cam ({h['ly_do'][:80]})")
     if doi:
         _ghi_du_an(ma, da)
+    import camlink_litemark as L
+    lk = L.lien_ket(ma)
+    if lk.get("id"):
+        kq["litemark"] = {"id": lk["id"], "ten": lk.get("ten", "")}
+        for p in kq.get("diem", []):
+            p["lm_link"] = L.link_diem(ma, p["stt"])
+        try:
+            kq["litemark"]["da_gui"] = L.goi_canh_bao(ma, kq, PHIEN_BAN_LOI, log)
+        except Exception as e:
+            log(f"⚠ LiteMark: {e}")
     return json.dumps(kq, ensure_ascii=False)
+
+
+# ---------------- LiteMark ----------------
+def lm_trang_thai(ma):
+    """[có khoá?, tên công trình đã nối, lúc đồng bộ ghim, số ghim, ghi chú đối chiếu]"""
+    import camlink_litemark as L
+    lk = L.lien_ket(ma) if ma else {}
+    da = _doc_du_an(ma) if ma else {}
+    lm = da.get("litemark", {}) if da else {}
+    return json.dumps({"co_khoa": bool(L.khoa()), "ten": lk.get("ten", ""), "id": lk.get("id", ""),
+                       "luc_dong_bo": lm.get("luc_dong_bo", ""), "so_ghim": lm.get("so_ghim", 0),
+                       "ghi_chu": lm.get("ghi_chu", []), "may_chu": L.MAY_CHU}, ensure_ascii=False)
+
+
+def lm_luu_khoa(k):
+    import camlink_litemark as L
+    return L.luu_khoa(k)
+
+
+def lm_xoa_khoa():
+    import camlink_litemark as L
+    L.xoa_khoa()
+
+
+def lm_ds_cong_trinh(ma):
+    """Danh sách công trình LiteMark, gợi ý khớp dự án `ma` lên đầu (JSON)."""
+    import camlink_litemark as L
+    ds = L.ds_cong_trinh()
+    da = _doc_du_an(ma) if ma else {}
+    return json.dumps(L.goi_y(da.get("ten", ""), len(da.get("diem", {})), ds) if da else ds, ensure_ascii=False)
+
+
+def lm_noi(ma, id_ct, ten_ct, log):
+    """Nối dự án với công trình LiteMark rồi đồng bộ ghim ngay."""
+    import camlink_litemark as L
+    log = _cb(log)
+    L.noi(ma, {"id": id_ct, "ten": ten_ct})
+    return lm_dong_bo(ma, log)
+
+
+def lm_dong_bo(ma, log):
+    import camlink_litemark as L
+    log = _cb(log)
+    da = _doc_du_an(ma)
+    da, ghi_chu = L.dong_bo_ghim(ma, da, log)
+    _ghi_du_an(ma, da)
+    L.gui_bu(ma, log)
+    return json.dumps({"ok": True, "ten": da["litemark"]["ten"], "so_ghim": da["litemark"]["so_ghim"], "ghi_chu": ghi_chu}, ensure_ascii=False)
+
+
+def lm_ngat(ma):
+    import camlink_litemark as L
+    L.ngat(ma)
+    da = _doc_du_an(ma)
+    if da.get("toa_do_goc"):
+        da["toa_do"] = da.pop("toa_do_goc")
+    da.pop("litemark", None)
+    _ghi_du_an(ma, da)
 
 
 def tuxa_khao_sat(ma, json_kq):
