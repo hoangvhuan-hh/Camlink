@@ -371,6 +371,7 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
     diem = da["diem"]
     ds = [k for k in diem if not chi_diem or k in chi_diem]
     ho_so = da.get("ho_so", {})
+    toa_do = da.get("toa_do", {})
     log(f"KIỂM TRA TỪ XA — {da['ten']}: {len(ds)} điểm (chỉ đọc, qua Internet)")
     t0 = time.time()
 
@@ -380,6 +381,11 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
         except Exception as e:
             r = {"stt": k, "ten": diem[k]["ten"], "domain": diem[k]["domain"], "muc": DO, "tong": f"LỖI KIỂM TRA: {e}",
                  "viec": ["Kiểm tra lại."], "cam": [], "ip": "", "web_modem": "", "noip_user": "", "noip_pass": ""}
+        td = toa_do.get(k)
+        if td:
+            r["lat"], r["lng"] = td[0], td[1]
+            r["map"] = f"https://maps.google.com/?q={td[0]:.6f},{td[1]:.6f}"
+        r["map_goc"] = diem[k].get("map", "")
         bieu = {"xanh": "🟢", "vang": "🟡", "do": "🔴"}[r["muc"]]
         log(f" {bieu} {k}. {r['ten']} — {r['tong']}")
         return r
@@ -480,7 +486,7 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
     out = {"du_an": da["ten"], "ma": ma, "luc": time.strftime("%d/%m/%Y %H:%M"), "giay": round(time.time() - t0),
            "tong_cam": tong_cam, "dat": dat, "tong_file": tong_file, "tong_quet": tong_quet, "khong_thay": khong_thay, "cam_la": ds_la, "so_cam_la": len(ds_la), "da_sua": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua")),
            "sua_xong": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua") and c["muc"] == XANH), "rot": sum(1 for p in kqs for c in p["cam"] if c.get("vua_rot")),
-           "nhom_loi": dem, "diem": sorted(kqs, key=lambda p: (int(p["stt"]) if str(p["stt"]).isdigit() else 0))}
+           "nhom_loi": dem, "ho_so": ho_so, "diem": sorted(kqs, key=lambda p: (int(p["stt"]) if str(p["stt"]).isdigit() else 0))}
     if not chi_diem:
         with open(f, "w", encoding="utf-8") as fh:
             json.dump(out, fh, ensure_ascii=False)
@@ -549,7 +555,7 @@ def xuat_excel(goc, ket_qua):
     th["A1"].font = Font(bold=True, size=13)
     th.append([f"File ghi {ket_qua.get('tong_file', '')} cam · quét thực tế thấy {ket_qua.get('tong_quet', '')} cam · "
                f"{ket_qua['dat']} cam đạt (có ảnh) · {ket_qua.get('khong_thay', 0)} vị trí file ghi nhưng không thấy cam"])
-    th.append(["No", "Tên điểm", "Domain", "Cam theo file", "Cam quét thực tế", "Port cam thấy", "Cam đạt", "Kết luận", "Cảnh báo"])
+    th.append(["No", "Tên điểm", "Domain", "Cam theo file", "Cam quét thực tế", "Port cam thấy", "Cam đạt", "Kết luận", "Cảnh báo", "Toạ độ", "Dẫn đường (bấm)", "IP hiện tại", "IP lúc lắp"])
     for c in th[3]:
         c.font = Font(bold=True, color="FFFFFF")
         c.fill = PatternFill("solid", fgColor="0F5D8C")
@@ -557,13 +563,18 @@ def xuat_excel(goc, ket_qua):
         q = p.get("quet") or {}
         th.append([p["stt"], p["ten"], p["domain"], p.get("so_file", ""), q.get("so_quet", "—"),
                    ", ".join(map(str, q.get("cam_port", []))), sum(1 for c in p["cam"] if c["muc"] == XANH),
-                   p["tong"], "\n".join(p.get("canh_bao", []))])
+                   p["tong"], "\n".join(p.get("canh_bao", [])),
+                   (f"{p['lat']:.6f}, {p['lng']:.6f}" if p.get("lat") else "chưa có"), p.get("map", ""), p.get("ip", ""),
+                   ((ket_qua.get("ho_so") or {}).get(p["stt"]) or {}).get("wan", "")])
+        if p.get("map"):
+            th.cell(th.max_row, 11).hyperlink = p["map"]
+            th.cell(th.max_row, 11).font = Font(color="0B57D0", underline="single")
         for cell in th[th.max_row]:
             cell.fill = PatternFill("solid", fgColor=mau[p["muc"]])
             cell.alignment = Alignment(wrap_text=True, vertical="top")
         if p.get("so_file") != q.get("so_quet"):
             th.cell(th.max_row, 5).font = Font(bold=True, color="B42318")
-    for col, w in zip("ABCDEFGHI", [5, 30, 30, 12, 14, 18, 9, 22, 50]):
+    for col, w in zip("ABCDEFGHIJKLM", [5, 30, 30, 12, 14, 18, 9, 22, 50, 22, 40, 16, 16]):
         th.column_dimensions[col].width = w
     # ---- Cam lạ
     if ket_qua.get("cam_la"):
@@ -752,3 +763,63 @@ def sua_tat_ca(goc, da, ma, kq, cd, log=print):
     except OSError:
         pass
     return kq
+
+
+# ------------------------------------------------------------------ BẢN ĐỒ + PHIẾU BÁO MẠNG
+MAU_MAP = {"xanh": "#1D7A46", "vang": "#C88A00", "do": "#B42318"}
+
+
+def phieu_bao_mang(kq, p, ho_so=None):
+    """Phiếu gửi bên nhà mạng/người không nắm địa bàn: vị trí dẫn đường được + dữ liệu để tra đường truyền."""
+    hs = ho_so or {}
+    cam_hong = [c for c in p["cam"] if c["muc"] != XANH]
+    dong = [f"PHIẾU BÁO SỰ CỐ ĐIỂM CAMERA — {kq['du_an']}",
+            f"Điểm {p['stt']}: {p['ten']}",
+            f"Vị trí (bấm để dẫn đường): {p.get('map') or p.get('map_goc') or 'chưa có toạ độ'}",
+            (f"Toạ độ: {p['lat']:.6f}, {p['lng']:.6f}" if p.get("lat") else "Toạ độ: chưa có"),
+            f"Tên miền: {p['domain']} → IP hiện tại: {p.get('ip') or 'không phân giải'}",
+            f"IP WAN lúc lắp đặt: {hs.get('wan') or 'chưa ghi'}" + (f" ({hs.get('luc')})" if hs.get("luc") else ""),
+            f"Hiện tượng: {p['tong']}",
+            f"Phát hiện lúc: {p.get('luc') or kq['luc']}"]
+    if p.get("canh_bao"):
+        dong += ["Cảnh báo: " + " | ".join(p["canh_bao"])]
+    for c in cam_hong:
+        dong.append(f"  - Cam {c['so']} (port {c['http']}): {c.get('nguyen_nhan', '')}")
+    viec = (p.get("viec") or (cam_hong[0].get("viec") if cam_hong else [])) or []
+    if viec:
+        dong.append("Đề nghị kiểm tra: " + " ".join(f"({i + 1}) {v}" for i, v in enumerate(viec[:3])))
+    dong.append("Khi tới điểm: gọi lại số trên phiếu, chụp đèn modem (PON/LOS/LAN) gửi về.")
+    return "\n".join(dong)
+
+
+LEAFLET = os.environ.get("CAMLINK_LEAFLET", "file:///android_asset/")   # thư viện bản đồ đóng gói sẵn trong app
+
+
+def ban_do_html(kq, goc):
+    """Bản đồ các điểm (Leaflet/OpenStreetMap) tô màu theo tình trạng — mở offline-first trong WebView, tải tile khi có mạng."""
+    import html as H
+    ds = []
+    for p in kq["diem"]:
+        if not p.get("lat"):
+            continue
+        hong = [c for c in p["cam"] if c["muc"] != XANH]
+        nd = f"<b>Điểm {p['stt']}. {H.escape(p['ten'])}</b><br>{H.escape(p['tong'])}<br>{H.escape(p['domain'])}"
+        for c in hong[:3]:
+            nd += f"<br>• Cam {c['so']}: {H.escape(c.get('nhan', ''))}"
+        nd += f"<br><a href='{p['map']}'>Dẫn đường</a> · <a href='camlink://phieu/{p['stt']}'>Phiếu báo mạng</a>"
+        ds.append({"lat": p["lat"], "lng": p["lng"], "mau": MAU_MAP[p["muc"]], "stt": p["stt"], "nd": nd, "muc": p["muc"]})
+    thieu = [p["stt"] for p in kq["diem"] if not p.get("lat")]
+    data = json.dumps(ds, ensure_ascii=False)
+    page = f"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="{LEAFLET}leaflet.css"><script src="{LEAFLET}leaflet.js"></script>
+<style>html,body,#m{{height:100%;margin:0}}.l{{position:absolute;top:8px;left:50px;z-index:1000;background:#fff;padding:6px 10px;border-radius:8px;font:13px sans-serif;box-shadow:0 1px 4px #0004}}
+.n{{color:#fff;font:bold 12px sans-serif;text-align:center;line-height:26px}}</style></head><body><div id="m"></div>
+<div class="l"><b>{H.escape(kq['du_an'])}</b> · {kq['luc']}<br>🟢 đạt · 🟡 lỗi cấu hình · 🔴 mất điện/mạng{'<br>Chưa có toạ độ: điểm ' + ', '.join(thieu) if thieu else ''}</div>
+<script>var D={data};var m=L.map('m');L.tileLayer('https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',{{maxZoom:19,attribution:'© OpenStreetMap'}}).addTo(m);
+m.on('tileerror',function(){{document.querySelector('.l').insertAdjacentHTML('beforeend','<br><span style=color:#B42318>Không tải được nền bản đồ (không có mạng) — vẫn hiện vị trí tương đối các điểm</span>')}});var g=L.featureGroup();D.forEach(function(d){{var ic=L.divIcon({{className:'',html:'<div class="n" style="background:'+d.mau+';width:26px;height:26px;border-radius:13px;border:2px solid #fff;box-shadow:0 0 4px #0008">'+d.stt+'</div>',iconSize:[26,26],iconAnchor:[13,13]}});
+L.marker([d.lat,d.lng],{{icon:ic,zIndexOffset:d.muc=='do'?1000:(d.muc=='vang'?500:0)}}).bindPopup(d.nd).addTo(g)}});g.addTo(m);
+if(D.length)m.fitBounds(g.getBounds().pad(0.2));else m.setView([16,107],6);</script></body></html>"""
+    f = os.path.join(goc, "ketqua", f"BanDo_{kq['ma']}.html")
+    with open(f, "w", encoding="utf-8") as fh:
+        fh.write(page)
+    return f

@@ -153,7 +153,11 @@ class TuXaActivity : Activity() {
         hang.addView(nut("📤 Xuất Excel + gửi") { xuat() }, LinearLayout.LayoutParams(0, -2, 1f))
         goc.addView(hang)
         goc.addView(nut("📁 Chọn dự án / nạp file cấu hình") { chonDuAn() })
-        goc.addView(nut("🔴 Live tất cả cam đang lên (tối đa $TOI_DA_LIVE cùng lúc)") { liveTatCa() })
+        val hang2 = LinearLayout(this)
+        hang2.orientation = LinearLayout.HORIZONTAL
+        hang2.addView(nut("🗺 Bản đồ điểm lỗi") { moBanDo() }, LinearLayout.LayoutParams(0, -2, 1f))
+        hang2.addView(nut("🔴 Live tất cả") { liveTatCa() }, LinearLayout.LayoutParams(0, -2, 1f))
+        goc.addView(hang2)
         tienDo = chu("", 13f, mau = "#0F5D8C")
         tienDo.setPadding(dp(4), dp(4), dp(4), dp(4))
         goc.addView(tienDo)
@@ -315,6 +319,10 @@ class TuXaActivity : Activity() {
         val t = the(mauVien[muc] ?: "#5B6776", mauNen[muc] ?: "#FFFFFF")
         t.addView(chu("${bieu[muc]} Điểm ${p.optString("stt")}. ${p.optString("ten")}", 16f, true))
         t.addView(chu("${p.optString("tong")}  ·  ${p.optString("domain")}${if (p.optString("ip").isNotEmpty()) " → " + p.optString("ip") else ""}", 13f, mau = "#3B4654"))
+        val mapUrl = p.optString("map")
+        if (mapUrl.isNotEmpty()) t.addView(link("📍 Dẫn đường tới điểm (Google Maps)") { moLink(mapUrl) })
+        else t.addView(chu("📍 Chưa có toạ độ — bổ sung link bản đồ vào cột Vị trí của file khảo sát", 12f, mau = "#9A5B00"))
+        if (muc != "xanh") t.addView(nut("📨 Phiếu báo mạng (gửi người không nắm địa bàn)") { phieu(p.optString("stt")) })
         val wm = p.optString("web_modem")
         if (wm.isNotEmpty()) t.addView(link("🌐 Web modem: $wm") { moLink(wm) })
         t.addView(chu(p.optString("ghi_so"), 12f, mau = "#5B6776"))
@@ -403,6 +411,27 @@ class TuXaActivity : Activity() {
         }
         hop.addView(ct)
         return hop
+    }
+
+    private fun moBanDo() {
+        val k = ketQua ?: run { Toast.makeText(this, "Kiểm tra trước đã", Toast.LENGTH_SHORT).show(); return }
+        thread {
+            try {
+                val f = core.callAttr("tuxa_ban_do", k.toString()).toString()
+                ui.post { startActivity(Intent(this, BanDoActivity::class.java).putExtra("file", f).putExtra("ma", ma).putExtra("kq", k.toString())) }
+            } catch (e: Exception) { ui.post { nk.ghi("✖ Bản đồ: ${e.message}") } }
+        }
+    }
+
+    private fun phieu(stt: String) {
+        val k = ketQua ?: return
+        val txt = core.callAttr("tuxa_phieu", ma, k.toString(), stt).toString()
+        AlertDialog.Builder(this).setTitle("Phiếu báo mạng — điểm $stt").setMessage(txt)
+            .setPositiveButton("Gửi Zalo/SMS") { _, _ ->
+                startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, txt) }, "Gửi phiếu báo mạng"))
+            }
+            .setNeutralButton("Copy") { _, _ -> copy(txt) }
+            .setNegativeButton("Đóng", null).show()
     }
 
     private fun liveTatCa() {
@@ -544,10 +573,13 @@ class TuXaActivity : Activity() {
         thread {
             try {
                 val f = File(core.callAttr("tuxa_excel", k.toString()).toString())
+                val fm = File(core.callAttr("tuxa_ban_do", k.toString()).toString())
                 ui.post {
-                    val i = Intent(Intent.ACTION_SEND)
-                    i.type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    i.putExtra(Intent.EXTRA_STREAM, FileProvider.getUriForFile(this, "vn.vinalite.camlink.files", f))
+                    val i = Intent(Intent.ACTION_SEND_MULTIPLE)
+                    i.type = "*/*"
+                    i.putParcelableArrayListExtra(Intent.EXTRA_STREAM, arrayListOf(
+                        FileProvider.getUriForFile(this, "vn.vinalite.camlink.files", f),
+                        FileProvider.getUriForFile(this, "vn.vinalite.camlink.files", fm)))
                     i.putExtra(Intent.EXTRA_TEXT, "Kiểm tra từ xa ${k.optString("du_an")} ${k.optString("luc")}: ${k.optInt("dat")}/${k.optInt("tong_cam")} cam đạt")
                     i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     startActivity(Intent.createChooser(i, "Gửi kết quả kiểm tra từ xa"))

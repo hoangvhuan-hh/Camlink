@@ -542,3 +542,15 @@ def tuxa_sua_tat_ca(ma, json_kq, log):
     log = _cb(log)
     kq = T.sua_tat_ca(GOC, _doc_du_an(ma), ma, json.loads(json_kq), C.doc_cai_dat(), log)
     return json.dumps(kq, ensure_ascii=False)
+
+
+def tuxa_ban_do(json_kq):
+    import camlink_tuxa as T
+    return T.ban_do_html(json.loads(json_kq), GOC)
+
+
+def tuxa_phieu(ma, json_kq, stt):
+    import camlink_tuxa as T
+    kq = json.loads(json_kq)
+    p = next(x for x in kq["diem"] if x["stt"] == stt)
+    return T.phieu_bao_mang(kq, p, (_doc_du_an(ma).get("ho_so") or {}).get(stt))
