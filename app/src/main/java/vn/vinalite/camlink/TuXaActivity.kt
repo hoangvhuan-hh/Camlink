@@ -25,6 +25,13 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.FileProvider
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.rtsp.RtspMediaSource
+import androidx.media3.ui.PlayerView
+import android.widget.FrameLayout
 import com.chaquo.python.PyObject
 import com.chaquo.python.Python
 import org.json.JSONArray
@@ -43,6 +50,42 @@ class TuXaActivity : Activity() {
     private var ketQua: JSONObject? = null
     private var dangChay = false
     private val maFile = 21
+    private val dangPhat = java.util.LinkedHashMap<String, ExoPlayer>()   // url → player đang chạy
+    private val TOI_DA_LIVE = 4
+
+    /** Phát trực tiếp RTSP ngay trong thẻ cam. Quá TOI_DA_LIVE thì dừng cái cũ nhất. */
+    private fun phatLive(khungAnh: FrameLayout, url: String, trangThai: TextView) {
+        if (url.isEmpty()) { trangThai.text = "Không có link video"; return }
+        dangPhat.remove(url)?.release()
+        while (dangPhat.size >= TOI_DA_LIVE) { val k = dangPhat.keys.first(); dangPhat.remove(k)?.release() }
+        khungAnh.removeAllViews()
+        val pv = PlayerView(this)
+        pv.useController = false
+        khungAnh.addView(pv, FrameLayout.LayoutParams(-1, dp(200)))
+        val p = ExoPlayer.Builder(this).build()
+        pv.player = p
+        p.setMediaSource(RtspMediaSource.Factory().setForceUseRtpTcp(true).createMediaSource(MediaItem.fromUri(url)))
+        p.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                trangThai.text = when (state) {
+                    Player.STATE_BUFFERING -> "⏳ Đang tải hình trực tiếp…"
+                    Player.STATE_READY -> "🔴 TRỰC TIẾP qua tên miền — ${java.text.SimpleDateFormat("HH:mm:ss").format(java.util.Date())}"
+                    Player.STATE_ENDED -> "Luồng đã dừng"
+                    else -> trangThai.text
+                }
+            }
+            override fun onPlayerError(error: PlaybackException) {
+                trangThai.text = "✖ KHÔNG XEM TRỰC TIẾP ĐƯỢC: ${error.errorCodeName} — port video chưa mở hoặc cam không phát"
+                trangThai.setTextColor(Color.parseColor("#B42318"))
+            }
+        })
+        p.prepare(); p.playWhenReady = true
+        dangPhat[url] = p
+    }
+
+    override fun onDestroy() { dangPhat.values.forEach { it.release() }; dangPhat.clear(); super.onDestroy() }
+    override fun onPause() { dangPhat.values.forEach { it.pause() }; super.onPause() }
+    override fun onResume() { dangPhat.values.forEach { it.play() }; super.onResume() }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
@@ -110,6 +153,7 @@ class TuXaActivity : Activity() {
         hang.addView(nut("📤 Xuất Excel + gửi") { xuat() }, LinearLayout.LayoutParams(0, -2, 1f))
         goc.addView(hang)
         goc.addView(nut("📁 Chọn dự án / nạp file cấu hình") { chonDuAn() })
+        goc.addView(nut("🔴 Live tất cả cam đang lên (tối đa $TOI_DA_LIVE cùng lúc)") { liveTatCa() })
         tienDo = chu("", 13f, mau = "#0F5D8C")
         tienDo.setPadding(dp(4), dp(4), dp(4), dp(4))
         goc.addView(tienDo)
@@ -286,12 +330,27 @@ class TuXaActivity : Activity() {
             ct.addView(chu("Việc tiếp theo:", 14f, true, "#0F5D8C"))
             for (i in 0 until viec.length()) ct.addView(chu("${i + 1}) ${viec.getString(i)}", 14f))
         }
+        // Khung hình: LIVE trực tiếp (bấm là phát tại chỗ); ảnh chụp chỉ là bằng chứng lúc kiểm
         val anh = c.optString("anh")
-        if (anh.isNotEmpty() && File(anh).exists()) {
-            val iv = ImageView(this)
-            iv.setImageBitmap(BitmapFactory.decodeFile(anh))
-            iv.adjustViewBounds = true
-            ct.addView(iv, LinearLayout.LayoutParams(-1, -2))
+        val live = c.optString("live")
+        if (live.isNotEmpty() || (anh.isNotEmpty() && File(anh).exists())) {
+            val khungAnh = FrameLayout(this)
+            val tt = chu("", 13f, true, "#1D7A46")
+            if (anh.isNotEmpty() && File(anh).exists()) {
+                val iv = ImageView(this)
+                iv.setImageBitmap(BitmapFactory.decodeFile(anh))
+                iv.adjustViewBounds = true
+                khungAnh.addView(iv, FrameLayout.LayoutParams(-1, -2))
+                tt.text = "Ảnh chụp lúc kiểm · bấm ▶ để xem TRỰC TIẾP"
+            }
+            val nutLive = Button(this)
+            nutLive.text = "▶ XEM TRỰC TIẾP"
+            nutLive.isAllCaps = false
+            nutLive.setOnClickListener { phatLive(khungAnh, live, tt) }
+            khungAnh.addView(nutLive, FrameLayout.LayoutParams(-2, -2, android.view.Gravity.CENTER))
+            ct.addView(khungAnh, LinearLayout.LayoutParams(-1, -2))
+            ct.addView(tt)
+            if (muc == "xanh") khungAnh.tag = Triple(khungAnh, live, tt)   // để nút "Live tất cả" bật lên
         }
         val thongTin = "Web: ${c.optString("web")}\nXem trực tiếp: ${c.optString("live")}\n" +
             "User cam: ${c.optString("user")}   Pass cam: ${c.optString("pass")}\n" +
@@ -328,6 +387,18 @@ class TuXaActivity : Activity() {
         }
         hop.addView(ct)
         return hop
+    }
+
+    private fun liveTatCa() {
+        val ds = ArrayList<Triple<FrameLayout, String, TextView>>()
+        fun quet(v: View) {
+            (v.tag as? Triple<*, *, *>)?.let { ds.add(it as Triple<FrameLayout, String, TextView>) }
+            if (v is android.view.ViewGroup) for (i in 0 until v.childCount) quet(v.getChildAt(i))
+        }
+        quet(khung)
+        if (ds.isEmpty()) { Toast.makeText(this, "Chưa có cam nào lên để xem", Toast.LENGTH_SHORT).show(); return }
+        for (t in ds.take(TOI_DA_LIVE)) phatLive(t.first, t.second, t.third)
+        if (ds.size > TOI_DA_LIVE) Toast.makeText(this, "Đang phát $TOI_DA_LIVE cam đầu; bấm ▶ ở cam khác để đổi", Toast.LENGTH_LONG).show()
     }
 
     private fun suaTatCa() {
