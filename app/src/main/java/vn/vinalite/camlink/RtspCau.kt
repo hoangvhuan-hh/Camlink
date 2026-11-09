@@ -18,6 +18,7 @@ import kotlin.concurrent.thread
  */
 class RtspCau(private val host: String, private val port: Int, private val mang: Network? = null) {
     private var sv: ServerSocket? = null
+    @Volatile var soKetNoi = 0
     val nhatKy = StringBuilder()   // hội thoại RTSP (phần chữ) để chẩn đoán khi không phát được
     private fun ghi(huong: String, t: String) {
         synchronized(nhatKy) { if (nhatKy.length < 6000) nhatKy.append(huong).append(' ').append(t.trim().replace("\r\n", " | ").take(600)).append('\n') }
@@ -31,6 +32,8 @@ class RtspCau(private val host: String, private val port: Int, private val mang:
             while (!s.isClosed) {
                 try {
                     val kh = s.accept()
+                    soKetNoi++
+                    ghi("##", "trình phát đã nối vào cầu từ ${kh.inetAddress.hostAddress}:${kh.port}")
                     thread(isDaemon = true) { phucVu(kh) }
                 } catch (_: Exception) { break }
             }

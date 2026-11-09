@@ -53,11 +53,52 @@ class TuXaActivity : Activity() {
     private val dangPhat = java.util.LinkedHashMap<String, ExoPlayer>()   // url → player đang chạy
     private val cauRtsp = HashMap<String, RtspCau>()                      // url → cầu RTSP cục bộ
     private var mang4G: android.net.Network? = null
+    private val vlcPlayers = java.util.LinkedHashMap<String, org.videolan.libvlc.MediaPlayer>()
+    private var libVlc: org.videolan.libvlc.LibVLC? = null
+
+    /** ĐỘNG CƠ 1 — libVLC (cùng lõi với VLC/IOC): chịu được SDP khai 127.0.0.1, Digest, H.264/H.265. */
+    private fun phatVlc(khungAnh: FrameLayout, url: String, trangThai: TextView): Boolean {
+        return try {
+            val lib = libVlc ?: org.videolan.libvlc.LibVLC(this, arrayListOf("--rtsp-tcp", "--network-caching=600", "--no-drop-late-frames", "--no-skip-frames", "-vvv")).also { libVlc = it }
+            vlcPlayers.remove(url)?.let { it.stop(); it.detachViews(); it.release() }
+            while (vlcPlayers.size >= TOI_DA_LIVE) { val k = vlcPlayers.keys.first(); vlcPlayers.remove(k)?.let { it.stop(); it.detachViews(); it.release() } }
+            khungAnh.removeAllViews()
+            val layout = org.videolan.libvlc.util.VLCVideoLayout(this)
+            khungAnh.addView(layout, FrameLayout.LayoutParams(-1, dp(220)))
+            val mp = org.videolan.libvlc.MediaPlayer(lib)
+            mp.attachViews(layout, null, false, false)
+            val media = org.videolan.libvlc.Media(lib, Uri.parse(url))
+            media.setHWDecoderEnabled(true, false)
+            media.addOption(":rtsp-tcp")
+            media.addOption(":network-caching=600")
+            mp.media = media; media.release()
+            val t0 = System.currentTimeMillis()
+            mp.setEventListener { ev ->
+                when (ev.type) {
+                    org.videolan.libvlc.MediaPlayer.Event.Opening -> trangThai.text = "⏳ libVLC đang kết nối…"
+                    org.videolan.libvlc.MediaPlayer.Event.Buffering -> if (ev.buffering < 100f) trangThai.text = "⏳ libVLC đang tải ${ev.buffering.toInt()}%"
+                    org.videolan.libvlc.MediaPlayer.Event.Vout -> { trangThai.text = "🔴 TRỰC TIẾP (libVLC) — ${java.text.SimpleDateFormat("HH:mm:ss").format(java.util.Date())} — sau ${(System.currentTimeMillis() - t0) / 1000}s"; trangThai.setTextColor(Color.parseColor("#1D7A46")) }
+                    org.videolan.libvlc.MediaPlayer.Event.EncounteredError -> {
+                        trangThai.text = "libVLC không phát được → chuyển sang động cơ 2 (ExoPlayer qua cầu)…"
+                        ui.postDelayed({ phatLive(khungAnh, url, trangThai, tcp = true, dungVlc = false) }, 300)
+                    }
+                    org.videolan.libvlc.MediaPlayer.Event.EndReached -> trangThai.text = "Luồng kết thúc"
+                }
+            }
+            mp.play()
+            vlcPlayers[url] = mp
+            true
+        } catch (e: Throwable) {
+            trangThai.text = "libVLC không khởi động được (${e.javaClass.simpleName}) → dùng động cơ 2…"
+            false
+        }
+    }
     private val TOI_DA_LIVE = 4
 
     /** Phát trực tiếp RTSP ngay trong thẻ cam. Quá TOI_DA_LIVE thì dừng cái cũ nhất. */
-    private fun phatLive(khungAnh: FrameLayout, url: String, trangThai: TextView, tcp: Boolean = true) {
+    private fun phatLive(khungAnh: FrameLayout, url: String, trangThai: TextView, tcp: Boolean = true, dungVlc: Boolean = true) {
         if (url.isEmpty()) { trangThai.text = "Không có link video"; return }
+        if (dungVlc && phatVlc(khungAnh, url, trangThai)) return
         dangPhat.remove(url)?.release()
         cauRtsp.remove(url)?.tat()
         while (dangPhat.size >= TOI_DA_LIVE) { val k = dangPhat.keys.first(); dangPhat.remove(k)?.release(); cauRtsp.remove(k)?.tat() }
@@ -93,9 +134,12 @@ class TuXaActivity : Activity() {
                     ui.postDelayed({ phatLive(khungAnh, url, trangThai, tcp = false) }, 800)
                     return
                 }
-                val nk = cauRtsp[url]?.nhatKy?.toString()?.take(1500) ?: ""
-                trangThai.text = "✖ App không phát được luồng này.\nChi tiết: $ct\n" +
-                    (if (nk.isNotEmpty()) "Hội thoại với cam:\n$nk\n" else "Cam chưa trả lời gì qua cầu.\n") +
+                val cauHienTai = cauRtsp[url]
+                val nk = cauHienTai?.nhatKy?.toString()?.take(1500) ?: ""
+                trangThai.text = "✖ Cả 2 động cơ đều không phát được.\nChi tiết ExoPlayer: $ct\n" +
+                    "CHẨN ĐOÁN: URL đưa vào ExoPlayer = ${urlPhat.replace(Regex("//[^@/]*@"), "//")} · cầu nghe cổng ${cauHienTai?.cong} · " +
+                    "kết nối vào cầu: ${cauHienTai?.soKetNoi ?: 0} · 4G: ${if (mang4G != null) "có" else "không"}\n" +
+                    (if (nk.isNotEmpty()) "Hội thoại với cam:\n$nk\n" else "Trình phát KHÔNG nối vào cầu.\n") +
                     "Bấm nút để mở bằng VLC/app khác."
                 trangThai.setTextIsSelectable(true)
                 trangThai.setTextColor(Color.parseColor("#B42318"))
@@ -114,9 +158,13 @@ class TuXaActivity : Activity() {
         dangPhat[url] = p
     }
 
-    override fun onDestroy() { dangPhat.values.forEach { it.release() }; dangPhat.clear(); cauRtsp.values.forEach { it.tat() }; cauRtsp.clear(); super.onDestroy() }
-    override fun onPause() { dangPhat.values.forEach { it.pause() }; super.onPause() }
-    override fun onResume() { dangPhat.values.forEach { it.play() }; super.onResume() }
+    override fun onDestroy() {
+        dangPhat.values.forEach { it.release() }; dangPhat.clear(); cauRtsp.values.forEach { it.tat() }; cauRtsp.clear()
+        vlcPlayers.values.forEach { it.stop(); it.detachViews(); it.release() }; vlcPlayers.clear(); libVlc?.release(); libVlc = null
+        super.onDestroy()
+    }
+    override fun onPause() { dangPhat.values.forEach { it.pause() }; vlcPlayers.values.forEach { it.pause() }; super.onPause() }
+    override fun onResume() { dangPhat.values.forEach { it.play() }; vlcPlayers.values.forEach { it.play() }; super.onResume() }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
