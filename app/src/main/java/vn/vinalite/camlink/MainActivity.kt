@@ -180,6 +180,7 @@ class MainActivity : Activity() {
         lp.topMargin = dp(10)
         goc.addView(cuon, lp)
         setContentView(goc)
+        xuLyLink(intent)
     }
 
     private fun datTrangThai(chu: String, mau: String) {
@@ -363,8 +364,51 @@ class MainActivity : Activity() {
         }
     }
 
-    /** Bảng kiểm tra trước khi cài: chế độ, điểm, mạng WiFi, việc sẽ làm. */
+    /** Link từ LiteMark: camlink://nhan?ct=<id>&ten=<tên> → mở màn Kiểm tra từ xa và nhận dự án. */
+    private fun xuLyLink(i: Intent?) {
+        val u = i?.data ?: return
+        if (u.scheme != "camlink" || u.host != "nhan") return
+        val ct = u.getQueryParameter("ct") ?: return
+        startActivity(Intent(this, TuXaActivity::class.java).putExtra("nhan_ct", ct).putExtra("nhan_ten", u.getQueryParameter("ten") ?: ""))
+    }
+
+    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); xuLyLink(intent) }
+
+    /** Điểm (dự án nhận từ LiteMark) chưa có tên miền → chọn tên miền TẠI CỘT trước khi cài. */
     private fun xacNhanCai(ma: String, stt: String, m: Int, canhBao: String?) {
+        val can = try { core.callAttr("can_chon_ten_mien", ma, stt).toBoolean() } catch (_: Exception) { false }
+        if (!can) { xacNhanCaiThat(ma, stt, m, canhBao); return }
+        val ds = org.json.JSONArray(core.callAttr("ung_vien_ten_mien", ma, stt).toString())
+        if (ds.length() == 0) {
+            AlertDialog.Builder(this).setTitle("Điểm này chưa có tên miền")
+                .setMessage("Kho tên miền của bên cấp đã dùng hết. Vẫn cài cam, mở port; DDNS để trống chờ bên cấp tên miền.")
+                .setPositiveButton("Tiếp tục cài") { _, _ -> xacNhanCaiThat(ma, stt, m, canhBao) }.setNegativeButton("Huỷ", null).show()
+            return
+        }
+        val ten = core.callAttr("ten_diem", ma, stt).toString()
+        val nhan = (0 until minOf(ds.length(), 8)).map { i ->
+            val d = ds.getJSONObject(i); val kc = d.optInt("kc", -1)
+            "${d.optString("domain")}  ·  dòng ${d.optString("no")} ${d.optString("ten")}" + (if (kc >= 0) "  ·  cách ghim $kc m" else "  ·  (file không có toạ độ)") + (if (kc > 100) "  ⚠ XA" else "")
+        }
+        AlertDialog.Builder(this).setTitle("Chọn tên miền cho: $ten")
+            .setItems(nhan.toTypedArray()) { _, i ->
+                val d = ds.getJSONObject(i)
+                val chot = {
+                    core.callAttr("gan_ten_mien", ma, stt, d.optInt("i"))
+                    nhatKy.ghi("Đã chốt tên miền ${d.optString("domain")} cho $ten (chọn tại cột)")
+                    xacNhanCaiThat(ma, stt, m, canhBao)
+                }
+                if (d.optInt("kc", -1) > 100) AlertDialog.Builder(this).setTitle("Tên miền này ở XA ghim (${d.optInt("kc")} m)")
+                    .setMessage("Dòng ${d.optString("no")} «${d.optString("ten")}» trong file cách ghim ${d.optInt("kc")} m. Chắc chắn đúng cột này?")
+                    .setPositiveButton("Đúng, gán") { _, _ -> chot() }.setNegativeButton("Chọn lại") { _, _ -> xacNhanCai(ma, stt, m, canhBao) }.show()
+                else chot()
+            }
+            .setNeutralButton("Cài không DDNS") { _, _ -> xacNhanCaiThat(ma, stt, m, canhBao) }
+            .setNegativeButton("Huỷ", null).show()
+    }
+
+    /** Bảng kiểm tra trước khi cài: chế độ, điểm, mạng WiFi, việc sẽ làm. */
+    private fun xacNhanCaiThat(ma: String, stt: String, m: Int, canhBao: String?) {
         val (may, gw) = mangWifi()
         val ten = core.callAttr("ten_diem", ma, stt).toString()
         val viTri = when {

@@ -19,6 +19,13 @@ class HuongDanActivity : Activity() {
             "Bấm \"User / pass cam và modem\" → nhập user/pass cam, user/pass modem → Lưu. App nhớ cho mọi dự án.",
             "Cho phép app dùng Vị trí khi điện thoại hỏi."
         ),
+        "A2. DỰ ÁN MỚI TỪ LITEMARK (không cần file khảo sát)" to listOf(
+            "Trên LiteMark: kết thúc khảo sát công trình camera → bấm \"📹 Chuyển sang CamLink\". CamLink mở ra và nhận dự án: đủ điểm, đúng số ghim, đúng toạ độ.",
+            "Máy khác: mở CamLink → Kiểm tra từ xa → hiện \"Có dự án mới từ LiteMark\" → bấm để nhận.",
+            "Bấm \"📥 Nạp file tên miền\" → chọn file DDNS của bên cấp. App tự ghép tên miền vào ghim (theo mã TT và toạ độ) và báo điểm nào chưa ghép chắc.",
+            "Điểm chưa có tên miền: lúc cài tại cột app hiện danh sách tên miền gần nhất để chọn; tên miền đã dùng không chọn lại được.",
+            "Cài xong, tên miền + MAC cam tự ghi về ghim LiteMark; kiểm tra từ xa thì cam lỗi tự hiện trên bản đồ LiteMark."
+        ),
         "B. CÀI MỘT ĐIỂM (đứng tại điểm)" to listOf(
             "Cấp nguồn cam, cắm cam vào modem của điểm.",
             "Điện thoại vào WiFi của modem điểm đó. Bật luôn 4G (dữ liệu di động).",

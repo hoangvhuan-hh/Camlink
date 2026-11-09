@@ -260,6 +260,18 @@ def chay(ma, stt, may_ip, gw, log):
                                            "cam": [{"so": c["so"], "ip": c["ip"], "mac": c.get("mac", ""),
                                                     "model": c.get("model", "")} for c in k.get("cam", [])]}
     _ghi_du_an(ma, da)
+    try:   # ghi ngược tên miền + MAC về ghim LiteMark (lúc này đang trong WiFi modem: chỉ xếp hàng, gửi khi có 4G)
+        import camlink_litemark as L
+        if L.lien_ket(ma).get("id") and stt in da.get("ho_so", {}):
+            cho = L._doc(f"gan_{ma}.json", {})
+            x = da["diem"].get(str(stt), {})
+            hs = da["ho_so"][stt]
+            cho[str(x.get("lm_stt") or stt)] = {"domain": x.get("domain", ""), "mac": [c.get("mac", "") for c in hs.get("cam", []) if c.get("mac")],
+                                                "ip": hs.get("wan", ""), "so_cam_thuc": len(hs.get("cam", [])),
+                                                "luc": time.strftime("%Y-%m-%dT%H:%M:%S%z")[:-2] + ":" + time.strftime("%z")[-2:], "nguon": "camlink"}
+            L._ghi(f"gan_{ma}.json", cho)
+    except Exception as e:
+        log(f"⚠ xếp hàng ghi ngược LiteMark: {e}")
     # đổi tên nhật ký cho có tên dự án, tránh lẫn giữa các dự án
     d = os.path.join(GOC, "ketqua")
     for f in sorted(os.listdir(d), key=lambda x: os.path.getmtime(os.path.join(d, x)), reverse=True)[:3]:
@@ -407,6 +419,11 @@ def bang_chung(ma, stt, log):
     log = _cb(log)
     C.LOG_CB = log
     da = _doc_du_an(ma)
+    try:   # đang ở 4G: gửi bù tên miền/MAC vừa cài về ghim LiteMark
+        import camlink_litemark as L
+        L.gui_bu_gan(ma, log)
+    except Exception:
+        pass
     d = da["diem"][stt]
     dom = d["domain"]
     cd = C.doc_cai_dat()
@@ -529,6 +546,10 @@ def tuxa_kiem(ma, log, nhanh=True):
         log(f"⚠ dấu vết điểm: {e}")
     lk = L.lien_ket(ma)
     if lk.get("id"):
+        try:
+            L.gui_bu_gan(ma, log)
+        except Exception:
+            pass
         kq["litemark"] = {"id": lk["id"], "ten": lk.get("ten", "")}
         for p in kq.get("diem", []):
             d = da["diem"].get(p["stt"], {})
@@ -620,6 +641,65 @@ def lm_thu_canh_bao(ma, stt, bat, log):
 def lm_ds_diem(ma):
     da = _doc_du_an(ma)
     return json.dumps([[s, d.get("ten", ""), d.get("domain", ""), str(d.get("lm_stt", ""))] for s, d in sorted(da["diem"].items(), key=lambda x: int(x[0]) if x[0].isdigit() else 0)], ensure_ascii=False)
+
+
+# ---- dự án tạo từ LiteMark ----
+def lm_cho_nhan():
+    """Công trình LiteMark đã 'Chuyển sang CamLink' mà máy này chưa nhận (JSON)."""
+    import camlink_litemark as L
+    if not L.khoa():
+        return "[]"
+    return json.dumps(L.ds_cho_nhan(list(_cac_du_an().keys())), ensure_ascii=False)
+
+
+def lm_nhan_du_an(id_ct, ten_ct, log):
+    """Tạo dự án từ công trình LiteMark; đã nhận rồi thì trả dự án cũ (không tạo trùng). Trả mã dự án."""
+    import camlink_litemark as L
+    log = _cb(log)
+    cu = L.ma_da_noi_voi(id_ct, list(_cac_du_an().keys()))
+    if cu:
+        log(f"Công trình này đã có trong CamLink: {_doc_du_an(cu)['ten']}")
+        return cu
+    da = L.tao_du_an_tu_lm(id_ct, ten_ct, log)
+    ma = _ma(da["ten"])
+    while os.path.exists(os.path.join(_thu_muc_du_an(), ma + ".json")):
+        ma += "-lm"
+    _ghi_du_an(ma, da)
+    L.noi(ma, {"id": id_ct, "ten": da["ten"]})
+    for c in _diem_trung_vi_tri(ma, da["toa_do"]):
+        log("⚠ " + c)
+    return ma
+
+
+def lm_nap_ddns(ma, duong_dan, log):
+    """Nạp file tên miền của bên cấp vào dự án (tạo từ LiteMark), ghép theo toạ độ. Trả báo cáo ghép (JSON)."""
+    import camlink_litemark as L
+    log = _cb(log)
+    C.LOG_CB = log
+    da = _doc_du_an(ma)
+    dong = L.doc_file_ddns(duong_dan, C.toa_do_tu_link, log)
+    da, bc = L.ghep_ddns(da, dong, log)
+    _ghi_du_an(ma, da)
+    return json.dumps(bc, ensure_ascii=False)
+
+
+def can_chon_ten_mien(ma, stt):
+    """Điểm chưa có tên miền mà dự án có kho tên miền → app phải cho chọn trước khi cài."""
+    da = _doc_du_an(ma)
+    return (not da["diem"][str(stt)].get("domain")) and bool(da.get("kho_ddns"))
+
+
+def ung_vien_ten_mien(ma, stt):
+    import camlink_litemark as L
+    return json.dumps(L.ung_vien_ten_mien(_doc_du_an(ma), stt), ensure_ascii=False)
+
+
+def gan_ten_mien(ma, stt, i):
+    import camlink_litemark as L
+    da = _doc_du_an(ma)
+    d = L.gan_ten_mien(da, stt, i)
+    _ghi_du_an(ma, da)
+    return d
 
 
 def lm_dat_ghim(ma, stt, lm_stt, log):

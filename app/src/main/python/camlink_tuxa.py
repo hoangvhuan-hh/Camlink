@@ -483,6 +483,10 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True, nhanh=Fal
     os.makedirs(anh_dir, exist_ok=True)
     diem = da["diem"]
     ds = [k for k in diem if not chi_diem or k in chi_diem]
+    chua_cai = [k for k in ds if not diem[k].get("domain")]   # dự án tạo từ LiteMark: điểm chưa cài thì chưa có tên miền
+    if chua_cai:
+        log(f"⏭ {len(chua_cai)} điểm chưa có tên miền (chưa cài) — bỏ qua khi kiểm: {', '.join(chua_cai[:15])}{'…' if len(chua_cai) > 15 else ''}")
+        ds = [k for k in ds if k not in chua_cai]
     ho_so = da.get("ho_so", {})
     toa_do = da.get("toa_do", {})
     # chế độ NHANH: điểm lần trước toàn ĐẠT → lấy lại từ lịch sử, phát live để xác minh; chỉ quét lại điểm có sự cố

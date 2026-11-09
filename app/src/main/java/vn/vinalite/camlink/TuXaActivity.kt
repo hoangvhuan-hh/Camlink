@@ -233,6 +233,7 @@ class TuXaActivity : Activity() {
         val dong = ArrayList<String>()
         dong.add(if (daNoi) "🔄 Đồng bộ lại ghim từ LiteMark" else "🔗 Chọn công trình LiteMark để nối")
         if (daNoi) { dong.add("🧭 Xác minh vị trí cam theo thực tế (ảnh / GPS)"); dong.add("🔁 Đổi sang công trình khác"); dong.add("🌐 Mở công trình trên LiteMark"); dong.add("✂ Ngắt nối (về toạ độ Excel)") }
+        dong.add("📥 Nạp file tên miền (DDNS) của bên cấp")
         dong.add("🔑 Đổi khoá kết nối")
         val ghiChu = tt.optJSONArray("ghi_chu")?.let { a -> (0 until a.length()).joinToString("\n") { "· " + a.getString(it) } } ?: ""
         AlertDialog.Builder(this)
@@ -247,12 +248,13 @@ class TuXaActivity : Activity() {
                     "🌐 Mở công trình trên LiteMark" -> startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("${tt.optString("may_chu")}/ct/${tt.optString("id")}")))
                     "✂ Ngắt nối (về toạ độ Excel)" -> { core.callAttr("lm_ngat", ma); nk.ghi("Đã ngắt nối LiteMark, dùng lại toạ độ Excel") }
                     "🔑 Đổi khoá kết nối" -> nhapKhoa()
+                    "📥 Nạp file tên miền (DDNS) của bên cấp" -> moFileDdns()
                 }
             }
             .setNegativeButton("Đóng", null).show()
     }
 
-    private fun nhapKhoa() {
+    private fun nhapKhoa(sau: (() -> Unit)? = null) {
         val o = android.widget.EditText(this)
         o.hint = "Dán khoá kết nối (LiteMark → Tài khoản → Kết nối CamLink)"
         o.setPadding(dp(16), dp(12), dp(16), dp(12))
@@ -262,7 +264,7 @@ class TuXaActivity : Activity() {
             .setPositiveButton("Lưu") { _, _ ->
                 val k = core.callAttr("lm_luu_khoa", o.text.toString()).toString()
                 if (k.length < 16) { Toast.makeText(this, "Khoá quá ngắn — dán lại", Toast.LENGTH_LONG).show(); return@setPositiveButton }
-                chonCongTrinh()
+                if (sau != null) sau() else chonCongTrinh()
             }
             .setNegativeButton("Huỷ", null).show()
     }
@@ -355,7 +357,76 @@ class TuXaActivity : Activity() {
         cuon.addView(khung)
         goc.addView(cuon, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(goc)
-        chonDuAn()
+        val nhanCt = intent.getStringExtra("nhan_ct")
+        if (nhanCt != null) nhanDuAn(nhanCt, intent.getStringExtra("nhan_ten") ?: "")
+        else { chonDuAn(); kiemChoNhan() }
+    }
+
+    // ---------------- nhận dự án từ LiteMark (sau khi bấm "Chuyển sang CamLink") ----------------
+    private val maFileDdns = 22
+
+    /** Có công trình LiteMark đã bấm "Chuyển sang CamLink" mà máy này chưa nhận → mời nhận. */
+    private fun kiemChoNhan() {
+        thread {
+            try {
+                val ds = JSONArray(core.callAttr("lm_cho_nhan").toString())
+                if (ds.length() == 0) return@thread
+                ui.post {
+                    val nhan = (0 until ds.length()).map { i -> val c = ds.getJSONObject(i); "📥 ${c.optString("ten")} — ${c.optInt("so_diem")} điểm, ${c.optInt("so_camera")} cam" }
+                    AlertDialog.Builder(this).setTitle("Có dự án mới từ LiteMark")
+                        .setItems(nhan.toTypedArray()) { _, i -> val c = ds.getJSONObject(i); nhanDuAn(c.optString("id"), c.optString("ten")) }
+                        .setNegativeButton("Để sau", null).show()
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun nhanDuAn(idCt: String, tenCt: String) {
+        val tt = JSONObject(core.callAttr("lm_trang_thai", "").toString())
+        if (!tt.optBoolean("co_khoa")) { nhapKhoa { nhanDuAn(idCt, tenCt) }; return }
+        nk.ghi("Đang nhận dự án từ LiteMark…")
+        thread {
+            try {
+                val m = core.callAttr("lm_nhan_du_an", idCt, tenCt, nk).toString()
+                val ds = core.callAttr("ds_du_an").asList().map { r -> r.asList().map { it.toString() } }
+                val d = ds.firstOrNull { it[0] == m }
+                ui.post {
+                    ma = m; tenDuAn = d?.get(1) ?: tenCt
+                    AlertDialog.Builder(this).setTitle("Đã nhận «$tenDuAn»")
+                        .setMessage("${d?.get(2) ?: "?"} điểm, vị trí lấy đúng ghim LiteMark (số điểm hai bên trùng nhau).\n\nBước tiếp: nạp file tên miền (DDNS) của bên cấp để app tự ghép tên miền vào từng ghim. Điểm nào không ghép chắc được sẽ chọn tại cột lúc cài.")
+                        .setPositiveButton("📥 Nạp file tên miền") { _, _ -> moFileDdns() }
+                        .setNegativeButton("Để sau", null).show()
+                }
+            } catch (e: Exception) { ui.post { nk.ghi("✖ Nhận dự án: ${e.message?.substringAfterLast("RuntimeError: ")?.take(160)}") } }
+        }
+    }
+
+    private fun moFileDdns() {
+        if (ma.isEmpty()) { Toast.makeText(this, "Chọn dự án trước", Toast.LENGTH_SHORT).show(); return }
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT)
+        i.addCategory(Intent.CATEGORY_OPENABLE)
+        i.type = "*/*"
+        startActivityForResult(i, maFileDdns)
+    }
+
+    private fun napDdns(uri: Uri) {
+        val dich = File(cacheDir, "ddns.xlsx")
+        contentResolver.openInputStream(uri)?.use { vao -> dich.outputStream().use { vao.copyTo(it) } }
+        nk.ghi("Đang ghép tên miền vào ghim…")
+        thread {
+            try {
+                val bc = JSONObject(core.callAttr("lm_nap_ddns", ma, dich.absolutePath, nk).toString())
+                val sb = StringBuilder()
+                sb.append("File: ${bc.optInt("tong_dong")} tên miền · dự án: ${bc.optInt("tong_diem")} điểm\n")
+                sb.append("✔ Tự ghép chắc: ${bc.optInt("tu_gan")} điểm\n")
+                val tr = bc.optJSONArray("trung"); if (tr != null && tr.length() > 0) sb.append("⚠ Trùng (2 dòng cùng sát 1 ghim): ${(0 until tr.length()).joinToString { "ghim " + tr.getJSONArray(it).getString(0) }}\n")
+                val cc = bc.optJSONArray("chua_chac"); if (cc != null && cc.length() > 0) sb.append("⚠ Chưa chắc: ${(0 until cc.length()).joinToString { "ghim " + cc.getJSONArray(it).getString(0) }}\n")
+                val th = bc.optJSONArray("diem_thieu"); if (th != null && th.length() > 0) sb.append("→ ${th.length()} điểm chọn tên miền TẠI CỘT lúc cài: ${(0 until th.length()).joinToString { th.getString(it) }}\n")
+                val kt = bc.optJSONArray("dong_khong_toa_do"); if (kt != null && kt.length() > 0) sb.append("· Dòng file không có toạ độ / không có ghim: ${(0 until kt.length()).joinToString { kt.getString(it) }}\n")
+                val ch = bc.optJSONArray("chenh_cam"); if (ch != null && ch.length() > 0) sb.append("· Số cam file ≠ LiteMark: ${(0 until ch.length()).joinToString { val r = ch.getJSONArray(it); "ghim ${r.getString(0)} (${r.getInt(1)}↔${r.getInt(2)})" }} — lúc cài theo số quét thực tế\n")
+                ui.post { AlertDialog.Builder(this).setTitle("Ghép tên miền — $tenDuAn").setMessage(sb.toString()).setPositiveButton("OK", null).show() }
+            } catch (e: Exception) { ui.post { nk.ghi("✖ File tên miền: ${e.message?.substringAfterLast("Error: ")?.take(160)}") } }
+        }
     }
 
     // ---------------- dự án ----------------
@@ -389,6 +460,7 @@ class TuXaActivity : Activity() {
             return
         }
         val uri: Uri = data?.data ?: return
+        if (requestCode == maFileDdns && resultCode == RESULT_OK) { napDdns(uri); return }
         if (requestCode != maFile || resultCode != RESULT_OK) return
         var tenFile = "khao_sat.xlsx"
         contentResolver.query(uri, null, null, null, null)?.use { c ->

@@ -423,3 +423,232 @@ def thu_canh_bao(ma, da, stt, bat, phien_ban, log=print):
     _goi(f"/api/camlink/cong-trinh/{lk['id']}/canh-bao", than)
     log(("🧪 Đã tô THỬ ghim LiteMark " + lm_stt) if bat else "🧪 Đã gỡ thử, LiteMark về trạng thái đạt hết")
     return lm_stt
+
+
+# =============== DỰ ÁN TẠO TỪ LITEMARK (ghim = vị trí thật) + TÊN MIỀN TỪ FILE BÊN CẤP ===============
+def ds_cho_nhan(cac_ma_da_noi):
+    """Công trình LiteMark đã bấm 'Chuyển sang CamLink' mà máy này chưa nhận."""
+    ds = ds_cong_trinh()
+    da_noi = {lien_ket(m).get("id") for m in cac_ma_da_noi}
+    return [c for c in ds if c.get("san_sang_camlink") and c.get("id") not in da_noi]
+
+
+def ma_da_noi_voi(id_ct, cac_ma):
+    return next((m for m in cac_ma if lien_ket(m).get("id") == id_ct), None)
+
+
+def tao_du_an_tu_lm(id_ct, ten_ct, log=print):
+    """Dựng dự án CamLink từ ghim LiteMark: số điểm, toạ độ, số cam lấy y nguyên — số điểm hai bên TRÙNG NHAU."""
+    kq = _goi(f"/api/camlink/cong-trinh/{id_ct}/diem")
+    ten = kq.get("ten") or ten_ct or id_ct
+    diem, toa_do = {}, {}
+    for g in kq.get("diem", []):
+        stt = str(g.get("stt"))
+        so, bs = int(g.get("so_camera") or 0), int(g.get("so_camera_bs") or 0)
+        diem[stt] = {"ten": g.get("ten") or f"Điểm {stt}", "domain": (g.get("tm_domain") or "").lower(), "u": "", "p": "",
+                     "so": so + bs, "bs": bs, "map": "", "lm_stt": stt, "lm_chac": True, "lm_tay": stt, "lm_ten": g.get("ten", ""),
+                     "lm_anh": g.get("anh_dai_dien", ""), "lm_so": so + bs}
+        if g.get("lat") and g.get("lng"):
+            toa_do[stt] = [float(g["lat"]), float(g["lng"])]
+    if not diem:
+        raise RuntimeError("Công trình LiteMark chưa có ghim nào")
+    da = {"ten": ten, "nguon": "litemark", "diem": diem, "toa_do": toa_do, "toa_do_goc": dict(toa_do), "da_xong": {}, "ho_so": {},
+          "kho_ddns": [],
+          "litemark": {"id": id_ct, "ten": ten, "luc_dong_bo": time.strftime("%d/%m/%Y %H:%M"), "so_ghim": len(diem), "ghi_chu": [],
+                       "ghim": {s: {"ten": d["ten"], "lat": toa_do[s][0], "lng": toa_do[s][1]} for s, d in diem.items() if s in toa_do}}}
+    log(f"🔗 Nhận dự án từ LiteMark «{ten}»: {len(diem)} điểm, {sum(d['so'] for d in diem.values())} cam, "
+        f"{len(toa_do)} điểm có toạ độ. Chưa có tên miền — nạp file DDNS của bên cấp để ghép.")
+    return da
+
+
+def doc_file_ddns(duong_dan, toa_do_tu_link, log=print):
+    """Đọc file của bên cấp DDNS: mỗi dòng có tên miền (bắt buộc), user/pass No-IP, tên vị trí, link bản đồ, số cam."""
+    import openpyxl
+    wb = openpyxl.load_workbook(duong_dan, data_only=True)
+    chuan = lambda s: re.sub(r"\s+", " ", str(s or "")).strip().lower()
+    for ws in wb.worksheets:
+        hang = None
+        for r in range(1, min(ws.max_row, 15) + 1):
+            cot = {chuan(ws.cell(r, c).value): c for c in range(1, ws.max_column + 1) if ws.cell(r, c).value is not None}
+            if any(k.startswith("domain") or k.startswith("tên miền") or k == "ddns" for k in cot):
+                hang = r
+                break
+        if not hang:
+            continue
+
+        def tim(*ten):
+            for t in ten:
+                for k, v in cot.items():
+                    if k == t or k.startswith(t):
+                        return v
+        c_no, c_ten = tim("no", "stt"), tim("tên bản vẽ", "tên", "vị trí")
+        c_map = next((c for c in range(1, ws.max_column + 1)
+                      if any(re.search(r"goo\.gl|google\.[a-z.]+/maps|maps\.app|^-?\d{1,2}\.\d{3,}\s*,\s*-?\d{2,3}\.\d{3,}", str(ws.cell(x, c).value or "").strip())
+                             for x in range(hang + 1, min(ws.max_row, hang + 15) + 1))), None)
+        c_cam, c_bs = tim("camera"), tim("camera bs")
+        c_dom, c_u, c_p = tim("domain", "tên miền", "ddns"), tim("user"), tim("pw", "pass")
+        dong = []
+        for rr in range(hang + 1, ws.max_row + 1):
+            g = lambda c: ws.cell(rr, c).value if c else None
+            dom = str(g(c_dom) or "").strip().lower()
+            if "." not in dom:
+                continue
+            ln = ws.cell(rr, c_map).hyperlink.target if c_map and ws.cell(rr, c_map).hyperlink else str(g(c_map) or "")
+            td = None
+            m = re.match(r"^\s*(-?\d{1,2}\.\d{3,})\s*,\s*(-?\d{2,3}\.\d{3,})", ln or "")
+            if m:
+                td = [float(m.group(1)), float(m.group(2))]
+            elif ln.startswith("http"):
+                try:
+                    td = toa_do_tu_link(ln)
+                except Exception:
+                    td = None
+            dong.append({"no": str(g(c_no) or len(dong) + 1).strip(), "ten": str(g(c_ten) or "").strip(), "domain": dom,
+                         "u": str(g(c_u) or ""), "p": str(g(c_p) or ""), "so": int(g(c_cam) or 0) + int(g(c_bs) or 0),
+                         "bs": int(g(c_bs) or 0), "map": ln, "toa_do": td, "dung": ""})
+        if dong:
+            log(f"File tên miền: {len(dong)} dòng, {sum(1 for d in dong if d['toa_do'])} dòng có toạ độ")
+            return dong
+    raise ValueError("Không thấy cột tên miền (Domain) trong file.")
+
+
+def ghep_ddns(da, dong, log=print):
+    """Ghép dòng file ↔ ghim theo toạ độ. Chỉ tự gán khi CHẮC (≤ 50 m và không có dòng khác cũng sát ghim đó).
+    Phần còn lại vào kho, chốt tại cột lúc cài. Không gán một tên miền cho hai điểm."""
+    toa_do = da.get("toa_do", {})
+    da_co = {d.get("domain") for d in da["diem"].values() if d.get("domain")}
+    for d in dong:   # tên miền đã gắn sẵn (ghi ngược từ LiteMark / lần trước) → đánh dấu đã dùng
+        for s, x in da["diem"].items():
+            if x.get("domain") and x["domain"] == d["domain"]:
+                d["dung"] = s
+    gan, trung, chua_chac = [], [], []
+    # LỚP 1 — mã vị trí (vd TT24) có ở CẢ tên ghim LiteMark lẫn dòng file → ghép theo mã, kiểm lại bằng toạ độ
+    def ma_vt(t):
+        m = re.search(r"\b([A-Za-z]{1,4})\s*-?\s*0*(\d{1,3})\b", str(t or ""))
+        return (m.group(1).upper() + str(int(m.group(2)))) if m and m.group(1).upper() not in ("CAM", "DIEM", "ĐIEM", "HL") else ""
+    ma_ghim = {}
+    for st, x in da["diem"].items():
+        k = ma_vt(x.get("lm_ten") or x.get("ten"))
+        if k:
+            ma_ghim.setdefault(k, []).append(st)
+    for d in dong:
+        if d["dung"]:
+            continue
+        k = ma_vt(d["ten"]) or ma_vt(d["no"])
+        ghim_k = ma_ghim.get(k, []) if k else []
+        if len(ghim_k) != 1:
+            continue
+        st = ghim_k[0]
+        x = da["diem"][st]
+        if x.get("domain") or d["domain"] in da_co:
+            continue
+        td = toa_do.get(st)
+        kc = int(_khoang_cach(d["toa_do"][0], d["toa_do"][1], td[0], td[1])) if (d["toa_do"] and td) else -1
+        if kc > 150:
+            chua_chac.append((st, [(d["no"], kc)]))
+            d["lech_ma"] = f"cùng mã {k} nhưng cách ghim {kc} m"
+            continue
+        x.update(domain=d["domain"], u=d["u"], p=d["p"], dom_nguon=f"file dòng {d['no']} «{d['ten']}» — cùng mã {k}" + (f", cách ghim {kc} m" if kc >= 0 else ""))
+        if d["so"] and d["so"] != x.get("so"):
+            x["so_file"] = d["so"]
+        d["dung"] = st
+        da_co.add(d["domain"])
+        gan.append((st, d["no"], kc))
+    # LỚP 2 — còn lại: ghép theo toạ độ
+    gan_ghim = {}
+    for i, d in enumerate(dong):
+        if d["dung"] or not d["toa_do"]:
+            continue
+        kc = sorted((_khoang_cach(d["toa_do"][0], d["toa_do"][1], v[0], v[1]), s) for s, v in toa_do.items())
+        if kc:
+            gan_ghim.setdefault(kc[0][1], []).append((kc[0][0], i))
+            d["gan_nhat"] = [{"stt": s, "kc": int(m)} for m, s in kc[:3]]
+    for s, ds in gan_ghim.items():
+        ds.sort()
+        if da["diem"][s].get("domain"):
+            continue
+        sat = [x for x in ds if x[0] <= 50]
+        if len(sat) == 1:
+            m, i = sat[0]
+            d = dong[i]
+            if d["domain"] in da_co:
+                continue
+            x = da["diem"][s]
+            x.update(domain=d["domain"], u=d["u"], p=d["p"], dom_nguon=f"file dòng {d['no']} «{d['ten']}» (cách ghim {int(m)} m)")
+            if d["so"] and d["so"] != x.get("so"):
+                x["so_file"] = d["so"]
+            d["dung"] = s
+            da_co.add(d["domain"])
+            gan.append((s, d["no"], int(m)))
+        elif len(sat) > 1:
+            trung.append((s, [dong[i]["no"] for _, i in sat]))
+        else:
+            chua_chac.append((s, [(dong[i]["no"], int(m)) for m, i in ds]))
+    da["kho_ddns"] = dong
+    thieu = [s for s, x in da["diem"].items() if not x.get("domain")]
+    khong_ghim = [d["no"] for d in dong if not d["dung"] and not d.get("gan_nhat")]
+    bc = {"tong_dong": len(dong), "tong_diem": len(da["diem"]), "tu_gan": len(gan), "trung": trung, "chua_chac": chua_chac,
+          "diem_thieu": thieu, "dong_khong_toa_do": khong_ghim,
+          "chenh_cam": [(s, x["so"], x["so_file"]) for s, x in da["diem"].items() if x.get("so_file")]}
+    log(f"Ghép tên miền: tự gán chắc {len(gan)}/{len(da['diem'])} điểm · trùng {len(trung)} · chưa chắc {len(chua_chac)} · "
+        f"còn {len(thieu)} điểm chưa có tên miền (chốt tại cột lúc cài)")
+    return da, bc
+
+
+def ung_vien_ten_mien(da, stt):
+    """Dòng file CHƯA dùng, gần ghim `stt` nhất trước (kèm khoảng cách); dòng không toạ độ xếp cuối."""
+    td = da.get("toa_do", {}).get(str(stt))
+    out = []
+    for i, d in enumerate(da.get("kho_ddns", [])):
+        if d.get("dung"):
+            continue
+        kc = int(_khoang_cach(td[0], td[1], d["toa_do"][0], d["toa_do"][1])) if td and d.get("toa_do") else -1
+        out.append({"i": i, "no": d["no"], "ten": d["ten"], "domain": d["domain"], "kc": kc, "so": d.get("so", 0)})
+    out.sort(key=lambda x: (x["kc"] < 0, x["kc"]))
+    return out
+
+
+def gan_ten_mien(da, stt, i, ly_do="chốt tại cột"):
+    d = da["kho_ddns"][int(i)]
+    if d.get("dung") and d["dung"] != str(stt):
+        raise RuntimeError(f"Tên miền {d['domain']} đã gán cho điểm {d['dung']}")
+    x = da["diem"][str(stt)]
+    cu = x.get("domain")
+    if cu:   # trả tên miền cũ về kho
+        for k in da["kho_ddns"]:
+            if k["domain"] == cu:
+                k["dung"] = ""
+    x.update(domain=d["domain"], u=d["u"], p=d["p"], dom_nguon=f"{ly_do} {time.strftime('%d/%m %H:%M')}: file dòng {d['no']} «{d['ten']}»")
+    d["dung"] = str(stt)
+    return d["domain"]
+
+
+def gan_nguoc(ma, da, stt, ho_so, log=print):
+    """Sau khi cài: ghi tên miền + MAC + IP về ghim LiteMark (xếp hàng, gửi bù khi có mạng)."""
+    lk = lien_ket(ma)
+    if not lk.get("id"):
+        return False
+    x = da["diem"].get(str(stt), {})
+    than = {"domain": x.get("domain", ""), "mac": [c.get("mac", "") for c in (ho_so or {}).get("cam", []) if c.get("mac")],
+            "ip": (ho_so or {}).get("wan", ""), "so_cam_thuc": len((ho_so or {}).get("cam", [])),
+            "luc": time.strftime("%Y-%m-%dT%H:%M:%S%z")[:-2] + ":" + time.strftime("%z")[-2:], "nguon": "camlink"}
+    cho = _doc(f"gan_{ma}.json", {})
+    cho[str(x.get("lm_stt") or stt)] = than
+    _ghi(f"gan_{ma}.json", cho)
+    return gui_bu_gan(ma, log)
+
+
+def gui_bu_gan(ma, log=print):
+    lk = lien_ket(ma)
+    cho = _doc(f"gan_{ma}.json", {})
+    if not lk.get("id") or not cho:
+        return False
+    con = {}
+    for g, than in cho.items():
+        try:
+            _goi(f"/api/camlink/cong-trinh/{lk['id']}/diem/{g}/gan", than)
+            log(f"🔗 Đã ghi tên miền {than['domain']} vào ghim LiteMark {g}")
+        except Exception:
+            con[g] = than
+    _ghi(f"gan_{ma}.json", con)
+    return not con
