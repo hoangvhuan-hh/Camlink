@@ -240,6 +240,8 @@ def goi_canh_bao(ma, kq, phien_ban, log=print, da=None):
         return False
     dm = (da or {}).get("diem", {})
     def lm(p):
+        if p.get("lm_stt_that"):   # tên miền đổi: báo theo ghim của điểm thật (nhận diện bằng MAC/IP)
+            return str(p["lm_stt_that"])
         return str(dm.get(str(p["stt"]), {}).get("lm_stt") or p["stt"])
     than = {"luc": time.strftime("%Y-%m-%dT%H:%M:%S"), "nguon": "camlink", "phien_ban": phien_ban,
             "khong_tin_cay": kq.get("khong_tin_cay", ""), "tong": {"dat": kq.get("dat", 0), "tong": kq.get("tong_cam", 0)},
@@ -266,3 +268,135 @@ def gui_bu(ma, log=print):
     except Exception as e:
         log(f"⚠ Chưa đẩy được lên LiteMark ({str(e)[:90]}) — sẽ gửi bù ở lần kiểm sau")
         return False
+
+
+# ---------------- XÁC MINH VỊ TRÍ THEO SỰ THẬT (hình cam nhìn thấy, chỗ người đứng) — không tin tên miền / Excel ----------------
+def _anh_nho(duong):
+    """dHash 8x8 của ảnh (so hai ảnh có giống nhau không — chỉ là GỢI Ý, người quyết)."""
+    try:
+        from PIL import Image
+        im = Image.open(duong).convert("L").resize((9, 8))
+        px = list(im.getdata())
+        bits = [1 if px[r * 9 + c] > px[r * 9 + c + 1] else 0 for r in range(8) for c in range(8)]
+        return bits
+    except Exception:
+        return None
+
+
+def _giong(a, b):
+    if not a or not b:
+        return -1
+    return int(100 * (1 - sum(x != y for x, y in zip(a, b)) / 64))
+
+
+def _tai_anh_ghim(url):
+    """Tải ảnh khảo sát LiteMark về bộ nhớ đệm (kèm khoá nếu cùng máy chủ)."""
+    if not url:
+        return ""
+    import hashlib
+    f = _f("anh_" + hashlib.md5(url.encode()).hexdigest()[:12] + ".jpg")
+    if os.path.exists(f):
+        return f
+    try:
+        req = urllib.request.Request(url, headers={"Authorization": "Bearer " + khoa(), "User-Agent": "CamLink"} if url.startswith(MAY_CHU) else {"User-Agent": "CamLink"})
+        with urllib.request.urlopen(req, timeout=15) as r, open(f, "wb") as fh:
+            fh.write(r.read())
+        return f
+    except Exception:
+        return ""
+
+
+def xac_minh(ma, da, kq_gan_nhat):
+    """Với mỗi điểm: ảnh cam vừa chụp + các ghim LiteMark ứng viên (gần nhất trước) kèm ảnh khảo sát và độ giống gợi ý.
+    Người nhìn hình quyết định cam thật sự đứng ở ghim nào → dat_ghim_tay."""
+    lk = lien_ket(ma)
+    if not lk.get("id"):
+        raise RuntimeError("Dự án chưa nối LiteMark")
+    kq = _goi(f"/api/camlink/cong-trinh/{lk['id']}/diem")
+    ghim = {str(d.get("stt")): d for d in kq.get("diem", []) if d.get("lat") and d.get("lng")}
+    anh_ghim = {g: _tai_anh_ghim(v.get("anh_dai_dien", "")) for g, v in ghim.items()}
+    hash_ghim = {g: _anh_nho(f) for g, f in anh_ghim.items() if f}
+    goc = da.get("toa_do_goc") or da.get("toa_do") or {}
+    diem_kq = {p["stt"]: p for p in (kq_gan_nhat or {}).get("diem", [])}
+    out = []
+    for stt, d in da["diem"].items():
+        p = diem_kq.get(stt, {})
+        anh = next((c["anh"] for c in p.get("cam", []) if c.get("anh") and os.path.exists(c["anh"])), "")
+        h = _anh_nho(anh) if anh else None
+        uv = []
+        for g, v in ghim.items():
+            kc = int(_khoang_cach(goc[stt][0], goc[stt][1], float(v["lat"]), float(v["lng"]))) if stt in goc else -1
+            uv.append({"lm_stt": g, "ten": v.get("ten", ""), "kc": kc, "anh": anh_ghim.get(g, ""), "giong": _giong(h, hash_ghim.get(g)),
+                       "da_ghep_voi": next((s for s, x in da["diem"].items() if x.get("lm_stt") == g and s != stt), "")})
+        uv.sort(key=lambda x: (x["kc"] if x["kc"] >= 0 else 10 ** 9))
+        out.append({"stt": stt, "ten": d.get("ten", ""), "domain": d.get("domain", ""), "anh": anh, "tong": p.get("tong", ""),
+                    "lm_stt": d.get("lm_stt", ""), "lm_chac": d.get("lm_chac", False), "lm_tay": d.get("lm_tay", ""), "ung_vien": uv})
+    return out
+
+
+def dung_tai_day(ma, da, stt, lat, lng):
+    """Người đứng tại điểm (GPS điện thoại) → ghim LiteMark gần nhất = sự thật cho điểm này."""
+    gh = da.get("litemark", {}).get("ghim", {})
+    if not gh:
+        raise RuntimeError("Chưa đồng bộ ghim LiteMark")
+    g, kc = min(((g, _khoang_cach(lat, lng, float(v["lat"]), float(v["lng"]))) for g, v in gh.items()), key=lambda x: x[1])
+    if kc > 150:
+        raise RuntimeError(f"Ghim LiteMark gần nhất (ghim {g}) cách chỗ đứng {int(kc)} m — quá xa, không chốt. Đứng sát cột cam rồi bấm lại.")
+    da["diem"][str(stt)]["lm_tay"] = str(g)
+    da["diem"][str(stt)]["lm_nguon"] = f"GPS tại chỗ {time.strftime('%d/%m %H:%M')} (cách ghim {int(kc)} m)"
+    return g, int(kc)
+
+
+# ---------------- DẤU VẾT ĐIỂM: MAC cam → IP → tên miền (tên miền chỉ là nhãn, người quản lý có thể đổi) ----------------
+def cap_nhat_vet(da, kq):
+    """Sau mỗi lần kiểm: ghi dấu vết mỗi điểm — MAC/serial các cam (bền nhất), IP công cộng đã thấy (bền vừa), tên miền (nhãn)."""
+    vet = da.setdefault("vet", {})
+    luc = time.strftime("%Y-%m-%d %H:%M")
+    for p in kq.get("diem", []):
+        v = vet.setdefault(str(p["stt"]), {"mac": [], "ip": [], "domain": []})
+        for c in p.get("cam", []):
+            k = (c.get("serial") or c.get("mac") or "").upper()
+            if k and k not in v["mac"]:
+                v["mac"].append(k)
+        if p.get("ip") and not any(x["ip"] == p["ip"] for x in v["ip"]):
+            v["ip"].append({"ip": p["ip"], "luc": luc})
+        v["ip"] = v["ip"][-10:]
+        if p.get("domain") and p["domain"] not in v["domain"]:
+            v["domain"].append(p["domain"])
+        v["luc"] = luc
+    return da
+
+
+def doi_chieu_vet(da, kq, log=print):
+    """Trước khi gửi cảnh báo: nhận diện điểm theo MAC trước, IP sau, tên miền cuối.
+    Tên miền nay trỏ về cam (MAC) hoặc IP vốn thuộc điểm khác → điểm thật là điểm đó: cảnh báo/ghim theo điểm thật, ghi rõ."""
+    vet = da.get("vet", {})
+    if not vet:
+        return []
+    mac_cua = {m: stt for stt, v in vet.items() for m in v.get("mac", [])}
+    ip_cua = {}
+    for stt, v in vet.items():
+        for x in v.get("ip", []):
+            ip_cua.setdefault(x["ip"], set()).add(stt)
+    doi = []
+    for p in kq.get("diem", []):
+        stt = str(p["stt"])
+        macs = {(c.get("serial") or c.get("mac") or "").upper() for c in p.get("cam", []) if c.get("serial") or c.get("mac")}
+        chu = {mac_cua[m] for m in macs if m in mac_cua}
+        that, can_cu = None, ""
+        if chu and chu != {stt}:
+            if len(chu) == 1:
+                that, can_cu = chu.pop(), "MAC cam"
+            else:
+                p.setdefault("canh_bao", []).append(f"Tên miền {p['domain']} đang thấy cam của nhiều điểm ({', '.join(sorted(chu))}) — cam bị dời/gộp, cần xác minh tại chỗ.")
+        elif not macs and p.get("ip") and stt not in ip_cua.get(p["ip"], set()) and len(ip_cua.get(p["ip"], set())) == 1:
+            that, can_cu = next(iter(ip_cua[p["ip"]])), "IP công cộng (IP nhà mạng có thể đổi — độ tin vừa)"
+        if that and that != stt:
+            d_that = da["diem"].get(that, {})
+            p["diem_that"], p["lm_stt_that"] = that, d_that.get("lm_stt", "")
+            p.setdefault("canh_bao", []).insert(0, f"Theo {can_cu}: tên miền {p['domain']} hiện trỏ về thiết bị của ĐIỂM {that} «{d_that.get('ten', '')}» "
+                                                   f"(ghim LiteMark {d_that.get('lm_stt', '?')}), không phải điểm {stt} như hồ sơ → cảnh báo và dẫn đường theo điểm {that}. "
+                                                   f"Tên miền đã được đổi/đặt lại; hồ sơ nên cập nhật.")
+            doi.append((stt, that, can_cu))
+            log(f"🔁 {p['domain']}: theo {can_cu} là điểm {that} (hồ sơ ghi điểm {stt}) → báo theo điểm {that}")
+    return doi

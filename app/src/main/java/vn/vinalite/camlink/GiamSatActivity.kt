@@ -122,6 +122,8 @@ class GiamSatActivity : Activity() {
         dau.addView(chu("Điểm ${p.optString("stt")}. ${p.optString("ten")} · lên $len/$tong", 15f, true, "#E7EDF2").apply { setPadding(dp(8), 0, 0, 0) }, LinearLayout.LayoutParams(0, -2, 1f))
         goc.addView(dau)
         goc.addView(chu("${p.optString("domain")} → ${p.optString("ip")} · ${p.optString("tong")}", 12f, false, "#9AA8B5").apply { setPadding(dp(4), 0, dp(4), dp(6)) })
+        val diemThat = p.optString("diem_that")
+        if (diemThat.isNotEmpty()) goc.addView(chu("🔁 " + (p.optJSONArray("canh_bao")?.optString(0) ?: "Tên miền này hiện trỏ về thiết bị của điểm $diemThat"), 12f, true, "#FFD27A").apply { setPadding(dp(4), 0, dp(4), dp(6)) })
         val lmStt = p.optString("lm_stt")
         if (lmStt.isNotEmpty()) {
             val chac = p.optBoolean("lm_chac", true)
@@ -130,7 +132,7 @@ class GiamSatActivity : Activity() {
             hangLm.gravity = Gravity.CENTER_VERTICAL
             hangLm.addView(chu((if (chac) "📍 Ghim LiteMark $lmStt" else "⚠ Ghim LiteMark $lmStt — CHƯA CHẮC (cách toạ độ Excel ${p.optInt("lm_kc")} m)") +
                 "\nSo hình live với ảnh khảo sát LiteMark: đúng chỗ thì thôi, sai thì chọn lại ghim.", 11f, false, if (chac) "#9AA8B5" else "#FFD27A").apply { setPadding(dp(4), 0, dp(4), dp(4)) }, LinearLayout.LayoutParams(0, -2, 1f))
-            hangLm.addView(Button(this).apply { text = "Sai ghim? chọn lại"; isAllCaps = false; textSize = 12f; setOnClickListener { chonGhim(p) } })
+            hangLm.addView(Button(this).apply { text = "🧭 Xác minh"; isAllCaps = false; textSize = 12f; setOnClickListener { startActivity(Intent(this@GiamSatActivity, XacMinhActivity::class.java).putExtra("ma", ma)) } })
             goc.addView(hangLm)
             val anhLm = p.optString("lm_anh")
             if (anhLm.isNotEmpty()) {

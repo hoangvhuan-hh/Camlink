@@ -230,7 +230,7 @@ class TuXaActivity : Activity() {
         val daNoi = tt.optString("ten").isNotEmpty()
         val dong = ArrayList<String>()
         dong.add(if (daNoi) "🔄 Đồng bộ lại ghim từ LiteMark" else "🔗 Chọn công trình LiteMark để nối")
-        if (daNoi) { dong.add("🔁 Đổi sang công trình khác"); dong.add("🌐 Mở công trình trên LiteMark"); dong.add("✂ Ngắt nối (về toạ độ Excel)") }
+        if (daNoi) { dong.add("🧭 Xác minh vị trí cam theo thực tế (ảnh / GPS)"); dong.add("🔁 Đổi sang công trình khác"); dong.add("🌐 Mở công trình trên LiteMark"); dong.add("✂ Ngắt nối (về toạ độ Excel)") }
         dong.add("🔑 Đổi khoá kết nối")
         val ghiChu = tt.optJSONArray("ghi_chu")?.let { a -> (0 until a.length()).joinToString("\n") { "· " + a.getString(it) } } ?: ""
         AlertDialog.Builder(this)
@@ -241,6 +241,7 @@ class TuXaActivity : Activity() {
                 when (dong[i]) {
                     "🔗 Chọn công trình LiteMark để nối", "🔁 Đổi sang công trình khác" -> chonCongTrinh()
                     "🔄 Đồng bộ lại ghim từ LiteMark" -> thread { goiLm("lm_dong_bo", ma, nk) }
+                    "🧭 Xác minh vị trí cam theo thực tế (ảnh / GPS)" -> startActivity(Intent(this, XacMinhActivity::class.java).putExtra("ma", ma))
                     "🌐 Mở công trình trên LiteMark" -> startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("${tt.optString("may_chu")}/ct/${tt.optString("id")}")))
                     "✂ Ngắt nối (về toạ độ Excel)" -> { core.callAttr("lm_ngat", ma); nk.ghi("Đã ngắt nối LiteMark, dùng lại toạ độ Excel") }
                     "🔑 Đổi khoá kết nối" -> nhapKhoa()
@@ -298,6 +299,7 @@ class TuXaActivity : Activity() {
                 AlertDialog.Builder(this).setTitle("Đã nối LiteMark «${r.optString("ten")}»")
                     .setMessage("${r.optInt("so_ghim")} ghim đã dùng làm vị trí điểm. Kết quả kiểm tra từ nay tự đẩy lên bản đồ LiteMark theo số ghim LiteMark.$bang$chuoi")
                     .setPositiveButton("Kiểm tra lại ngay") { _, _ -> kiem() }
+                    .setNeutralButton("🧭 Xác minh vị trí") { _, _ -> startActivity(Intent(this, XacMinhActivity::class.java).putExtra("ma", ma)) }
                     .setNegativeButton("Đóng", null).show()
             }
         } catch (e: Exception) { ui.post { nk.ghi("✖ LiteMark: ${e.message?.substringAfterLast("RuntimeError: ")?.take(160)}") } }

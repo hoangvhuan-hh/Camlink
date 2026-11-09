@@ -520,6 +520,13 @@ def tuxa_kiem(ma, log, nhanh=True):
     if doi:
         _ghi_du_an(ma, da)
     import camlink_litemark as L
+    # nhận diện điểm theo MAC → IP → tên miền (tên miền chỉ là nhãn), rồi ghi dấu vết lần này
+    try:
+        L.doi_chieu_vet(da, kq, log)
+        L.cap_nhat_vet(da, kq)
+        _ghi_du_an(ma, da)
+    except Exception as e:
+        log(f"⚠ dấu vết điểm: {e}")
     lk = L.lien_ket(ma)
     if lk.get("id"):
         kq["litemark"] = {"id": lk["id"], "ten": lk.get("ten", "")}
@@ -582,6 +589,27 @@ def lm_dong_bo(ma, log):
     L.gui_bu(ma, log)
     return json.dumps({"ok": True, "ten": da["litemark"]["ten"], "so_ghim": da["litemark"]["so_ghim"], "ghi_chu": ghi_chu,
                        "bang_ghep": da["litemark"].get("bang_ghep", [])}, ensure_ascii=False)
+
+
+def lm_xac_minh(ma):
+    """Dữ liệu màn Xác minh vị trí: ảnh cam vừa chụp + ghim ứng viên kèm ảnh khảo sát (JSON)."""
+    import camlink_litemark as L
+    kq = None
+    try:
+        kq = json.loads(tuxa_gan_nhat(ma) or "null")
+    except ValueError:
+        pass
+    return json.dumps(L.xac_minh(ma, _doc_du_an(ma), kq), ensure_ascii=False)
+
+
+def lm_dung_tai_day(ma, stt, lat, lng, log):
+    import camlink_litemark as L
+    da = _doc_du_an(ma)
+    g, kc = L.dung_tai_day(ma, da, stt, float(lat), float(lng))
+    _ghi_du_an(ma, da)
+    r = json.loads(lm_dong_bo(ma, log))
+    r["ghim"], r["kc"] = g, kc
+    return json.dumps(r, ensure_ascii=False)
 
 
 def lm_dat_ghim(ma, stt, lm_stt, log):
