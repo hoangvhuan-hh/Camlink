@@ -504,6 +504,13 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True, nhanh=Fal
     else:
         log(f"KIỂM TRA TỪ XA — {da['ten']}: {len(ds)} điểm (chỉ đọc, qua Internet)")
     t0 = time.time()
+    xong_dem = [0]
+    khoa_dem = threading.Lock()
+
+    def tien_do(pct, chu):
+        log(f"TIEN_DO {int(pct)}|{chu}")
+
+    tien_do(2, "Đo mạng điện thoại…")
     mang_truoc = mang_dien_thoai_ok()
     if not mang_truoc:
         log("✖ Điện thoại KHÔNG ra được Internet trên đường mạng đang dùng (1.1.1.1 / 8.8.8.8 không trả lời) → không kiểm, tránh báo rớt sai.")
@@ -525,6 +532,10 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True, nhanh=Fal
         r["map_goc"] = diem[k].get("map", "")
         bieu = {"xanh": "🟢", "vang": "🟡", "do": "🔴"}[r["muc"]]
         log(f" {bieu} {k}. {r['ten']} — {r['tong']}")
+        with khoa_dem:
+            xong_dem[0] += 1
+            n = xong_dem[0]
+        tien_do(5 + 70 * n / max(len(quet_ds), 1), f"Lượt 1: xong {n}/{len(quet_ds)} điểm cần quét" + (f" (+{len(tai_su_dung)} điểm lấy từ lịch sử)" if tai_su_dung else ""))
         return r
 
     with ThreadPoolExecutor(4) as ex:
@@ -545,8 +556,9 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True, nhanh=Fal
     if nghi_ngo:
         log(f"↻ Lượt 2: đo lại tuần tự {len(nghi_ngo)} điểm có cam im lặng (tránh kết luận rớt do mạng điện thoại chập chờn)")
     lat_lai = 0
-    for i in nghi_ngo:
+    for so_tt, i in enumerate(nghi_ngo):
         p = kqs[i]
+        tien_do(76 + 12 * so_tt / max(len(nghi_ngo), 1), f"Lượt 2: đo lại điểm {p['stt']} ({so_tt + 1}/{len(nghi_ngo)})")
         dom = p["domain"]
         ports = [c["http"] for c in p["cam"] if c["muc"] != XANH] or [C.HTTP[0]]
         thay_mo = False
@@ -570,6 +582,7 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True, nhanh=Fal
         khong_tin_cay = ("Mạng điện thoại chập chờn trong lúc kiểm" + (" (mất Internet lúc kết thúc)" if not mang_sau else f" ({lat_lai} điểm lượt 1 báo rớt sai)")
                          + " → kết quả rớt ở lượt này chỉ tin khi đo lại vẫn rớt; nên kiểm lại sau vài phút.")
         log("⚠ " + khong_tin_cay)
+    tien_do(89, "Đối chiếu chéo, tự sửa cam có vấn đề…")
     if tu_sua:
         sua_n = [p for p in kqs if any(c["muc"] != XANH and any(v in TU_SUA_DUOC for v in c.get("sua", [])) for c in p["cam"])]
         if sua_n:
@@ -785,6 +798,7 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True, nhanh=Fal
     if ds_la:
         log(f"⚠ CAM LẠ: theo file {tong_file} cam + {len(ds_la)} cam lạ scan thấy ở "
             + "; ".join(f"điểm {x['stt']} ({x['domain']}:{x['http']}{', MỚI' if x['moi'] else ''})" for x in ds_la))
+    tien_do(100, f"Xong: {dat}/{tong_cam} cam đạt · {out['giay']} giây")
     log(f"→ File ghi {tong_file} cam · quét thực tế thấy {tong_quet} cam · {dat} cam đạt · {out['rot']} cam vừa rớt so với lần trước · {out['giay']} giây")
     return out
 

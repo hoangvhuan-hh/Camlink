@@ -168,8 +168,24 @@ class TuXaActivity : Activity() {
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
+    private lateinit var thanhTienDo: android.widget.ProgressBar
+    private lateinit var chuTienDo: TextView
+
     inner class NhatKy {
-        fun ghi(s: String) { ui.post { tienDo.text = s.trim() } }
+        fun ghi(s: String) {
+            if (s.startsWith("TIEN_DO ")) {   // "TIEN_DO 27|Lượt 1: xong 3/11 điểm"
+                val pct = s.substring(8).substringBefore("|").trim().toIntOrNull() ?: return
+                val chu = s.substringAfter("|", "")
+                ui.post {
+                    thanhTienDo.visibility = if (pct >= 100) View.GONE else View.VISIBLE
+                    chuTienDo.visibility = thanhTienDo.visibility
+                    thanhTienDo.progress = pct
+                    chuTienDo.text = "$pct% · $chu"
+                }
+                return
+            }
+            ui.post { tienDo.text = s.trim() }
+        }
     }
 
     private val nk = NhatKy()
@@ -317,6 +333,13 @@ class TuXaActivity : Activity() {
         hang2.addView(nut("🗺 Bản đồ") { moBanDo() }, LinearLayout.LayoutParams(0, -2, 1f))
         hang2.addView(nut("🔗 LiteMark") { liteMark() }, LinearLayout.LayoutParams(0, -2, 1f))
         goc.addView(hang2)
+        thanhTienDo = android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
+        thanhTienDo.max = 100
+        thanhTienDo.visibility = View.GONE
+        goc.addView(thanhTienDo, LinearLayout.LayoutParams(-1, dp(10)).apply { topMargin = dp(4) })
+        chuTienDo = chu("", 13f, true, "#0F5D8C")
+        chuTienDo.visibility = View.GONE
+        goc.addView(chuTienDo)
         tienDo = chu("", 13f, mau = "#0F5D8C")
         tienDo.setPadding(dp(4), dp(4), dp(4), dp(4))
         goc.addView(tienDo)
