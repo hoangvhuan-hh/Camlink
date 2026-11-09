@@ -74,6 +74,16 @@ class TuXaActivity : Activity() {
         return l
     }
 
+    private fun link(s: String, bam: () -> Unit): TextView {
+        val t = TextView(this)
+        t.text = android.text.SpannableString(s).apply { setSpan(android.text.style.UnderlineSpan(), 0, s.length, 0) }
+        t.textSize = 15f
+        t.setTextColor(Color.parseColor("#0B57D0"))
+        t.setPadding(0, dp(6), 0, dp(6))
+        t.setOnClickListener { bam() }
+        return t
+    }
+
     private fun nut(s: String, bam: () -> Unit): Button {
         val b = Button(this)
         b.text = s
@@ -229,7 +239,9 @@ class TuXaActivity : Activity() {
         t.addView(chu("${bieu[muc]} Điểm ${p.optString("stt")}. ${p.optString("ten")}", 16f, true))
         t.addView(chu("${p.optString("tong")}  ·  ${p.optString("domain")}${if (p.optString("ip").isNotEmpty()) " → " + p.optString("ip") else ""}", 13f, mau = "#3B4654"))
         val wm = p.optString("web_modem")
-        if (wm.isNotEmpty()) t.addView(nut("🌐 Mở web modem: $wm") { moLink(wm) })
+        if (wm.isNotEmpty()) t.addView(link("🌐 Web modem: $wm") { moLink(wm) })
+        t.addView(chu(p.optString("ghi_so"), 12f, mau = "#5B6776"))
+        t.addView(nut("Sửa số cam thực tế (đang ${p.optInt("so")})") { suaSoCam(p) })
         val cams = p.optJSONArray("cam") ?: JSONArray()
         for (i in 0 until cams.length()) t.addView(dongCam(p, cams.getJSONObject(i)))
         return t
@@ -267,7 +279,21 @@ class TuXaActivity : Activity() {
             "User cam: ${c.optString("user")}   Pass cam: ${c.optString("pass")}\n" +
             "User No-IP: ${p.optString("noip_user")}   Pass No-IP: ${p.optString("noip_pass")}" +
             (if (c.optString("model").isNotEmpty()) "\nCam: ${c.optString("hang")} ${c.optString("model")}" else "")
-        ct.addView(chu(thongTin, 13f, mau = "#17202B").apply { setTextIsSelectable(true); typeface = Typeface.MONOSPACE })
+        // link bấm vào là mở luôn
+        ct.addView(link("🌐 ${c.optString("web")}") { moLink(c.optString("web")) })
+        ct.addView(link("▶ ${c.optString("live").replace(Regex("//[^@/]*@"), "//")}") {
+            startActivity(Intent(this, XemLiveActivity::class.java).putExtra("url", c.optString("live"))
+                .putExtra("tieu_de", "Điểm ${p.optString("stt")} · cam ${c.optInt("so")}"))
+        })
+        ct.addView(chu("User cam: ${c.optString("user")}   Pass cam: ${c.optString("pass")}\n" +
+            "User No-IP: ${p.optString("noip_user")}   Pass No-IP: ${p.optString("noip_pass")}" +
+            (if (c.optString("model").isNotEmpty()) "\nCam: ${c.optString("hang")} ${c.optString("model")}" else ""),
+            13f).apply { setTextIsSelectable(true); typeface = Typeface.MONOSPACE })
+        val bc = c.optJSONArray("bang_chung")
+        if (bc != null && bc.length() > 0) {
+            ct.addView(chu("Bằng chứng:", 14f, true, "#0F5D8C"))
+            for (i in 0 until bc.length()) ct.addView(chu("• ${bc.getString(i)}", 13f, mau = "#3B4654"))
+        }
         val h1 = LinearLayout(this)
         h1.orientation = LinearLayout.HORIZONTAL
         h1.addView(nut("Mở web") { moLink(c.optString("web")) }, LinearLayout.LayoutParams(0, -2, 1f))
@@ -284,6 +310,27 @@ class TuXaActivity : Activity() {
         }
         hop.addView(ct)
         return hop
+    }
+
+    private fun suaSoCam(p: JSONObject) {
+        val stt = p.optString("stt")
+        val chon = arrayOf("1 cam", "2 cam", "3 cam", "4 cam")
+        AlertDialog.Builder(this)
+            .setTitle("Điểm $stt thực tế có mấy cam?")
+            .setItems(chon) { _, i ->
+                core.callAttr("sua_so_cam", ma, stt, i + 1)
+                if (dangChay) return@setItems
+                dangChay = true
+                thread {
+                    gan4G(true)
+                    try {
+                        val moi = JSONObject(core.callAttr("tuxa_kiem_diem", ma, stt, nk).toString())
+                        ui.post { thayDiem(moi) }
+                    } catch (e: Exception) { ui.post { nk.ghi("✖ ${e.message}") } } finally { gan4G(false); dangChay = false }
+                }
+            }
+            .setNegativeButton("Huỷ", null)
+            .show()
     }
 
     // ---------------- sửa từ xa ----------------

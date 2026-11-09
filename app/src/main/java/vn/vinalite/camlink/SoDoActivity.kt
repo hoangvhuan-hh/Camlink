@@ -131,7 +131,12 @@ class SoDoActivity : Activity() {
             }
             ct.addView(chu("IP LAN ${c.optString("ip")} · HTTP ${c.optInt("http")} · RTSP ${c.optInt("rtsp")}", 13f))
             if (c.optString("mac").isNotEmpty()) ct.addView(chu("MAC ${c.optString("mac")}", 13f))
-            ct.addView(chu("Xem web: http://${j.optString("domain")}:${c.optInt("http")}", 13f, mau = "#0F5D8C").apply { setTextIsSelectable(true) })
+            val webCam = "http://${j.optString("domain")}:${c.optInt("http")}"
+            ct.addView(chu("🌐 $webCam", 15f, mau = "#0B57D0").apply {
+                paintFlags = paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG
+                setPadding(0, dp(6), 0, dp(6))
+                setOnClickListener { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(webCam))) }
+            })
             val ghiCai = c.optString("ghi")
             if (ghiCai.isNotEmpty()) ct.addView(chu("Lúc cài: $ghiCai", 13f, mau = if (ghiCai.contains("CHƯA") || ghiCai.contains("LỖI")) "#9A5B00" else "#1D7A46"))
             val loi = c.optString("loi_ngoai")

@@ -137,7 +137,11 @@ def nhap_excel(duong_dan, ten_file, log):
             if td:
                 toa_do[k] = td
             log(f"  {k}. {v['ten']}: {'%.5f, %.5f' % tuple(td) if td else 'không có toạ độ'}")
-        _ghi_du_an(ma, {"ten": ten, "diem": ds, "toa_do": toa_do, "da_xong": cu.get("da_xong", {})})
+        for k, v in ds.items():   # giữ số cam thực tế đã sửa trong app
+            if (cu.get("diem") or {}).get(k, {}).get("so_thuc"):
+                v["so_thuc"] = cu["diem"][k]["so_thuc"]
+        _ghi_du_an(ma, {"ten": ten, "diem": ds, "toa_do": toa_do, "da_xong": cu.get("da_xong", {}),
+                        "ho_so": cu.get("ho_so", {})})
         canh = _diem_trung_vi_tri(ma, toa_do)
         for c in canh:
             log("⚠ " + c)
@@ -503,3 +507,10 @@ def tuxa_excel(json_kq):
 def ten_sua(viec):
     import camlink_tuxa as T
     return T.TEN_SUA.get(viec, viec)
+
+
+def sua_so_cam(ma, stt, n):
+    da = _doc_du_an(ma)
+    da["diem"][stt]["so_thuc"] = int(n)
+    _ghi_du_an(ma, da)
+    return f"Điểm {stt}: đã ghi {n} cam thực tế"

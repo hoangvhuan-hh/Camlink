@@ -11,6 +11,16 @@ PORT_MODEM = [8888, 8000, 443, 80, 7547]   # cổng quản trị modem có thể
 XANH, VANG, DO = "xanh", "vang", "do"
 
 
+TEN_CHAM = {"mo": "MỞ (có thiết bị trả lời)", "tu_choi": "BỊ TỪ CHỐI (modem trả lời nhưng không có gì ở port này)",
+            "im_lang": "KHÔNG TRẢ LỜI"}
+
+
+def cham_tg(host, port, cho=4):
+    t0 = time.time()
+    r = cham(host, port, cho)
+    return r, int((time.time() - t0) * 1000)
+
+
 def cham(host, port, cho=4):
     """'mo' | 'tu_choi' (máy có trả lời nhưng không có gì ở port) | 'im_lang' (không trả lời)."""
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -41,19 +51,27 @@ def _ket(cam, muc, nguyen_nhan, viec, sua=None, nhan=""):
 def kiem_diem(stt, d, cd, anh_dir, ma, ho_so=None):
     dom = d["domain"]
     cu, cp = cd.get("cam_user", "admin"), cd.get("cam_pw", "")
-    so = max(int(d.get("so") or 0), 1)
+    so_file = max(int(d.get("so") or 0), 1)
+    if d.get("so_thuc"):
+        so, nguon_so = int(d["so_thuc"]), "số cam thực tế đã sửa trong app"
+    elif ho_so and ho_so.get("cam"):
+        so, nguon_so = len(ho_so["cam"]), "số cam tìm thấy lúc cài"
+    else:
+        so, nguon_so = so_file, "số cam theo file khảo sát (Camera + Camera BS)"
+    luc = time.strftime("%H:%M:%S %d/%m/%Y")
     kq = {"stt": stt, "ten": d["ten"], "domain": dom, "noip_user": d.get("u", ""), "noip_pass": d.get("p", ""),
-          "ip": "", "tong": "", "muc": XANH, "viec": [], "web_modem": "", "cam": []}
+          "ip": "", "tong": "", "muc": XANH, "viec": [], "web_modem": "", "cam": [], "luc": luc,
+          "so": so, "so_file": so_file, "nguon_so": nguon_so}
     cams = [{"so": i + 1, "http": C.HTTP[i], "rtsp": C.RTSP[i], "web": f"http://{dom}:{C.HTTP[i]}",
              "live": f"rtsp://{cu}:{cp}@{dom}:{C.RTSP[i]}/", "user": cu, "pass": cp, "anh": "", "hang": "", "model": "",
-             "t_http": "", "t_rtsp": ""} for i in range(so)]
+             "t_http": "", "t_rtsp": "", "ms_http": 0, "ms_rtsp": 0, "onvif": "", "bang_chung": []} for i in range(so)]
     kq["cam"] = cams
 
     def ca_diem(muc, tong, nguyen, viec):
         kq.update(muc=muc, tong=tong, viec=viec)
         for c in cams:
             _ket(c, muc, nguyen, viec, nhan=tong)
-        return kq
+        return _xong(kq)
 
     # Tầng 1 — tên miền
     try:
@@ -73,8 +91,9 @@ def kiem_diem(stt, d, cd, anh_dir, ma, ho_so=None):
     # Tầng 3–4 — đường truyền + port từng cam (chạm song song)
     viec_cham = [(c, "t_http", c["http"]) for c in cams] + [(c, "t_rtsp", c["rtsp"]) for c in cams]
     with ThreadPoolExecutor(8) as ex:
-        for (c, k, _), r in zip(viec_cham, ex.map(lambda x: cham(dom, x[2]), viec_cham)):
+        for (c, k, _), (r, ms) in zip(viec_cham, ex.map(lambda x: cham_tg(dom, x[2]), viec_cham)):
             c[k] = r
+            c["ms" + k[1:]] = ms
     cong_cam = {c["http"] for c in cams} | {c["rtsp"] for c in cams}
     for p in PORT_MODEM:
         if p not in cong_cam and cham(dom, p, 3) == "mo":
@@ -103,6 +122,7 @@ def kiem_diem(stt, d, cd, anh_dir, ma, ho_so=None):
                   "Có web modem: bấm Sửa từ xa để khởi động lại modem."], ["khoi_dong_modem"], "Cam mất nguồn / lỏng dây")
             continue
         ov = C.Onvif(dom, c["http"], cu, cp)
+        c["onvif"] = "không trả lời"
         if not ov.co():
             _ket(c, VANG, f"Port {c['http']} mở nhưng không phải cam trả lời (ONVIF tắt hoặc cam treo)",
                  [f"Mở web {c['web']} xem có vào được không.", "Bấm Sửa từ xa để khởi động lại modem; còn lỗi thì ra điểm khởi động lại cam."],
@@ -111,7 +131,9 @@ def kiem_diem(stt, d, cd, anh_dir, ma, ho_so=None):
         try:
             tt = ov.thong_tin()
             c["hang"], c["model"] = tt.get("hang", ""), tt.get("model", "")
+            c["onvif"] = "đăng nhập được"
         except Exception:
+            c["onvif"] = "trả lời nhưng TỪ CHỐI user/pass"
             _ket(c, VANG, "Cam có mạng nhưng user/pass cam lưu trong app SAI",
                  ["Sửa user/pass cam ở nút \"User / pass cam và modem\" rồi kiểm tra lại.",
                   "Nếu pass đúng mà vẫn báo: có người đã đổi pass cam → hỏi đơn vị quản lý."], nhan="Sai user/pass cam")
@@ -150,6 +172,28 @@ def kiem_diem(stt, d, cd, anh_dir, ma, ho_so=None):
     hong = [c for c in cams if c["muc"] != XANH]
     kq["muc"] = DO if any(c["muc"] == DO for c in cams) else (VANG if hong else XANH)
     kq["tong"] = "ĐẠT" if not hong else f"{len(cams) - len(hong)}/{len(cams)} cam đạt"
+    return _xong(kq)
+
+
+def _xong(kq):
+    """Ghi bằng chứng cho từng cam: vào được hay không vào được đều có dữ kiện cụ thể."""
+    for c in kq["cam"]:
+        b = [f"Kiểm lúc {kq['luc']} qua Internet",
+             f"Tên miền {kq['domain']} → " + (kq["ip"] or "KHÔNG PHÂN GIẢI ĐƯỢC")]
+        if c.get("t_http"):
+            b.append(f"Port web {c['http']}: {TEN_CHAM[c['t_http']]} — {c['ms_http']} ms")
+            b.append(f"Port video RTSP {c['rtsp']}: {TEN_CHAM[c['t_rtsp']]} — {c['ms_rtsp']} ms")
+        if c.get("onvif"):
+            b.append(f"ONVIF: {c['onvif']}" + (f" — {c['hang']} {c['model']}".rstrip() if c.get("model") else ""))
+        if c.get("anh") and os.path.exists(c["anh"]):
+            b.append(f"ẢNH CHỤP qua {kq['domain']}:{c['http']} — {os.path.getsize(c['anh']) // 1024} KB")
+        elif c["muc"] != XANH:
+            b.append("KHÔNG lấy được ảnh")
+        c["bang_chung"] = b
+    if kq.get("so") != kq.get("so_file"):
+        kq["ghi_so"] = f"File khảo sát ghi {kq['so_file']} cam, đang kiểm {kq['so']} cam ({kq['nguon_so']})"
+    else:
+        kq["ghi_so"] = f"Kiểm {kq['so']} cam ({kq['nguon_so']})"
     return kq
 
 
@@ -221,24 +265,48 @@ def xuat_excel(goc, ket_qua):
     ws.title = "Kiem tra tu xa"
     ws.append([f"KIỂM TRA TỪ XA — {ket_qua['du_an']} — {ket_qua['luc']} — {ket_qua['dat']}/{ket_qua['tong_cam']} cam đạt"])
     ws["A1"].font = Font(bold=True, size=13)
-    tieu = ["No", "Tên điểm", "Domain", "Cam", "Trạng thái", "Nguyên nhân", "Việc tiếp theo", "Link web", "Link xem trực tiếp",
-            "User cam", "Pass cam", "User No-IP", "Pass No-IP", "Web modem", "Vừa rớt"]
+    tieu = ["No", "Tên điểm", "Domain", "Cam", "Trạng thái", "Ảnh chụp (bằng chứng)", "Bằng chứng kết nối", "Nguyên nhân",
+            "Việc tiếp theo", "Link web", "Link xem trực tiếp", "User cam", "Pass cam", "User No-IP", "Pass No-IP",
+            "Web modem", "Vừa rớt", "Số cam"]
     ws.append(tieu)
     for c in ws[2]:
         c.font = Font(bold=True, color="FFFFFF")
         c.fill = PatternFill("solid", fgColor="0F5D8C")
     mau = {"xanh": "D9F2E3", "vang": "FFF1C7", "do": "FBD9D5"}
     chu = {"xanh": "ĐẠT", "vang": "LỖI CẤU HÌNH", "do": "LỖI PHẦN CỨNG / MẠNG"}
+    try:
+        from openpyxl.drawing.image import Image as XImg
+        from PIL import Image as PImg
+    except Exception:
+        XImg = None
     for p in ket_qua["diem"]:
         for c in p["cam"]:
-            ws.append([p["stt"], p["ten"], p["domain"], c["so"], chu[c["muc"]], c.get("nguyen_nhan", ""),
+            ws.append([p["stt"], p["ten"], p["domain"], c["so"], chu[c["muc"]], "" if c.get("anh") else "KHÔNG CÓ ẢNH",
+                       "\n".join(c.get("bang_chung", [])), c.get("nguyen_nhan", ""),
                        "\n".join(f"{i + 1}) {v}" for i, v in enumerate(c.get("viec", []))), c["web"], c["live"],
                        c["user"], c["pass"], p.get("noip_user", ""), p.get("noip_pass", ""), p.get("web_modem", ""),
-                       "CÓ" if c.get("vua_rot") else ""])
-            for cell in ws[ws.max_row]:
+                       "CÓ" if c.get("vua_rot") else "", p.get("ghi_so", "")])
+            dong = ws.max_row
+            for cell in ws[dong]:
                 cell.fill = PatternFill("solid", fgColor=mau[c["muc"]])
                 cell.alignment = Alignment(wrap_text=True, vertical="top")
-    for col, w in zip("ABCDEFGHIJKLMNO", [5, 26, 28, 5, 14, 40, 60, 30, 40, 10, 12, 12, 14, 26, 8]):
+            ws.row_dimensions[dong].height = 125
+            ws.cell(dong, 10).hyperlink = c["web"]
+            ws.cell(dong, 10).font = Font(color="0B57D0", underline="single")
+            if p.get("web_modem"):
+                ws.cell(dong, 16).hyperlink = p["web_modem"]
+                ws.cell(dong, 16).font = Font(color="0B57D0", underline="single")
+            a = c.get("anh")
+            if XImg and a and os.path.exists(a):
+                try:
+                    nho = a[:-4] + "_nho.png"
+                    im = PImg.open(a)
+                    im.thumbnail((210, 160))
+                    im.save(nho)
+                    ws.add_image(XImg(nho), f"F{dong}")
+                except Exception:
+                    ws.cell(dong, 6, "có ảnh (không nhúng được)")
+    for col, w in zip("ABCDEFGHIJKLMNOPQR", [5, 24, 26, 5, 13, 31, 52, 40, 56, 28, 38, 10, 12, 12, 14, 24, 8, 30]):
         ws.column_dimensions[col].width = w
     ws.freeze_panes = "A3"
     f = os.path.join(goc, "ketqua", f"KiemTraTuXa_{ket_qua['ma']}_{time.strftime('%Y%m%d_%H%M')}.xlsx")
