@@ -6,7 +6,8 @@ from concurrent.futures import ThreadPoolExecutor
 import camlink_dt as C
 import camlink_oryza
 
-PORT_MODEM = [8888, 8000, 443, 80, 7547]   # cổng quản trị modem có thể mở ra Internet
+PORT_QUET = [80, 81, 82, 85, 88, 443, 7547, 8888] + list(range(8000, 8011)) + list(range(8080, 8100))  # cổng web cam/modem hay dùng
+RTSP_CHUNG = [554, 5541, 5542, 5543]
 
 XANH, VANG, DO = "xanh", "vang", "do"
 
@@ -88,49 +89,79 @@ def kiem_diem(stt, d, cd, anh_dir, ma, ho_so=None):
                         "Nếu IP dạng 100.64–100.127.x.x: nhà mạng đang cấp IP nội bộ (CGNAT) → gọi VNPT 18001166 xin IP public cho đường truyền.",
                         "Nhà mạng không cấp IP public: lắp router có VPN dự phòng tại điểm (khoảng 0,5–1,5 triệu) để vẫn xem và sửa từ xa được."])
 
-    # Tầng 3–4 — đường truyền + port từng cam (chạm song song)
-    viec_cham = [(c, "t_http", c["http"]) for c in cams] + [(c, "t_rtsp", c["rtsp"]) for c in cams]
-    with ThreadPoolExecutor(8) as ex:
-        for (c, k, _), (r, ms) in zip(viec_cham, ex.map(lambda x: cham_tg(dom, x[2]), viec_cham)):
-            c[k] = r
-            c["ms" + k[1:]] = ms
-    cong_cam = {c["http"] for c in cams} | {c["rtsp"] for c in cams}
-    for p in PORT_MODEM:
-        if p not in cong_cam and cham(dom, p, 3) == "mo":
-            kq["web_modem"] = f"{'https' if p == 443 else 'http'}://{dom}:{p}"
-            break
-    song = kq["web_modem"] or any(c["t_http"] != "im_lang" or c["t_rtsp"] != "im_lang" for c in cams)
+    # Tầng 3 — QUÉT chính tên miền: tìm mọi cam thật đang gắn sau tên miền (không tin số cam trong file)
+    rtsp_du_kien = [c["rtsp"] for c in cams]
+    cong = sorted(set(PORT_QUET) | {c["http"] for c in cams} | set(rtsp_du_kien))
+    with ThreadPoolExecutor(16) as ex:
+        ket = dict(zip(cong, ex.map(lambda x: cham_tg(dom, x), cong)))
+    mo = [x for x in cong if ket[x][0] == "mo" and x not in rtsp_du_kien and x not in RTSP_CHUNG]
+    cam_port, web_khac = [], []
+    for x in mo:
+        ov = C.Onvif(dom, x, cu, cp)
+        if ov.co() or camlink_oryza.la_oryza(dom, x, 4):
+            cam_port.append(x)
+        else:
+            web_khac.append(x)
+    if web_khac:
+        x = web_khac[0]
+        kq["web_modem"] = f"{'https' if x == 443 else 'http'}://{dom}:{x}"
+    kq["quet"] = {"cam_port": cam_port, "web_khac": web_khac, "so_quet": len(cam_port)}
+    song = any(r[0] != "im_lang" for r in ket.values())
     if not song:
         viec = ["Gọi người tại điểm kiểm tra đèn nguồn tủ điện và modem.",
                 "Modem sáng đèn LOS đỏ → gọi VNPT 18001166 báo đứt cáp quang.",
                 "Chỉ cử thợ ra khi 2 bước trên không xử lý được."]
         if ho_so and ho_so.get("wan") and ho_so["wan"] != ip:
             viec.insert(0, f"Lưu ý: tên miền đang trỏ {ip}, lúc cài là {ho_so['wan']} → có thể cam 1 mất nguồn nên DDNS không cập nhật IP mới.")
-        return ca_diem(DO, "MẤT ĐIỆN / MẤT MẠNG CẢ ĐIỂM", "modem và mọi cam đều không trả lời", viec)
+        for c in cams:
+            c["t_http"], c["ms_http"] = ket[c["http"]]
+            c["t_rtsp"], c["ms_rtsp"] = ket[c["rtsp"]]
+        return ca_diem(DO, "MẤT ĐIỆN / MẤT MẠNG CẢ ĐIỂM",
+                       f"quét {len(cong)} port trên {dom}: modem và mọi cam đều không trả lời", viec)
+
+    # cam phát hiện thêm ở port không có trong cấu hình
+    du_kien = {c["http"] for c in cams}
+    for x in cam_port:
+        if x not in du_kien:
+            cams.append({"so": len(cams) + 1, "http": x, "rtsp": 0, "web": f"http://{dom}:{x}", "live": "",
+                         "user": cu, "pass": cp, "anh": "", "hang": "", "model": "", "t_http": "", "t_rtsp": "",
+                         "ms_http": 0, "ms_rtsp": 0, "onvif": "", "bang_chung": [], "them": True})
+    ghi_quet = (f"Quét {dom}: thấy {len(cam_port)} cam (port {', '.join(map(str, cam_port)) or 'không có'})"
+                f"; cấu hình {so} cam ({nguon_so})")
 
     # Tầng 4–5 — từng cam
     for c in cams:
-        if c["t_http"] == "tu_choi":
-            _ket(c, VANG, f"Modem có mạng nhưng từ chối port {c['http']} → chưa có luật mở port (NAT) cho cam {c['so']}",
-                 [f"Bấm Sửa từ xa để thêm luật NAT {c['http']}/{c['rtsp']} → 192.168.1.{C.IP_TU + c['so'] - 1} (cần vào được web modem).",
-                  "Không vào được web modem: ra điểm chạy lại CamLink."], ["them_nat"], "Thiếu luật mở port (NAT)")
-            continue
-        if c["t_http"] == "im_lang":
-            _ket(c, DO, f"Modem có mạng nhưng cam {c['so']} không trả lời → cam mất nguồn, lỏng dây mạng, hoặc bị đổi IP",
-                 [f"Gọi người tại điểm kiểm tra đèn nguồn cam {c['so']} và dây mạng/PoE.",
-                  "Nếu cam vẫn sáng: có thể cam bị reset về IP mặc định → ra điểm chạy lại CamLink.",
-                  "Có web modem: bấm Sửa từ xa để khởi động lại modem."], ["khoi_dong_modem"], "Cam mất nguồn / lỏng dây")
+        c["t_http"], c["ms_http"] = ket.get(c["http"], cham_tg(dom, c["http"]))
+        if c["http"] not in cam_port:
+            thieu = len(cam_port) < so
+            goi_y = ([f"Quét chỉ thấy {len(cam_port)} cam trên tên miền. Nếu điểm thực tế chỉ có {len(cam_port)} cam: bấm \"Sửa số cam thực tế\"."]
+                     if thieu and nguon_so.startswith("số cam theo file") else [])
+            if c["t_http"] == "tu_choi":
+                _ket(c, VANG, f"Modem có mạng nhưng từ chối port {c['http']} → chưa có luật mở port (NAT) cho cam {c['so']}, hoặc không có cam {c['so']}",
+                     goi_y + [f"Bấm Sửa từ xa để thêm luật NAT {c['http']}/{c['rtsp']} → 192.168.1.{C.IP_TU + c['so'] - 1} (cần vào được web modem).",
+                              "Không vào được web modem: ra điểm chạy lại CamLink."], ["them_nat"], "Không thấy cam / thiếu NAT")
+            elif c["t_http"] == "im_lang":
+                _ket(c, DO, f"Modem có mạng nhưng cam {c['so']} (port {c['http']}) không trả lời → cam mất nguồn, lỏng dây mạng, hoặc bị đổi IP",
+                     goi_y + [f"Gọi người tại điểm kiểm tra đèn nguồn cam {c['so']} và dây mạng/PoE.",
+                              "Nếu cam vẫn sáng: có thể cam bị reset về IP mặc định → ra điểm chạy lại CamLink.",
+                              "Có web modem: bấm Sửa từ xa để khởi động lại modem."], ["khoi_dong_modem"], "Cam mất nguồn / lỏng dây")
+            else:
+                _ket(c, VANG, f"Port {c['http']} mở nhưng không phải cam trả lời (ONVIF tắt hoặc cam treo)",
+                     [f"Mở web {c['web']} xem có vào được không.", "Bấm Sửa từ xa để khởi động lại modem; còn lỗi thì ra điểm khởi động lại cam."],
+                     ["khoi_dong_modem"], "Port mở nhưng cam không trả lời")
+            if c["rtsp"]:
+                c["t_rtsp"], c["ms_rtsp"] = ket.get(c["rtsp"], ("im_lang", 0))
             continue
         ov = C.Onvif(dom, c["http"], cu, cp)
-        c["onvif"] = "không trả lời"
-        if not ov.co():
-            _ket(c, VANG, f"Port {c['http']} mở nhưng không phải cam trả lời (ONVIF tắt hoặc cam treo)",
-                 [f"Mở web {c['web']} xem có vào được không.", "Bấm Sửa từ xa để khởi động lại modem; còn lỗi thì ra điểm khởi động lại cam."],
-                 ["khoi_dong_modem"], "Port mở nhưng cam không trả lời")
-            continue
+        c["onvif"] = "trả lời (chưa đăng nhập)"
         try:
+            ov.co()
             tt = ov.thong_tin()
-            c["hang"], c["model"] = tt.get("hang", ""), tt.get("model", "")
+            c["hang"], c["model"], c["serial"] = tt.get("hang", ""), tt.get("model", ""), tt.get("serial", "")
+            try:
+                c["mac"] = ov.token_mang()[1]
+            except Exception:
+                c["mac"] = ""
             c["onvif"] = "đăng nhập được"
         except Exception:
             c["onvif"] = "trả lời nhưng TỪ CHỐI user/pass"
@@ -142,36 +173,45 @@ def kiem_diem(stt, d, cd, anh_dir, ma, ho_so=None):
             um = ov.url_media()
             tk = ov.profile_dau(um)
             jpg = ov.anh_chup(um, tk)
-            f = os.path.join(anh_dir, f"tuxa_{ma}_{stt}_cam{c['so']}.jpg")
+            f = os.path.join(anh_dir, f"tuxa_{ma}_{stt}_p{c['http']}.jpg")
             with open(f, "wb") as fh:
                 fh.write(jpg)
             c["anh"] = f
-            try:
-                c["live"] = ov.luong_video(um, tk, c["rtsp"])
-            except Exception:
-                pass
         except Exception as e:
             _ket(c, VANG, f"Cam trả lời nhưng không ra hình ({str(e)[:60]}) → cam treo",
                  ["Bấm Sửa từ xa để khởi động lại cam, chờ 2 phút rồi kiểm tra lại."], ["khoi_dong_cam"], "Cam treo")
             continue
+        # cổng video THẬT của cam (đọc từ cam), không đoán theo quy ước
+        rtsp_cam = 0
+        try:
+            rtsp_cam = ov.doc_port().get("RTSP") or 0
+        except Exception:
+            pass
+        if not c["rtsp"]:
+            c["rtsp"] = rtsp_cam or 554
+        try:
+            c["live"] = ov.luong_video(um, tk, c["rtsp"])
+        except Exception:
+            c["live"] = f"rtsp://{cu}:{cp}@{dom}:{c['rtsp']}/"
+        c["t_rtsp"], c["ms_rtsp"] = ket[c["rtsp"]] if c["rtsp"] in ket else cham_tg(dom, c["rtsp"])
         if c["t_rtsp"] != "mo":
-            sua = ["dat_port_rtsp"]
-            try:
-                p = ov.doc_port().get("RTSP")
-                lech = p and p != c["rtsp"]
-            except Exception:
-                lech = False
-            if lech:
-                _ket(c, VANG, f"Có hình nhưng cam đang dùng RTSP {p} thay vì {c['rtsp']} → IOC không xem được video",
-                     [f"Bấm Sửa từ xa để đặt lại RTSP {c['rtsp']} cho cam."], sua, "Cam đổi port RTSP")
+            if rtsp_cam and rtsp_cam != c["rtsp"]:
+                _ket(c, VANG, f"Có hình nhưng cam đang dùng RTSP {rtsp_cam} thay vì {c['rtsp']} → IOC không xem được video",
+                     [f"Bấm Sửa từ xa để đặt lại RTSP {c['rtsp']} cho cam."], ["dat_port_rtsp"], "Cam đổi port RTSP")
             else:
                 _ket(c, VANG, f"Có hình nhưng port RTSP {c['rtsp']} chưa mở trên modem → IOC không xem được video",
                      [f"Bấm Sửa từ xa để thêm luật NAT {c['rtsp']} (cần vào được web modem)."], ["them_nat"], "Thiếu NAT RTSP")
             continue
-        _ket(c, XANH, "Xem được từ ngoài: có ảnh chụp qua tên miền, port HTTP + RTSP mở", [], nhan="Đạt")
+        if c.get("them"):
+            _ket(c, VANG, f"Cam chạy tốt nhưng ở port {c['http']} — KHÔNG có trong cấu hình điểm này",
+                 ["Kiểm tra cam này có phải của điểm này không (có thể tên miền bị đổi/gộp giữa các điểm).",
+                  "Đúng là của điểm này: bấm \"Sửa số cam thực tế\" để thêm vào."], [], "Cam lạ ngoài cấu hình")
+            continue
+        _ket(c, XANH, "Xem được từ ngoài: có ảnh chụp qua tên miền, port web + video mở", [], nhan="Đạt")
     hong = [c for c in cams if c["muc"] != XANH]
     kq["muc"] = DO if any(c["muc"] == DO for c in cams) else (VANG if hong else XANH)
     kq["tong"] = "ĐẠT" if not hong else f"{len(cams) - len(hong)}/{len(cams)} cam đạt"
+    kq["ghi_quet"] = ghi_quet
     return _xong(kq)
 
 
@@ -181,19 +221,25 @@ def _xong(kq):
         b = [f"Kiểm lúc {kq['luc']} qua Internet",
              f"Tên miền {kq['domain']} → " + (kq["ip"] or "KHÔNG PHÂN GIẢI ĐƯỢC")]
         if c.get("t_http"):
-            b.append(f"Port web {c['http']}: {TEN_CHAM[c['t_http']]} — {c['ms_http']} ms")
-            b.append(f"Port video RTSP {c['rtsp']}: {TEN_CHAM[c['t_rtsp']]} — {c['ms_rtsp']} ms")
+            b.append(f"Port web {c['http']}: {TEN_CHAM.get(c['t_http'], c['t_http'])} — {c['ms_http']} ms")
+        if c.get("t_rtsp"):
+            b.append(f"Port video RTSP {c['rtsp']}: {TEN_CHAM.get(c['t_rtsp'], c['t_rtsp'])} — {c['ms_rtsp']} ms")
         if c.get("onvif"):
             b.append(f"ONVIF: {c['onvif']}" + (f" — {c['hang']} {c['model']}".rstrip() if c.get("model") else ""))
         if c.get("anh") and os.path.exists(c["anh"]):
             b.append(f"ẢNH CHỤP qua {kq['domain']}:{c['http']} — {os.path.getsize(c['anh']) // 1024} KB")
         elif c["muc"] != XANH:
             b.append("KHÔNG lấy được ảnh")
+        if kq.get("quet"):
+            q = kq["quet"]
+            b.insert(2, f"Quét tên miền: thấy {q['so_quet']} cam ở port {', '.join(map(str, q['cam_port'])) or '—'}")
         c["bang_chung"] = b
     if kq.get("so") != kq.get("so_file"):
         kq["ghi_so"] = f"File khảo sát ghi {kq['so_file']} cam, đang kiểm {kq['so']} cam ({kq['nguon_so']})"
     else:
         kq["ghi_so"] = f"Kiểm {kq['so']} cam ({kq['nguon_so']})"
+    if kq.get("ghi_quet"):
+        kq["ghi_so"] = kq["ghi_quet"]
     return kq
 
 
@@ -232,6 +278,48 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None):
     except (OSError, ValueError):
         pass
     tr_cam = {(p["stt"], c["so"]): c.get("muc") for p in truoc.get("diem", []) for c in p.get("cam", [])}
+    # ---- đối chiếu chéo: phát hiện tên miền bị đổi / gộp / trỏ nhầm điểm
+    tr_fp = {(p["domain"], c["http"]): (c.get("serial") or c.get("mac")) for p in truoc.get("diem", []) for c in p.get("cam", [])}
+    tr_so = {p["domain"]: (p.get("quet") or {}).get("so_quet") for p in truoc.get("diem", [])}
+    vet = {}
+    for p in kqs:
+        for c in p["cam"]:
+            k = c.get("serial") or c.get("mac")
+            if k:
+                vet.setdefault(k, []).append(f"điểm {p['stt']} ({p['domain']}:{c['http']})")
+    theo_ip = {}
+    for p in kqs:
+        if p.get("ip"):
+            theo_ip.setdefault(p["ip"], []).append(f"điểm {p['stt']} ({p['domain']})")
+    for p in kqs:
+        p["canh_bao"] = []
+        if len(theo_ip.get(p.get("ip"), [])) > 1:
+            p["canh_bao"].append(f"Nhiều tên miền cùng trỏ về IP {p['ip']}: " + ", ".join(theo_ip[p["ip"]]) + " → kiểm tra có bị đổi/gộp tên miền giữa các điểm không.")
+        so_cu, so_moi = tr_so.get(p["domain"]), (p.get("quet") or {}).get("so_quet")
+        if so_cu is not None and so_moi is not None and so_cu != so_moi:
+            p["canh_bao"].append(f"Lần kiểm trước quét thấy {so_cu} cam trên {p['domain']}, nay {so_moi} cam.")
+        mac_hs = {x.get("mac", "").upper() for x in (ho_so.get(p["stt"]) or {}).get("cam", []) if x.get("mac")}
+        for c in p["cam"]:
+            k = c.get("serial") or c.get("mac")
+            cb = []
+            if k and len(vet.get(k, [])) > 1:
+                cb.append("Cùng một cam xuất hiện ở " + ", ".join(vet[k]) + " → tên miền đang trỏ trùng.")
+            k_cu = tr_fp.get((p["domain"], c["http"]))
+            if k and k_cu and k != k_cu:
+                cb.append(f"Cam ở {p['domain']}:{c['http']} KHÁC lần kiểm trước (mã {k_cu} → {k}) → tên miền có thể đã bị đổi sang điểm khác.")
+            if mac_hs and c.get("mac") and c["mac"].upper() not in mac_hs:
+                cb.append(f"MAC {c['mac']} không có trong hồ sơ lúc cài điểm {p['stt']} → cam này không phải cam đã cài ở điểm này.")
+            if cb:
+                c["canh_bao"] = cb
+                c.setdefault("viec", [])
+                c["viec"] = cb + c["viec"]
+                if c["muc"] == XANH:
+                    c["muc"], c["nhan"] = VANG, "Tên miền trỏ nhầm / đổi điểm"
+                    c["nguyen_nhan"] = "Cam xem được nhưng không khớp đối chiếu: " + cb[0]
+        hong = [c for c in p["cam"] if c["muc"] != XANH]
+        if p["cam"] and not (p["muc"] == DO and p["tong"].isupper()):
+            p["muc"] = DO if any(c["muc"] == DO for c in p["cam"]) else (VANG if hong else XANH)
+            p["tong"] = "ĐẠT" if not hong else f"{len(p['cam']) - len(hong)}/{len(p['cam'])} cam đạt"
     for p in kqs:
         for c in p["cam"]:
             cu_m = tr_cam.get((p["stt"], c["so"]))
@@ -285,7 +373,7 @@ def xuat_excel(goc, ket_qua):
                        "\n".join(c.get("bang_chung", [])), c.get("nguyen_nhan", ""),
                        "\n".join(f"{i + 1}) {v}" for i, v in enumerate(c.get("viec", []))), c["web"], c["live"],
                        c["user"], c["pass"], p.get("noip_user", ""), p.get("noip_pass", ""), p.get("web_modem", ""),
-                       "CÓ" if c.get("vua_rot") else "", p.get("ghi_so", "")])
+                       "CÓ" if c.get("vua_rot") else "", "\n".join([p.get("ghi_so", "")] + p.get("canh_bao", []))])
             dong = ws.max_row
             for cell in ws[dong]:
                 cell.fill = PatternFill("solid", fgColor=mau[c["muc"]])

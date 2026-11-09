@@ -142,6 +142,8 @@ class Onvif:
             t = self.goi("<tds:GetSystemDateAndTime/>", xac_thuc=False, cho=4)
         except Exception:
             return False
+        if "DateTime" not in t:   # trả 200 nhưng không phải cam ONVIF (vd web modem)
+            return False
         try:
             g = lambda k: int(re.search(rf"<[^>]*{k}>(\d+)<", t.split("UTCDateTime")[1]).group(1))
             cam = datetime.datetime(g("Year"), g("Month"), g("Day"), g("Hour"), g("Minute"), g("Second"))

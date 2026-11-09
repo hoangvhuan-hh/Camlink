@@ -241,6 +241,8 @@ class TuXaActivity : Activity() {
         val wm = p.optString("web_modem")
         if (wm.isNotEmpty()) t.addView(link("🌐 Web modem: $wm") { moLink(wm) })
         t.addView(chu(p.optString("ghi_so"), 12f, mau = "#5B6776"))
+        val cb = p.optJSONArray("canh_bao")
+        if (cb != null) for (i in 0 until cb.length()) t.addView(chu("⚠ ${cb.getString(i)}", 13f, true, "#B42318"))
         t.addView(nut("Sửa số cam thực tế (đang ${p.optInt("so")})") { suaSoCam(p) })
         val cams = p.optJSONArray("cam") ?: JSONArray()
         for (i in 0 until cams.length()) t.addView(dongCam(p, cams.getJSONObject(i)))
