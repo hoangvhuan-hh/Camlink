@@ -229,3 +229,15 @@ def dat_ddns(ip, port, user, pw, dom, du, dp, thu=True):
         return kq
     finally:
         cam.dang_xuat()
+
+
+def doc_ddns_cam(ip, port, user, pw):
+    """Chỉ đọc cấu hình DDNS trong cam Oryza. Trả dict hoặc ném lỗi."""
+    cam = Oryza(ip, port, user, pw).dang_nhap()
+    try:
+        ncc = {str(p.get("ProviderId")): str(p.get("ProviderName")) for p in cam.nha_cung_cap()}
+        d = cam.doc_ddns()
+        return {"bat": str(d.get("DDNSEnableFlag")).lower() in ("true", "1"), "ten_mien": d.get("DDNSDomainName", ""),
+                "tai_khoan": d.get("DDNSAccounts", ""), "nha_cung_cap": ncc.get(str(d.get("DDNSProviderId")), str(d.get("DDNSProviderId")))}
+    finally:
+        cam.dang_xuat()

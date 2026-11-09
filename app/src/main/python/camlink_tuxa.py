@@ -163,6 +163,7 @@ def kiem_diem(stt, d, cd, anh_dir, ma, ho_so=None):
             except Exception:
                 c["mac"] = ""
             c["onvif"] = "đăng nhập được"
+            doc_cau_hinh(c, ov, dom, d, cu, cp, ho_so, c["http"] == min(cam_port))
         except Exception:
             c["onvif"] = "trả lời nhưng TỪ CHỐI user/pass"
             _ket(c, VANG, "Cam có mạng nhưng user/pass cam lưu trong app SAI",
@@ -207,12 +208,59 @@ def kiem_diem(stt, d, cd, anh_dir, ma, ho_so=None):
                  ["Kiểm tra cam này có phải của điểm này không (có thể tên miền bị đổi/gộp giữa các điểm).",
                   "Đúng là của điểm này: bấm \"Sửa số cam thực tế\" để thêm vào."], [], "Cam lạ ngoài cấu hình")
             continue
-        _ket(c, XANH, "Xem được từ ngoài: có ảnh chụp qua tên miền, port web + video mở", [], nhan="Đạt")
+        if c.get("loi_cau_hinh"):
+            _ket(c, VANG, "Cam đang chạy (có hình) nhưng cấu hình trong cam chưa đúng: " + c["loi_cau_hinh"][0],
+                 ["Cam đang chạy nên app KHÔNG tự sửa, chỉ báo cáo."] + c["loi_cau_hinh"] +
+                 ["Muốn sửa: bấm nút Sửa từ xa bên dưới hoặc ra điểm chạy lại CamLink."],
+                 ["nhap_lai_ddns"] if c.get("ddns_sai") else [], "Cấu hình trong cam chưa đúng")
+            continue
+        _ket(c, XANH, "Xem được từ ngoài: có ảnh chụp qua tên miền, port web + video mở, cấu hình trong cam đúng", [], nhan="Đạt")
     hong = [c for c in cams if c["muc"] != XANH]
     kq["muc"] = DO if any(c["muc"] == DO for c in cams) else (VANG if hong else XANH)
     kq["tong"] = "ĐẠT" if not hong else f"{len(cams) - len(hong)}/{len(cams)} cam đạt"
     kq["ghi_quet"] = ghi_quet
     return _xong(kq)
+
+
+def doc_cau_hinh(c, ov, dom, d, cu, cp, ho_so, cam_dau):
+    """CHỈ ĐỌC cấu hình trong cam: gateway, DNS, giờ, và DDNS trên cam đầu tiên. Không ghi gì."""
+    loi = []
+    ch = {}
+    gw, dns = ov.doc_gw_dns()
+    ch["gateway"], ch["dns"] = gw or "(trống)", dns or "(trống)"
+    gw_dung = (ho_so or {}).get("gw") or ""
+    if not gw:
+        loi.append("Gateway trong cam đang TRỐNG → cam không ra được Internet.")
+    elif gw_dung and gw != gw_dung:
+        loi.append(f"Gateway trong cam là {gw}, lúc cài là {gw_dung}.")
+    if not dns:
+        loi.append("DNS trong cam đang TRỐNG → cam không cập nhật được No-IP, tên miền sẽ trỏ IP cũ.")
+    lech = getattr(ov, "lech", None)
+    if lech is not None:
+        phut = int(abs(lech.total_seconds()) // 60)
+        ch["gio_lech_phut"] = phut
+        if phut >= 30:   # lệch vài phút: chỉ ghi vào bằng chứng, không tính là lỗi
+            loi.append(f"Giờ của cam lệch {phut} phút → ảnh và dữ liệu lưu sai giờ.")
+    if cam_dau:
+        try:
+            if camlink_oryza.la_oryza(dom, c["http"], 4):
+                dd = camlink_oryza.doc_ddns_cam(dom, c["http"], cu, cp)
+                ch["ddns"] = dd
+                if not dd["bat"]:
+                    loi.append("DDNS trong cam 1 đang TẮT → tên miền không tự cập nhật IP mới.")
+                    c["ddns_sai"] = True
+                elif dd["ten_mien"].lower() != dom.lower():
+                    loi.append(f"DDNS trong cam 1 đang gửi IP cho tên miền {dd['ten_mien']}, KHÔNG phải {dom} → tên miền bị đổi/nhầm điểm.")
+                    c["ddns_sai"] = True
+                elif d.get("u") and dd["tai_khoan"] and dd["tai_khoan"] != d["u"]:
+                    loi.append(f"DDNS trong cam 1 dùng tài khoản No-IP {dd['tai_khoan']}, file ghi {d['u']}.")
+                    c["ddns_sai"] = True
+            else:
+                ch["ddns"] = "chưa đọc được DDNS với hãng cam này"
+        except Exception as e:
+            ch["ddns"] = f"không đọc được ({str(e)[:60]})"
+    c["cau_hinh"] = ch
+    c["loi_cau_hinh"] = loi
 
 
 def _xong(kq):
@@ -226,6 +274,19 @@ def _xong(kq):
             b.append(f"Port video RTSP {c['rtsp']}: {TEN_CHAM.get(c['t_rtsp'], c['t_rtsp'])} — {c['ms_rtsp']} ms")
         if c.get("onvif"):
             b.append(f"ONVIF: {c['onvif']}" + (f" — {c['hang']} {c['model']}".rstrip() if c.get("model") else ""))
+        ch = c.get("cau_hinh")
+        if ch:
+            dd = ch.get("ddns")
+            txt = f"Cấu hình trong cam: gateway {ch.get('gateway')}, DNS {ch.get('dns')}"
+            if "gio_lech_phut" in ch:
+                txt += f", giờ lệch {ch['gio_lech_phut']} phút"
+            if isinstance(dd, dict):
+                txt += f", DDNS {'BẬT' if dd['bat'] else 'TẮT'} {dd['nha_cung_cap']} → {dd['ten_mien']} (tài khoản {dd['tai_khoan']})"
+            elif dd:
+                txt += f", DDNS: {dd}"
+            b.append(txt)
+        for x in c.get("da_sua", []):
+            b.append("ĐÃ TỰ SỬA: " + x)
         if c.get("anh") and os.path.exists(c["anh"]):
             b.append(f"ẢNH CHỤP qua {kq['domain']}:{c['http']} — {os.path.getsize(c['anh']) // 1024} KB")
         elif c["muc"] != XANH:
@@ -248,7 +309,53 @@ def _f_lich_su(goc, ma):
     return os.path.join(goc, "ketqua", f"tuxa_{ma}.json")
 
 
-def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None):
+TU_SUA_DUOC = ("khoi_dong_cam", "dat_port_rtsp")
+
+
+def tu_sua_diem(p, d, cd, anh_dir, ma, ho_so, log):
+    """Chỉ đụng tới cam ĐANG CÓ VẤN ĐỀ: chạy sửa lỗi; sửa xong vào kiểm tra lại cấu hình,
+    mất/sai cấu hình thì khôi phục. Cam đang chạy tốt: không đụng tới."""
+    nhat_ky = {}
+    can = [c for c in p["cam"] if c["muc"] != XANH and any(v in TU_SUA_DUOC for v in c.get("sua", []))]
+    if not can:
+        return p
+    for c in can:
+        for v in [v for v in c["sua"] if v in TU_SUA_DUOC]:
+            log(f"   🔧 Điểm {p['stt']} cam {c['so']}: {TEN_SUA[v]} …")
+            ok, tb = sua(d, c["so"], v, cd, log)
+            nhat_ky.setdefault(c["http"], []).append(f"{TEN_SUA[v]} → {'XONG' if ok else 'CHƯA ĐƯỢC'}: {tb}")
+    moi = kiem_diem(p["stt"], d, cd, anh_dir, ma, ho_so)
+    cu, cp = cd.get("cam_user", "admin"), cd.get("cam_pw", "")
+    sua_cau_hinh = False
+    for c in moi["cam"]:
+        if c["http"] not in nhat_ky or not c.get("cau_hinh"):
+            continue
+        ov = C.Onvif(moi["domain"], c["http"], cu, cp)
+        ch = c["cau_hinh"]
+        try:
+            gw_dung = (ho_so or {}).get("gw") or (ch["gateway"] if ch["gateway"] != "(trống)" else "")
+            if gw_dung and (ch["gateway"] != gw_dung or ch["dns"] == "(trống)"):
+                ov.dat_gw_dns(gw_dung)
+                nhat_ky[c["http"]].append(f"Khôi phục gateway {gw_dung} + DNS 8.8.8.8")
+                sua_cau_hinh = True
+            if c.get("ddns_sai"):
+                kq = camlink_oryza.dat_ddns(moi["domain"], c["http"], cu, cp, moi["domain"], d.get("u", ""), d.get("p", ""))
+                nhat_ky[c["http"]].append("Khôi phục DDNS: " + kq)
+                sua_cau_hinh = True
+        except Exception as e:
+            nhat_ky[c["http"]].append(f"Khôi phục cấu hình lỗi: {str(e)[:80]}")
+    if sua_cau_hinh:
+        moi = kiem_diem(p["stt"], d, cd, anh_dir, ma, ho_so)
+    for c in moi["cam"]:
+        if c["http"] in nhat_ky:
+            c["da_sua"] = nhat_ky[c["http"]]
+            if c["muc"] != XANH:
+                c["viec"] = [f"App đã tự thử: {'; '.join(nhat_ky[c['http']])} — vẫn chưa được."] + c.get("viec", [])
+    log(f"   → Điểm {p['stt']} sau khi tự sửa: {moi['tong']}")
+    return _xong(moi)
+
+
+def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
     anh_dir = os.path.join(goc, "ketqua")
     os.makedirs(anh_dir, exist_ok=True)
     diem = da["diem"]
@@ -269,6 +376,16 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None):
 
     with ThreadPoolExecutor(6) as ex:
         kqs = list(ex.map(mot, ds))
+    if tu_sua:
+        sua_n = [p for p in kqs if any(c["muc"] != XANH and any(v in TU_SUA_DUOC for v in c.get("sua", [])) for c in p["cam"])]
+        if sua_n:
+            log(f"TỰ SỬA {sum(1 for p in sua_n for c in p['cam'] if c['muc'] != XANH)} cam có vấn đề (cam đang chạy tốt không đụng tới):")
+        for i, p in enumerate(kqs):
+            if p in sua_n:
+                try:
+                    kqs[i] = tu_sua_diem(p, diem[p["stt"]], cd, anh_dir, ma, ho_so.get(p["stt"]), log)
+                except Exception as e:
+                    log(f"   ✖ Tự sửa điểm {p['stt']} lỗi: {e}")
     # so với lần trước
     f = _f_lich_su(goc, ma)
     truoc = {}
@@ -336,7 +453,8 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None):
                 if c["muc"] != XANH:
                     dem[c["nhan"]] = dem.get(c["nhan"], 0) + 1
     out = {"du_an": da["ten"], "ma": ma, "luc": time.strftime("%d/%m/%Y %H:%M"), "giay": round(time.time() - t0),
-           "tong_cam": tong_cam, "dat": dat, "rot": sum(1 for p in kqs for c in p["cam"] if c.get("vua_rot")),
+           "tong_cam": tong_cam, "dat": dat, "da_sua": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua")),
+           "sua_xong": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua") and c["muc"] == XANH), "rot": sum(1 for p in kqs for c in p["cam"] if c.get("vua_rot")),
            "nhom_loi": dem, "diem": sorted(kqs, key=lambda p: (int(p["stt"]) if str(p["stt"]).isdigit() else 0))}
     if not chi_diem:
         with open(f, "w", encoding="utf-8") as fh:

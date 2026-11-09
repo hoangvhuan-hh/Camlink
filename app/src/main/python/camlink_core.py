@@ -500,7 +500,7 @@ def tuxa_kiem(ma, log):
 def tuxa_kiem_diem(ma, stt, log):
     import camlink_tuxa as T
     log = _cb(log)
-    kq = T.kiem_du_an(GOC, _doc_du_an(ma), ma, C.doc_cai_dat(), log, chi_diem=[stt])
+    kq = T.kiem_du_an(GOC, _doc_du_an(ma), ma, C.doc_cai_dat(), log, chi_diem=[stt], tu_sua=False)
     return json.dumps(kq["diem"][0], ensure_ascii=False)
 
 

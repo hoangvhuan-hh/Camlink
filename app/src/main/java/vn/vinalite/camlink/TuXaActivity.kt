@@ -126,9 +126,10 @@ class TuXaActivity : Activity() {
     private fun chonDuAn() {
         if (dangChay) return
         val ds = core.callAttr("ds_du_an").asList().map { r -> r.asList().map { it.toString() } }
-        val ten = ds.map { "${it[1]}  (${it[2]} điểm · ${it[3]} cam)" } + "＋ Nạp file Excel cấu hình (DNS, user/pass…)"
+        val ten = ds.map { "📂 ${it[1]} — ${it[2]} điểm (đã nạp sẵn trong app, bấm để kiểm tra)" } +
+            "＋ Nạp file Excel khác / cập nhật file mới"
         AlertDialog.Builder(this)
-            .setTitle("Kiểm tra dự án nào?")
+            .setTitle(if (ds.isEmpty()) "Chưa có dự án — nạp file Excel cấu hình" else "Chọn dự án để kiểm tra")
             .setItems(ten.toTypedArray()) { _, i ->
                 if (i == ds.size) moFile() else { ma = ds[i][0]; tenDuAn = ds[i][1]; batDau() }
             }
@@ -167,11 +168,7 @@ class TuXaActivity : Activity() {
         }
     }
 
-    private fun batDau() {
-        val cu = core.callAttr("tuxa_gan_nhat", ma).toString()
-        if (cu.isNotEmpty()) { ketQua = JSONObject(cu); veBang("Kết quả lần trước — đang kiểm tra mới…") }
-        kiem()
-    }
+    private fun batDau() { kiem() }
 
     // ---------------- mạng 4G ----------------
     private fun gan4G(bat: Boolean): Boolean {
@@ -188,7 +185,10 @@ class TuXaActivity : Activity() {
     private fun kiem() {
         if (ma.isEmpty() || dangChay) return
         dangChay = true
-        nk.ghi("⏳ Đang kiểm tra $tenDuAn qua Internet (chỉ đọc)…")
+        ketQua = null
+        khung.removeAllViews()   // xoá sạch kết quả cũ trước khi kiểm tra lại
+        khung.addView(chu("⏳ Đang kiểm tra $tenDuAn…\nCam đang chạy tốt: chỉ đọc và báo cáo.\nCam có vấn đề: app tự sửa rồi kiểm tra lại cấu hình.", 15f, mau = "#0F5D8C"))
+        nk.ghi("⏳ Đang kiểm tra $tenDuAn qua Internet…")
         thread {
             val co4G = gan4G(true)
             try {
@@ -217,6 +217,9 @@ class TuXaActivity : Activity() {
         tt.addView(chu(k.optString("du_an"), 17f, true))
         tt.addView(chu("Kiểm lúc ${k.optString("luc")} · ${k.optInt("giay")} giây", 12f, mau = "#5B6776"))
         tt.addView(chu("$dat/$tong cam ĐẠT", 20f, true, if (dat == tong) "#1D7A46" else "#B42318"))
+        val daSua = k.optInt("da_sua")
+        if (daSua > 0) tt.addView(chu("🔧 App đã tự sửa $daSua cam có vấn đề → ${k.optInt("sua_xong")} cam đã chạy lại", 14f, true, "#0F5D8C"))
+        tt.addView(chu("Cam đang chạy tốt: chỉ đọc, không thay đổi gì", 12f, mau = "#5B6776"))
         val rot = k.optInt("rot")
         if (rot > 0) tt.addView(chu("⬇ $rot cam vừa rớt so với lần trước", 14f, true, "#B42318"))
         val nhom = k.optJSONObject("nhom_loi")

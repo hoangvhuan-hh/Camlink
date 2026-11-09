@@ -220,6 +220,22 @@ class Onvif:
             kq.setdefault(ten.upper(), int(port))
         return kq
 
+    def doc_gw_dns(self):
+        """Đọc gateway + DNS đang đặt trong cam (chỉ đọc)."""
+        gw = dns = ""
+        try:
+            t = self.goi("<tds:GetNetworkDefaultGateway/>")
+            m = re.search(r"<(?:\w+:)?IPv4Address>\s*([\d.]+)", t)
+            gw = m.group(1) if m else ""
+        except Exception:
+            pass
+        try:
+            t = self.goi("<tds:GetDNS/>")
+            dns = ", ".join(re.findall(r"<(?:\w+:)?IPv4Address>\s*([\d.]+)", t))
+        except Exception:
+            pass
+        return gw, dns
+
     def khoi_dong(self):
         try:
             self.goi("<tds:SystemReboot/>", cho=6)

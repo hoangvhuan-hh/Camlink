@@ -39,6 +39,7 @@ class HuongDanActivity : Activity() {
             "App kiểm tra TẤT CẢ điểm cùng lúc qua 4G (khoảng 1–2 phút), mỗi điểm QUÉT chính tên miền (hơn 40 port) để đếm số cam THẬT đang gắn, không tin số trong file; mỗi cam qua 5 tầng: tên miền → IP → đường truyền → port → ảnh. App tự đối chiếu chéo: cùng một cam ở 2 tên miền, cam khác lần trước, nhiều tên miền trỏ cùng IP, cam lạ ngoài cấu hình → báo ⚠.",
             "Đọc bảng: 🟢 đạt · 🟡 lỗi cấu hình (thường sửa từ xa được) · 🔴 lỗi phần cứng/mạng (phải có người tại điểm). Điểm lỗi nằm trên cùng. \"⬇ VỪA RỚT\" = cam mới hỏng so với lần kiểm trước.",
             "Bấm vào cam: xem nguyên nhân, việc tiếp theo, ảnh chụp, link web, link xem trực tiếp, user/pass cam và No-IP. Có nút Mở web, ▶ Xem, Copy.",
+            "Cam đang chạy tốt: app CHỈ ĐỌC (kể cả cấu hình bên trong: DDNS cam 1, gateway, DNS, giờ) và báo cáo, không thay đổi gì. Cam có vấn đề (treo, đổi port…): app TỰ SỬA, sửa xong kiểm tra lại cấu hình, mất/sai thì khôi phục, rồi ghi \"ĐÃ TỰ SỬA\" vào bằng chứng.",
             "Cam có nút \"🔧 Sửa từ xa\" (khởi động lại cam, đặt lại port RTSP…): bấm → LÀM. App tự sửa rồi tự kiểm tra lại điểm đó và báo kết quả.",
             "Không sửa từ xa được: làm theo \"Việc tiếp theo\" (gọi người tại điểm / gọi VNPT / cử thợ).",
             "Bấm \"📤 Xuất Excel + gửi\" để gửi bảng kết quả qua Zalo/Gmail."
