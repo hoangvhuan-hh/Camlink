@@ -653,6 +653,21 @@ class TuXaActivity : Activity() {
 
     private fun moBanDo() {
         val k = ketQua ?: run { Toast.makeText(this, "Kiểm tra trước đã", Toast.LENGTH_SHORT).show(); return }
+        // Đã nối LiteMark → bản đồ là bản đồ công trình LiteMark (một nguồn dữ liệu); bản đồ riêng của CamLink chỉ khi chưa nối
+        val lm = k.optJSONObject("litemark")
+        if (lm != null && lm.optString("id").isNotEmpty()) {
+            val tt = JSONObject(core.callAttr("lm_trang_thai", ma).toString())
+            AlertDialog.Builder(this).setTitle("Bản đồ")
+                .setItems(arrayOf("🌐 Bản đồ công trình trên LiteMark (ghim thật, cảnh báo cam lỗi)", "🗺 Bản đồ riêng của CamLink (đối chiếu)")) { _, i ->
+                    if (i == 0) startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("${tt.optString("may_chu")}/ct/${lm.optString("id")}")))
+                    else moBanDoRieng(k)
+                }.show()
+            return
+        }
+        moBanDoRieng(k)
+    }
+
+    private fun moBanDoRieng(k: JSONObject) {
         thread {
             try {
                 val f = core.callAttr("tuxa_ban_do", k.toString()).toString()
