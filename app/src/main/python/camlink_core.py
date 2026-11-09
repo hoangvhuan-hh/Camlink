@@ -54,7 +54,9 @@ def _ma(ten):
 def _ten_tu_file(ten_file):
     t = os.path.splitext(os.path.basename(ten_file or "Dự án"))[0]
     t = re.sub(r"^(ks|khao[ _-]?sat)[ _-]*", "", t, flags=re.I)
-    return re.sub(r"[_]+", " ", t).strip() or "Dự án"
+    t = re.sub(r"[_]+", " ", t).strip()
+    t = re.sub(r"\s*[\(\[]\d+[\)\]]$|\s*-\s*(copy|bản sao)(\s*\d+)?$", "", t, flags=re.I).strip()  # "(1)", "(2)", "- Copy" do tải trùng
+    return t or "Dự án"
 
 
 def _cac_du_an():
@@ -123,6 +125,11 @@ def nhap_excel(duong_dan, ten_file, log):
             continue
         ten = _ten_tu_file(ten_file)
         ma = _ma(ten)
+        # dự án cũ nạp từ bản tải trùng "(1)" → gộp làm MỘT dự án
+        for ma_cu, da_cu in _cac_du_an().items():
+            if ma_cu != ma and _ma(_ten_tu_file(da_cu.get("ten", "") + ".xlsx")) == ma:
+                os.replace(os.path.join(_thu_muc_du_an(), ma_cu + ".json"), os.path.join(_thu_muc_du_an(), ma + ".json"))
+                break
         cu = {}
         try:
             cu = _doc_du_an(ma)
@@ -465,6 +472,20 @@ def so_do_gan_nhat():
 
 # ------------------------------------------------------------------ 1.5: kiểm tra từ xa cả dự án + sửa từ xa
 def ds_du_an():
+    # gộp các dự án trùng do tải file nhiều lần ("ten (1)") — giữ bản cập nhật gần nhất
+    nhom = {}
+    for ma, da in _cac_du_an().items():
+        nhom.setdefault(_ma(_ten_tu_file(da.get("ten", "") + ".xlsx")), []).append(ma)
+    for goc_ma, ds in nhom.items():
+        ds.sort(key=lambda m: os.path.getmtime(os.path.join(_thu_muc_du_an(), m + ".json")), reverse=True)
+        moi = ds[0]
+        for cu in ds[1:]:
+            os.replace(os.path.join(_thu_muc_du_an(), cu + ".json"), os.path.join(_thu_muc_du_an(), cu + ".json.cu"))
+        if moi != goc_ma:
+            da = _doc_du_an(moi)
+            da["ten"] = _ten_tu_file(da["ten"] + ".xlsx")
+            _ghi_du_an(goc_ma, da)
+            os.replace(os.path.join(_thu_muc_du_an(), moi + ".json"), os.path.join(_thu_muc_du_an(), moi + ".json.cu"))
     return [[ma, da["ten"], str(len(da["diem"])), str(sum(int(v.get("so") or 0) for v in da["diem"].values()))]
             for ma, da in _cac_du_an().items()]
 
