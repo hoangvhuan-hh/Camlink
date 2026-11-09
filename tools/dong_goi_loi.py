@@ -2,9 +2,9 @@
 import hashlib, json, os, re, shutil, sys, zipfile
 G = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PY = os.path.join(G, "app/src/main/python")
-TEP = ["camlink_core.py", "camlink_dt.py", "camlink_tuxa.py", "camlink_oryza.py"]
-src = open(os.path.join(PY, "camlink_core.py"), encoding="utf-8").read()
-pb = re.search(r'PHIEN_BAN_LOI = "([^"]+)"', src).group(1)
+TEP = ["camlink_phien_ban.py", "camlink_core.py", "camlink_dt.py", "camlink_tuxa.py", "camlink_oryza.py", "camlink_litemark.py"]
+src = open(os.path.join(PY, "camlink_phien_ban.py"), encoding="utf-8").read()
+pb = re.search(r'PHIEN_BAN = "([^"]+)"', src).group(1)
 out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(G, "kenh")
 os.makedirs(os.path.join(out, "py"), exist_ok=True)
 tep = {}

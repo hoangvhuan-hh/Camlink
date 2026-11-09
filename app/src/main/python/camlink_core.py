@@ -9,7 +9,7 @@ GPS tìm điểm gần nhất trên TẤT CẢ dự án → tự chọn đúng d
 import json, os, re, time, unicodedata
 import camlink_dt as C
 
-PHIEN_BAN_LOI = "1.7.1"
+from camlink_phien_ban import PHIEN_BAN as PHIEN_BAN_LOI  # phiên bản lõi ở camlink_phien_ban.py
 KENH_CAP_NHAT = "https://claude.ai/artifact/D5udnnkXEqbKMRBmsMhjGy"   # kênh cập nhật (đổi được bằng gói zip, không cần APK)   # phiên bản phần logic Python (cập nhật đè được, vài trăm KB)
 
 GOC = None
@@ -666,7 +666,7 @@ def tuxa_phieu(ma, json_kq, stt):
 
 
 # ------------------------------------------------------------------ cập nhật đè phần logic (không cần cài lại APK)
-TEP_LOI = ["camlink_core.py", "camlink_dt.py", "camlink_tuxa.py", "camlink_oryza.py"]
+TEP_LOI = {"camlink_phien_ban.py", "camlink_core.py", "camlink_dt.py", "camlink_tuxa.py", "camlink_oryza.py", "camlink_litemark.py"}
 
 
 def phien_ban_loi():
@@ -676,6 +676,12 @@ def phien_ban_loi():
 def nap_cap_nhat_zip(duong_zip):
     """Nạp gói cập nhật: .zip HOẶC gói một tệp .camlink (JSON, không bị điện thoại tự giải nén) → áp dụng khi mở lại app."""
     import base64, hashlib, zipfile
+
+    def _moi_hon(pb):
+        a = [int(x) for x in re.findall(r"\d+", str(pb))]
+        b = [int(x) for x in re.findall(r"\d+", PHIEN_BAN_LOI)]
+        if a <= b:
+            raise RuntimeError(f"Gói này là lõi {pb}, app đang chạy lõi {PHIEN_BAN_LOI} (bằng hoặc mới hơn) → không cần nạp.")
     th = os.path.join(GOC, "capnhat")
     os.makedirs(th, exist_ok=True)
     with open(duong_zip, "rb") as fh:
@@ -685,6 +691,7 @@ def nap_cap_nhat_zip(duong_zip):
             goi = json.load(fh)
         if goi.get("loai") != "camlink-loi":
             raise RuntimeError("Đây không phải gói cập nhật CamLink")
+        _moi_hon(goi.get("phien_ban", "0"))
         for f, nd in goi["tep"].items():
             if f not in TEP_LOI:
                 raise RuntimeError(f"Gói chứa tệp lạ: {f}")
@@ -705,6 +712,7 @@ def nap_cap_nhat_zip(duong_zip):
         if "manifest.json" not in ten:
             raise RuntimeError("Gói không có manifest.json")
         mf = json.loads(z.read("manifest.json").decode("utf-8"))
+        _moi_hon(mf.get("phien_ban", "0"))
         for f, sha in mf["tep"].items():
             if f not in TEP_LOI:
                 raise RuntimeError(f"Gói chứa tệp lạ: {f}")

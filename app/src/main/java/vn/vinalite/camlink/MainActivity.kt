@@ -87,7 +87,14 @@ class MainActivity : Activity() {
         run {
             val py = Python.getInstance()
             val th = File(filesDir, "capnhat")
-            if (File(th, "manifest.json").exists()) py.getModule("sys")["path"]!!.callAttr("insert", 0, th.absolutePath)
+            val mf = File(th, "manifest.json")
+            if (mf.exists()) {
+                // Chỉ dùng lõi cập nhật đè khi nó MỚI HƠN lõi trong APK; APK mới hơn thì bỏ thư mục capnhat cũ
+                val pbApk = try { py.getModule("camlink_phien_ban")["PHIEN_BAN"].toString() } catch (_: Exception) { "0" }
+                val pbCapNhat = try { org.json.JSONObject(mf.readText()).optString("phien_ban", "0") } catch (_: Exception) { "0" }
+                if (soSanhPhienBan(pbCapNhat, pbApk) > 0) py.getModule("sys")["path"]!!.callAttr("insert", 0, th.absolutePath)
+                else th.deleteRecursively()
+            }
         }
         core = Python.getInstance().getModule("camlink_core")
         core.callAttr("khoi_tao", filesDir.absolutePath)
@@ -96,6 +103,17 @@ class MainActivity : Activity() {
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+    /** So "1.7.2" với "1.6.3" theo từng số: >0 nếu a mới hơn b. */
+    private fun soSanhPhienBan(a: String, b: String): Int {
+        val x = a.split(".").map { it.filter { c -> c.isDigit() }.toIntOrNull() ?: 0 }
+        val y = b.split(".").map { it.filter { c -> c.isDigit() }.toIntOrNull() ?: 0 }
+        for (i in 0 until maxOf(x.size, y.size)) {
+            val d = (x.getOrNull(i) ?: 0) - (y.getOrNull(i) ?: 0)
+            if (d != 0) return d
+        }
+        return 0
+    }
 
     private fun nut(chu: String, chinh: Boolean = false, bam: () -> Unit): Button {
         val b = Button(this)
