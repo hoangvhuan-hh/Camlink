@@ -9,14 +9,16 @@ GPS tìm điểm gần nhất trên TẤT CẢ dự án → tự chọn đúng d
 import json, os, re, time, unicodedata
 import camlink_dt as C
 
-PHIEN_BAN_LOI = "1.6"
+PHIEN_BAN_LOI = "1.6.1"
 KENH_CAP_NHAT = "https://claude.ai/artifact/D5udnnkXEqbKMRBmsMhjGy"   # kênh cập nhật (đổi được bằng gói zip, không cần APK)   # phiên bản phần logic Python (cập nhật đè được, vài trăm KB)
 
 GOC = None
 
 
 def _cb(x):
-    """Nhận hàm ghi nhật ký từ Android (đối tượng có .ghi) hoặc hàm Python."""
+    """Nhận hàm ghi nhật ký từ Android (đối tượng có .ghi) hoặc hàm Python; None → bỏ qua."""
+    if x is None:
+        return lambda *_: None
     return getattr(x, "ghi", x)
 
 
@@ -667,3 +669,35 @@ def kiem_cap_nhat(url_goc, phien_ban_apk_code):
     if int(pb.get("apk_code") or 0) > int(phien_ban_apk_code):
         kq["apk_moi"] = {"ten": pb.get("apk_ten"), "url": pb.get("apk_url"), "mb": pb.get("apk_mb"), "ly_do": pb.get("apk_ly_do", "")}
     return json.dumps(kq, ensure_ascii=False)
+
+
+def tuxa_hanh_dong(ma, stt, so, http, id_hd, json_kq, log):
+    """Hành động do lõi định nghĩa (nút sinh từ JSON) → trả kết quả điểm đã kiểm lại."""
+    import camlink_tuxa as T
+    log = _cb(log)
+    da = _doc_du_an(ma)
+    d = da["diem"][stt]
+    if id_hd == "khong_co_cam":
+        so_quet = 0
+        try:
+            kq = json.loads(json_kq)
+            so_quet = next((p.get("so_quet", 0) for p in kq["diem"] if p["stt"] == stt), 0)
+        except Exception:
+            pass
+        moi = max(1, so_quet or (int(d.get("so") or 1) - 1))
+        d.setdefault("goc", {"so": d.get("so"), "bs": d.get("bs")})
+        d["so_thuc"] = moi
+        d["so"] = moi
+        if int(d.get("bs") or 0) > moi:
+            d["bs"] = moi
+        d.setdefault("hieu_chinh", []).append({"luc": time.strftime("%d/%m/%Y %H:%M"), "cu": d["goc"]["so"], "moi": moi,
+                                               "ly_do": f"Người dùng xác nhận tại chỗ: không có cam {so} (port {http})"})
+        log(f"✎ Điểm {stt}: xác nhận không có cam {so} → hồ sơ {moi} cam")
+    elif id_hd == "cam_co_that":
+        d.setdefault("cam_that", [])
+        if int(http) not in d["cam_that"]:
+            d["cam_that"].append(int(http))
+        log(f"✎ Điểm {stt}: xác nhận cam {so} (port {http}) có thật — từ nay báo là cam hỏng, không nghi file")
+    _ghi_du_an(ma, da)
+    kq = T.kiem_du_an(GOC, _doc_du_an(ma), ma, C.doc_cai_dat(), log, chi_diem=[stt], tu_sua=False)
+    return json.dumps(kq["diem"][0], ensure_ascii=False)

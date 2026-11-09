@@ -570,6 +570,9 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
             c["vua_rot"] = cu_m == XANH and c["muc"] != XANH
             c["vua_len"] = cu_m is not None and cu_m != XANH and c["muc"] == XANH
     tung_thay = set(tuple(x) for x in truoc.get("tung_thay", []))
+    for stt_x, d_x in diem.items():   # vị trí người dùng xác nhận "cam có thật" = coi như đã từng thấy
+        for port in d_x.get("cam_that", []):
+            tung_thay.add((d_x["domain"], int(port)))
     for p in kqs:
         for c in p["cam"]:
             if c.get("anh") or c.get("onvif", "").startswith("đăng nhập") or c.get("t_http") == "mo":
@@ -580,6 +583,8 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
                 da_thay = (p["domain"], c["http"]) in tung_thay or c.get("tung_thay")
                 c["tung_thay"] = bool(da_thay)
                 if not da_thay:
+                    c["hanh_dong"] = [{"id": "khong_co_cam", "ten": "Thực tế KHÔNG có cam này (file ghi dư)"},
+                                      {"id": "cam_co_that", "ten": "Cam có thật, đang hỏng"}]
                     c["nhan"] = "Không trả lời (chưa xác minh tại chỗ)"
                     c["nguyen_nhan"] = (f"File ghi cam {c['so']} ở port {c['http']} nhưng port không trả lời và chưa lần kiểm nào thấy cam này → "
                                         f"coi là CAM KHÔNG LÊN cho tới khi xác minh tại chỗ (cũng có thể file ghi dư/ghi nhầm điểm)")

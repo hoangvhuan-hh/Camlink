@@ -148,6 +148,14 @@ class GiamSatActivity : Activity() {
                 val v = c.optJSONArray("viec")
                 tt.text = if (v != null && v.length() > 0) "→ ${v.getString(0)}" else ""
                 tt.setTextColor(Color.parseColor("#FFB4A8"))
+                val hd = c.optJSONArray("hanh_dong")
+                if (hd != null) for (j in 0 until hd.length()) {
+                    val h = hd.getJSONObject(j)
+                    oCam.addView(Button(this).apply {
+                        text = h.optString("ten"); isAllCaps = false; textSize = 12f
+                        setOnClickListener { hanhDong(p, c, h.optString("id")) }
+                    })
+                }
             }
             o.addView(oCam, GridLayout.LayoutParams(GridLayout.spec(GridLayout.UNDEFINED, 1f), GridLayout.spec(GridLayout.UNDEFINED, 1f)).apply { width = 0; setMargins(dp(3), dp(3), dp(3), dp(3)) })
         }
@@ -158,6 +166,23 @@ class GiamSatActivity : Activity() {
         if (mapUrl.isNotEmpty()) hang.addView(Button(this).apply { text = "📍 Dẫn đường"; isAllCaps = false; setOnClickListener { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(mapUrl))) } }, LinearLayout.LayoutParams(0, -2, 1f))
         hang.addView(Button(this).apply { text = "📋 Chi tiết / sửa"; isAllCaps = false; setOnClickListener { setResult(RESULT_OK, Intent().putExtra("stt", p.optString("stt"))); finish() } }, LinearLayout.LayoutParams(0, -2, 1f))
         goc.addView(hang)
+    }
+
+    private fun hanhDong(p: JSONObject, c: JSONObject, id: String) {
+        val core = com.chaquo.python.Python.getInstance().getModule("camlink_core")
+        val stt = p.optString("stt")
+        AlertDialog.Builder(this).setTitle("Xác nhận").setMessage("Điểm $stt, cam ${c.optInt("so")} (port ${c.optInt("http")}): ${(c.optJSONArray("hanh_dong")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) }.firstOrNull { it.optString("id") == id }?.optString("ten") }) ?: id}?\nApp sẽ ghi vào hồ sơ và kiểm lại điểm này.")
+            .setPositiveButton("Đúng") { _, _ ->
+                Thread {
+                    try {
+                        val moi = JSONObject(core.callAttr("tuxa_hanh_dong", ma, stt, c.optInt("so"), c.optInt("http"), id, kq.toString(), null).toString())
+                        val ds = kq.optJSONArray("diem")!!
+                        for (i in 0 until ds.length()) if (ds.getJSONObject(i).optString("stt") == stt) ds.put(i, moi)
+                        File(intent.getStringExtra("file")!!).writeText(kq.toString())
+                        runOnUiThread { moDiem(moi) }
+                    } catch (e: Exception) { runOnUiThread { AlertDialog.Builder(this).setMessage("Lỗi: ${e.message}").setPositiveButton("Đóng", null).show() } }
+                }.start()
+            }.setNegativeButton("Huỷ", null).show()
     }
 
     override fun onBackPressed() { if (dangMo != null) veLuoi() else super.onBackPressed() }
