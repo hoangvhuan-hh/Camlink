@@ -2,6 +2,7 @@
 Tầng: 1 tên miền · 2 IP trỏ về · 3 đường truyền điểm · 4 port từng cam · 5 hình ảnh.
 Chỉ ĐỌC, trừ khi người dùng bấm nút Sửa."""
 import errno, ipaddress, json, os, re, socket, time
+import threading
 from concurrent.futures import ThreadPoolExecutor
 import camlink_dt as C
 import camlink_oryza
@@ -22,19 +23,31 @@ def cham_tg(host, port, cho=4):
     return r, int((time.time() - t0) * 1000)
 
 
+_GIOI_HAN = threading.BoundedSemaphore(24)   # tối đa 24 kết nối TCP cùng lúc trên toàn app (4G/NAT nhà mạng rớt SYN khi dồn quá nhiều)
+MOC_MANG = [("1.1.1.1", 443), ("8.8.8.8", 443), ("1.0.0.1", 443)]
+
+
 def cham(host, port, cho=4):
     """'mo' | 'tu_choi' (máy có trả lời nhưng không có gì ở port) | 'im_lang' (không trả lời)."""
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.settimeout(cho)
-    try:
-        s.connect((host, port))
-        return "mo"
-    except ConnectionRefusedError:
-        return "tu_choi"
-    except OSError as e:
-        return "tu_choi" if getattr(e, "errno", None) in (errno.ECONNREFUSED,) else "im_lang"
-    finally:
-        s.close()
+    with _GIOI_HAN:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(cho)
+        try:
+            s.connect((host, port))
+            return "mo"
+        except ConnectionRefusedError:
+            return "tu_choi"
+        except OSError as e:
+            return "tu_choi" if getattr(e, "errno", None) in (errno.ECONNREFUSED,) else "im_lang"
+        finally:
+            s.close()
+
+
+def mang_dien_thoai_ok(cho=4):
+    """Điện thoại có ra được Internet không (đo trên chính đường mạng app đang dùng)."""
+    if os.environ.get("CAMLINK_THU_NOI_BO"):
+        return True
+    return any(cham(h, pt, cho) == "mo" for h, pt in MOC_MANG)
 
 
 def _ip_noi_bo(ip):
@@ -474,6 +487,13 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
     toa_do = da.get("toa_do", {})
     log(f"KIỂM TRA TỪ XA — {da['ten']}: {len(ds)} điểm (chỉ đọc, qua Internet)")
     t0 = time.time()
+    mang_truoc = mang_dien_thoai_ok()
+    if not mang_truoc:
+        log("✖ Điện thoại KHÔNG ra được Internet trên đường mạng đang dùng (1.1.1.1 / 8.8.8.8 không trả lời) → không kiểm, tránh báo rớt sai.")
+        return {"du_an": da["ten"], "ma": ma, "luc": time.strftime("%d/%m/%Y %H:%M"), "giay": 0, "khong_tin_cay": "Điện thoại không có Internet lúc kiểm",
+                "tong_cam": 0, "dat": 0, "tong_file": sum(int(diem[k].get("so") or 0) for k in ds), "tong_quet": 0, "khong_thay": 0, "file_du": 0,
+                "chua_xac_nhan": 0, "khong_len": 0, "tung_thay": [], "hieu_chinh": [], "tong_hc": 0, "cam_la": [], "so_cam_la": 0, "da_sua": 0,
+                "sua_xong": 0, "rot": 0, "nhom_loi": {"ĐIỆN THOẠI KHÔNG CÓ INTERNET": len(ds)}, "ho_so": ho_so, "diem": []}
 
     def mot(k):
         try:
@@ -490,8 +510,39 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
         log(f" {bieu} {k}. {r['ten']} — {r['tong']}")
         return r
 
-    with ThreadPoolExecutor(6) as ex:
+    with ThreadPoolExecutor(4) as ex:
         kqs = list(ex.map(mot, ds))
+    mang_sau = mang_dien_thoai_ok()
+    # ---- LƯỢT 2 (tuần tự, không dồn mạng): mọi cam/điểm im lặng ở lượt 1 đo lại 2 lần × 6 giây rồi mới kết luận
+    nghi_ngo = [i for i, p in enumerate(kqs) if any(c["muc"] != XANH and c.get("t_http") != "mo" for c in p["cam"]) or not p["cam"]]
+    if nghi_ngo:
+        log(f"↻ Lượt 2: đo lại tuần tự {len(nghi_ngo)} điểm có cam im lặng (tránh kết luận rớt do mạng điện thoại chập chờn)")
+    lat_lai = 0
+    for i in nghi_ngo:
+        p = kqs[i]
+        dom = p["domain"]
+        ports = [c["http"] for c in p["cam"] if c["muc"] != XANH] or [C.HTTP[0]]
+        thay_mo = False
+        for lan in range(2):
+            if any(cham(dom, x, 6) == "mo" for x in ports):
+                thay_mo = True
+                break
+            time.sleep(2)
+        if thay_mo:
+            try:
+                moi = kiem_diem(p["stt"], diem[p["stt"]], cd, anh_dir, ma, ho_so.get(p["stt"]))
+                moi["lat"], moi["lng"], moi["map"], moi["map_goc"] = p.get("lat"), p.get("lng"), p.get("map", ""), p.get("map_goc", "")
+                if sum(1 for c in moi["cam"] if c["muc"] == XANH) > sum(1 for c in p["cam"] if c["muc"] == XANH):
+                    lat_lai += 1
+                    log(f"   ↻ điểm {p['stt']}: lượt 1 báo {p['tong']} nhưng đo lại được → {moi['tong']} (lượt 1 rớt do mạng điện thoại)")
+                kqs[i] = moi
+            except Exception:
+                pass
+    khong_tin_cay = ""
+    if not mang_sau or (lat_lai >= 2):
+        khong_tin_cay = ("Mạng điện thoại chập chờn trong lúc kiểm" + (" (mất Internet lúc kết thúc)" if not mang_sau else f" ({lat_lai} điểm lượt 1 báo rớt sai)")
+                         + " → kết quả rớt ở lượt này chỉ tin khi đo lại vẫn rớt; nên kiểm lại sau vài phút.")
+        log("⚠ " + khong_tin_cay)
     if tu_sua:
         sua_n = [p for p in kqs if any(c["muc"] != XANH and any(v in TU_SUA_DUOC for v in c.get("sua", [])) for c in p["cam"])]
         if sua_n:
@@ -567,7 +618,7 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
     for p in kqs:
         for c in p["cam"]:
             cu_m = tr_cam.get((p["stt"], c["so"]))
-            c["vua_rot"] = cu_m == XANH and c["muc"] != XANH
+            c["vua_rot"] = cu_m == XANH and c["muc"] != XANH and not khong_tin_cay
             c["vua_len"] = cu_m is not None and cu_m != XANH and c["muc"] == XANH
     tung_thay = set(tuple(x) for x in truoc.get("tung_thay", []))
     for stt_x, d_x in diem.items():   # vị trí người dùng xác nhận "cam có thật" = coi như đã từng thấy
@@ -695,12 +746,12 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
             for c in p["cam"]:
                 if c["muc"] != XANH:
                     dem[c["nhan"]] = dem.get(c["nhan"], 0) + 1
-    out = {"du_an": da["ten"], "ma": ma, "luc": time.strftime("%d/%m/%Y %H:%M"), "giay": round(time.time() - t0),
+    out = {"du_an": da["ten"], "ma": ma, "luc": time.strftime("%d/%m/%Y %H:%M"), "giay": round(time.time() - t0), "khong_tin_cay": khong_tin_cay,
            "tong_cam": tong_cam, "dat": dat, "tong_file": tong_file, "tong_quet": tong_quet, "khong_thay": khong_thay, "file_du": file_du, "chua_xac_nhan": chua_xac_nhan, "khong_len": khong_len,
            "tung_thay": sorted(list(x) for x in tung_thay), "hieu_chinh": hieu_chinh, "tong_hc": tong_hc, "cam_la": ds_la, "so_cam_la": len(ds_la), "da_sua": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua")),
            "sua_xong": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua") and c["muc"] == XANH), "rot": sum(1 for p in kqs for c in p["cam"] if c.get("vua_rot")),
            "nhom_loi": dem, "ho_so": ho_so, "diem": sorted(kqs, key=lambda p: (int(p["stt"]) if str(p["stt"]).isdigit() else 0))}
-    if not chi_diem:
+    if not chi_diem and not khong_tin_cay:   # lượt kiểm không tin cậy thì KHÔNG ghi đè lịch sử
         with open(f, "w", encoding="utf-8") as fh:
             json.dump(out, fh, ensure_ascii=False)
     if ds_la:
