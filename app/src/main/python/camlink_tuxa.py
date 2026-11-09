@@ -106,6 +106,7 @@ def kiem_diem(stt, d, cd, anh_dir, ma, ho_so=None):
         x = web_khac[0]
         kq["web_modem"] = f"{'https' if x == 443 else 'http'}://{dom}:{x}"
     kq["quet"] = {"cam_port": cam_port, "web_khac": web_khac, "so_quet": len(cam_port)}
+    kq["so_quet"] = len(cam_port)
     song = any(r[0] != "im_lang" for r in ket.values())
     if not song:
         viec = ["Gọi người tại điểm kiểm tra đèn nguồn tủ điện và modem.",
@@ -133,9 +134,8 @@ def kiem_diem(stt, d, cd, anh_dir, ma, ho_so=None):
     for c in cams:
         c["t_http"], c["ms_http"] = ket.get(c["http"], cham_tg(dom, c["http"]))
         if c["http"] not in cam_port:
-            thieu = len(cam_port) < so
-            goi_y = ([f"Quét chỉ thấy {len(cam_port)} cam trên tên miền. Nếu điểm thực tế chỉ có {len(cam_port)} cam: bấm \"Sửa số cam thực tế\"."]
-                     if thieu and nguon_so.startswith("số cam theo file") else [])
+            c["khong_thay"] = True   # vị trí file ghi có cam nhưng quét tên miền không thấy
+            goi_y = [f"Thực tế quét {dom} thấy {len(cam_port)} cam, file ghi {so_file} cam."]
             if c["t_http"] == "tu_choi":
                 _ket(c, VANG, f"Modem có mạng nhưng từ chối port {c['http']} → chưa có luật mở port (NAT) cho cam {c['so']}, hoặc không có cam {c['so']}",
                      goi_y + [f"Bấm Sửa từ xa để thêm luật NAT {c['http']}/{c['rtsp']} → 192.168.1.{C.IP_TU + c['so'] - 1} (cần vào được web modem).",
@@ -206,13 +206,14 @@ def kiem_diem(stt, d, cd, anh_dir, ma, ho_so=None):
         if c.get("them"):
             _ket(c, VANG, f"Cam chạy tốt nhưng ở port {c['http']} — KHÔNG có trong cấu hình điểm này",
                  ["Kiểm tra cam này có phải của điểm này không (có thể tên miền bị đổi/gộp giữa các điểm).",
-                  "Đúng là của điểm này: bấm \"Sửa số cam thực tế\" để thêm vào."], [], "Cam lạ ngoài cấu hình")
+                  "Đúng là của điểm này: cập nhật lại file khảo sát."], [], "Cam lạ ngoài cấu hình")
             continue
         if c.get("loi_cau_hinh"):
             _ket(c, VANG, "Cam đang chạy (có hình) nhưng cấu hình trong cam chưa đúng: " + c["loi_cau_hinh"][0],
                  ["Cam đang chạy nên app KHÔNG tự sửa, chỉ báo cáo."] + c["loi_cau_hinh"] +
                  ["Muốn sửa: bấm nút Sửa từ xa bên dưới hoặc ra điểm chạy lại CamLink."],
-                 ["nhap_lai_ddns"] if c.get("ddns_sai") else [], "Cấu hình trong cam chưa đúng")
+                 (["nhap_lai_ddns"] if c.get("ddns_sai") else []) + (["khoi_phuc_mang"] if c.get("mang_sai") else []),
+                 "Cấu hình trong cam chưa đúng")
             continue
         _ket(c, XANH, "Xem được từ ngoài: có ảnh chụp qua tên miền, port web + video mở, cấu hình trong cam đúng", [], nhan="Đạt")
     hong = [c for c in cams if c["muc"] != XANH]
@@ -231,10 +232,14 @@ def doc_cau_hinh(c, ov, dom, d, cu, cp, ho_so, cam_dau):
     gw_dung = (ho_so or {}).get("gw") or ""
     if not gw:
         loi.append("Gateway trong cam đang TRỐNG → cam không ra được Internet.")
+        c["mang_sai"] = True
     elif gw_dung and gw != gw_dung:
         loi.append(f"Gateway trong cam là {gw}, lúc cài là {gw_dung}.")
+        c["mang_sai"] = True
     if not dns:
         loi.append("DNS trong cam đang TRỐNG → cam không cập nhật được No-IP, tên miền sẽ trỏ IP cũ.")
+        c["mang_sai"] = True
+    c["gw_dung"] = gw_dung or gw
     lech = getattr(ov, "lech", None)
     if lech is not None:
         phut = int(abs(lech.total_seconds()) // 60)
@@ -444,6 +449,10 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
             c["vua_len"] = cu_m is not None and cu_m != XANH and c["muc"] == XANH
     tong_cam = sum(len(p["cam"]) for p in kqs)
     dat = sum(1 for p in kqs for c in p["cam"] if c["muc"] == XANH)
+    tong_file = sum(int(diem[p["stt"]].get("so") or 0) for p in kqs)
+    tong_quet = sum(p.get("so_quet", 0) for p in kqs)
+    khong_thay = sum(1 for p in kqs for c in p["cam"] if c.get("khong_thay"))
+    cam_la = sum(1 for p in kqs for c in p["cam"] if c.get("them"))
     dem = {}
     for p in kqs:
         if p["muc"] == DO and not any(c["muc"] == XANH for c in p["cam"]) and p["tong"].isupper():
@@ -453,13 +462,13 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
                 if c["muc"] != XANH:
                     dem[c["nhan"]] = dem.get(c["nhan"], 0) + 1
     out = {"du_an": da["ten"], "ma": ma, "luc": time.strftime("%d/%m/%Y %H:%M"), "giay": round(time.time() - t0),
-           "tong_cam": tong_cam, "dat": dat, "da_sua": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua")),
+           "tong_cam": tong_cam, "dat": dat, "tong_file": tong_file, "tong_quet": tong_quet, "khong_thay": khong_thay, "cam_la": cam_la, "da_sua": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua")),
            "sua_xong": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua") and c["muc"] == XANH), "rot": sum(1 for p in kqs for c in p["cam"] if c.get("vua_rot")),
            "nhom_loi": dem, "diem": sorted(kqs, key=lambda p: (int(p["stt"]) if str(p["stt"]).isdigit() else 0))}
     if not chi_diem:
         with open(f, "w", encoding="utf-8") as fh:
             json.dump(out, fh, ensure_ascii=False)
-    log(f"→ {dat}/{tong_cam} cam đạt · {out['rot']} cam vừa rớt so với lần trước · {out['giay']} giây")
+    log(f"→ File ghi {tong_file} cam · quét thực tế thấy {tong_quet} cam · {dat} cam đạt · {out['rot']} cam vừa rớt so với lần trước · {out['giay']} giây")
     return out
 
 
@@ -515,18 +524,58 @@ def xuat_excel(goc, ket_qua):
     for col, w in zip("ABCDEFGHIJKLMNOPQR", [5, 24, 26, 5, 13, 31, 52, 40, 56, 28, 38, 10, 12, 12, 14, 24, 8, 30]):
         ws.column_dimensions[col].width = w
     ws.freeze_panes = "A3"
+    # ---- Tổng hợp: số cam theo file vs thực tế quét
+    th = wb.create_sheet("Tong hop", 0)
+    th.append([f"TỔNG HỢP — {ket_qua['du_an']} — {ket_qua['luc']}"])
+    th["A1"].font = Font(bold=True, size=13)
+    th.append([f"File ghi {ket_qua.get('tong_file', '')} cam · quét thực tế thấy {ket_qua.get('tong_quet', '')} cam · "
+               f"{ket_qua['dat']} cam đạt (có ảnh) · {ket_qua.get('khong_thay', 0)} vị trí file ghi nhưng không thấy cam"])
+    th.append(["No", "Tên điểm", "Domain", "Cam theo file", "Cam quét thực tế", "Port cam thấy", "Cam đạt", "Kết luận", "Cảnh báo"])
+    for c in th[3]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor="0F5D8C")
+    for p in ket_qua["diem"]:
+        q = p.get("quet") or {}
+        th.append([p["stt"], p["ten"], p["domain"], p.get("so_file", ""), q.get("so_quet", "—"),
+                   ", ".join(map(str, q.get("cam_port", []))), sum(1 for c in p["cam"] if c["muc"] == XANH),
+                   p["tong"], "\n".join(p.get("canh_bao", []))])
+        for cell in th[th.max_row]:
+            cell.fill = PatternFill("solid", fgColor=mau[p["muc"]])
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+        if p.get("so_file") != q.get("so_quet"):
+            th.cell(th.max_row, 5).font = Font(bold=True, color="B42318")
+    for col, w in zip("ABCDEFGHI", [5, 30, 30, 12, 14, 18, 9, 22, 50]):
+        th.column_dimensions[col].width = w
+    # ---- Báo cáo sửa tất cả
+    if ket_qua.get("bao_cao_sua"):
+        bs = wb.create_sheet("Bao cao sua", 1)
+        xong = sum(1 for b in ket_qua["bao_cao_sua"] if b["ket_qua"] == "HOÀN THÀNH")
+        bs.append([f"BÁO CÁO SỬA TẤT CẢ — {ket_qua.get('luc_sua', '')} — {xong}/{len(ket_qua['bao_cao_sua'])} vấn đề hoàn thành"])
+        bs["A1"].font = Font(bold=True, size=13)
+        bs.append(["Điểm", "Cam", "Vấn đề", "App đã làm", "Kết quả", "Nguyên nhân (nếu chưa)", "Giải pháp đề xuất"])
+        for c in bs[2]:
+            c.font = Font(bold=True, color="FFFFFF")
+            c.fill = PatternFill("solid", fgColor="0F5D8C")
+        for b in ket_qua["bao_cao_sua"]:
+            bs.append([b["diem"], b["cam"], b["van_de"], "\n".join(b["da_lam"]), b["ket_qua"], b.get("nguyen_nhan", ""),
+                       "\n".join(f"{i + 1}) {g}" for i, g in enumerate(b.get("giai_phap", [])))])
+            for cell in bs[bs.max_row]:
+                cell.fill = PatternFill("solid", fgColor="D9F2E3" if b["ket_qua"] == "HOÀN THÀNH" else "FBD9D5")
+                cell.alignment = Alignment(wrap_text=True, vertical="top")
+        for col, w in zip("ABCDEFG", [28, 18, 26, 50, 13, 45, 60]):
+            bs.column_dimensions[col].width = w
     f = os.path.join(goc, "ketqua", f"KiemTraTuXa_{ket_qua['ma']}_{time.strftime('%Y%m%d_%H%M')}.xlsx")
     wb.save(f)
     return f
 
 
 # ------------------------------------------------------------------ sửa từ xa
-TEN_SUA = {"khoi_dong_cam": "Khởi động lại cam", "dat_port_rtsp": "Đặt lại port RTSP cho cam",
+TEN_SUA = {"khoi_phuc_mang": "Khôi phục gateway + DNS trong cam", "khoi_dong_cam": "Khởi động lại cam", "dat_port_rtsp": "Đặt lại port RTSP cho cam",
            "them_nat": "Thêm luật mở port trên modem", "khoi_dong_modem": "Khởi động lại modem",
            "nhap_lai_ddns": "Nhập lại DDNS trên cam 1"}
 
 
-def sua(d, so, viec, cd, log=print):
+def sua(d, so, viec, cd, log=print, gw_dung=""):
     """Trả (ok, thông báo). Modem: cần lệnh theo model modem (chờ mẫu VNPT)."""
     dom = d["domain"]
     i = int(so) - 1
@@ -549,6 +598,14 @@ def sua(d, so, viec, cd, log=print):
                     return True, f"RTSP {rtsp} của cam {so} đã mở."
                 time.sleep(3)
             return False, f"Đã đặt lại nhưng RTSP {rtsp} vẫn chưa mở từ ngoài → modem thiếu luật NAT {rtsp}."
+        if viec == "khoi_phuc_mang":
+            gw, dns = ov.doc_gw_dns()
+            gw = gw or gw_dung
+            if not gw:
+                return False, "Không biết gateway đúng của điểm (cam trống gateway, chưa có hồ sơ lúc cài) → ra điểm chạy lại CamLink."
+            ov.dat_gw_dns(gw)
+            gw2, dns2 = ov.doc_gw_dns()
+            return bool(gw2 and dns2), f"Gateway {gw2 or '(trống)'}, DNS {dns2 or '(trống)'} sau khi đặt lại."
         if viec == "nhap_lai_ddns":
             if not camlink_oryza.la_oryza(dom, http):
                 return False, "Cam 1 không phải Oryza hoặc không vào được — chưa hỗ trợ nhập DDNS từ xa cho hãng này."
@@ -561,3 +618,104 @@ def sua(d, so, viec, cd, log=print):
         return False, f"Không có thao tác {viec}"
     except Exception as e:
         return False, f"{TEN_SUA.get(viec, viec)} lỗi: {str(e)[:120]}"
+
+
+# ------------------------------------------------------------------ SỬA TẤT CẢ (người dùng bấm)
+CHAY_DUOC = ("khoi_dong_cam", "dat_port_rtsp", "khoi_phuc_mang", "nhap_lai_ddns")
+
+
+def _bo_dong_bam(viec):
+    return [v for v in viec if not v.startswith("Bấm Sửa") and "bấm nút Sửa" not in v and not v.startswith("App đã tự thử")]
+
+
+def _tinh_lai(kq, diem):
+    ds = kq["diem"]
+    kq["tong_cam"] = sum(len(p["cam"]) for p in ds)
+    kq["dat"] = sum(1 for p in ds for c in p["cam"] if c["muc"] == XANH)
+    kq["tong_quet"] = sum(p.get("so_quet", 0) for p in ds)
+    kq["khong_thay"] = sum(1 for p in ds for c in p["cam"] if c.get("khong_thay"))
+    kq["cam_la"] = sum(1 for p in ds for c in p["cam"] if c.get("them"))
+    dem = {}
+    for p in ds:
+        if p["muc"] == DO and not any(c["muc"] == XANH for c in p["cam"]) and p["tong"].isupper():
+            dem[p["tong"]] = dem.get(p["tong"], 0) + 1
+        else:
+            for c in p["cam"]:
+                if c["muc"] != XANH:
+                    dem[c.get("nhan", "")] = dem.get(c.get("nhan", ""), 0) + 1
+    kq["nhom_loi"] = dem
+    return kq
+
+
+def sua_tat_ca(goc, da, ma, kq, cd, log=print):
+    """Gom MỌI vấn đề trong kết quả kiểm tra → chạy hết các cách sửa app làm được → kiểm tra lại →
+    báo cáo từng vấn đề: HOÀN THÀNH, hoặc CHƯA kèm nguyên nhân + giải pháp."""
+    diem = da["diem"]
+    muc_sua, dong_diem = [], set()
+    for p in kq["diem"]:
+        ca_diem = p["muc"] == DO and p["tong"].isupper() and not any(c["muc"] == XANH for c in p["cam"])
+        cams = [c for c in p["cam"] if c["muc"] != XANH]
+        if ca_diem and cams:
+            cams = cams[:1]
+        for c in cams:
+            chay = [v for v in c.get("sua", []) if v in CHAY_DUOC]
+            muc_sua.append({"stt": p["stt"], "ten": p["ten"], "domain": p["domain"], "so": c["so"], "http": c["http"],
+                            "ca_diem": ca_diem, "van_de": p["tong"] if ca_diem else c.get("nhan", ""),
+                            "nguyen_nhan_truoc": c.get("nguyen_nhan", ""), "chay": chay, "da_lam": [],
+                            "gw_dung": c.get("gw_dung", ""),
+                            "trung": any("Cùng một cam" in x for x in c.get("canh_bao", []))})
+    log(f"SỬA TẤT CẢ: {len(muc_sua)} vấn đề")
+    for vong in range(3):   # sửa → kiểm lại → còn việc sửa được (vd mất cấu hình sau khởi động) thì làm tiếp
+        dong_diem = set()
+        for m in muc_sua:
+            for v in m["chay"]:
+                if v in m.setdefault("da_chay", []):
+                    continue
+                m["da_chay"].append(v)
+                if v == "nhap_lai_ddns" and m.get("trung"):
+                    m["da_lam"].append("Không nhập lại DDNS: cam này đang xuất hiện ở nhiều tên miền, phải xác định cam thuộc điểm nào trước (tránh ghi đè DDNS của điểm khác).")
+                    continue
+                log(f"🔧 Điểm {m['stt']} cam {m['so']}: {TEN_SUA[v]} …")
+                ok, tb = sua(diem[m["stt"]], m["so"], v, cd, log, m.get("gw_dung", ""))
+                m["da_lam"].append(f"{TEN_SUA[v]}: {'xong' if ok else 'chưa được'} — {tb}")
+                dong_diem.add(m["stt"])
+        if not dong_diem:
+            break
+        log("Kiểm tra lại các điểm vừa sửa …")
+        moi = kiem_du_an(goc, da, ma, cd, log, chi_diem=sorted(dong_diem), tu_sua=False)
+        theo = {p["stt"]: p for p in moi["diem"]}
+        kq["diem"] = [theo.get(p["stt"], p) for p in kq["diem"]]
+        theo = {p["stt"]: p for p in kq["diem"]}
+        for m in muc_sua:   # việc sửa mới lộ ra sau vòng trước
+            c = next((x for x in theo[m["stt"]]["cam"] if x["http"] == m["http"]), None)
+            if c and c["muc"] != XANH:
+                m["chay"] = [v for v in c.get("sua", []) if v in CHAY_DUOC]
+                m["gw_dung"] = c.get("gw_dung", "")
+    theo = {p["stt"]: p for p in kq["diem"]}
+    bao_cao = []
+    for m in muc_sua:
+        p = theo[m["stt"]]
+        c = next((x for x in p["cam"] if x["http"] == m["http"]), None)
+        xong = c is not None and c["muc"] == XANH and bool(m.get("da_chay"))
+        dong = {"diem": f"{m['stt']}. {m['ten']}", "cam": "cả điểm" if m["ca_diem"] else f"cam {m['so']} (port {m['http']})",
+                "van_de": m["van_de"], "da_lam": m["da_lam"] or ["App không có cách sửa từ xa cho lỗi này"],
+                "ket_qua": "HOÀN THÀNH" if xong else "CHƯA"}
+        if not xong:
+            dong["nguyen_nhan"] = (c or {}).get("nguyen_nhan") or m["nguyen_nhan_truoc"]
+            gp = _bo_dong_bam((c or {}).get("viec") or (p.get("viec") or []))
+            if any(v in ("them_nat", "khoi_dong_modem") for v in (c or {}).get("sua", [])):
+                dau = [g for g in gp if g.startswith("Thực tế quét")]
+                gp = dau + ["App chưa điều khiển được modem VNPT từ xa (đang chờ mẫu modem) → ra điểm chạy lại CamLink, hoặc nhờ người tại điểm rút điện modem 10 giây."] + [g for g in gp if g not in dau]
+            dong["giai_phap"] = gp or ["Ra điểm kiểm tra trực tiếp."]
+        bao_cao.append(dong)
+    kq["bao_cao_sua"] = bao_cao
+    kq["luc_sua"] = time.strftime("%d/%m/%Y %H:%M")
+    _tinh_lai(kq, diem)
+    xong = sum(1 for b in bao_cao if b["ket_qua"] == "HOÀN THÀNH")
+    log(f"→ Sửa tất cả: {xong}/{len(bao_cao)} vấn đề HOÀN THÀNH")
+    try:
+        with open(_f_lich_su(goc, ma), "w", encoding="utf-8") as fh:
+            json.dump(kq, fh, ensure_ascii=False)
+    except OSError:
+        pass
+    return kq

@@ -216,7 +216,21 @@ class TuXaActivity : Activity() {
         val tt = the(if (dat == tong) "#1D7A46" else "#B42318")
         tt.addView(chu(k.optString("du_an"), 17f, true))
         tt.addView(chu("Kiểm lúc ${k.optString("luc")} · ${k.optInt("giay")} giây", 12f, mau = "#5B6776"))
-        tt.addView(chu("$dat/$tong cam ĐẠT", 20f, true, if (dat == tong) "#1D7A46" else "#B42318"))
+        val tongFile = k.optInt("tong_file")
+        val tongQuet = k.optInt("tong_quet")
+        val camLa = k.optInt("cam_la")
+        tt.addView(chu("$dat cam ĐẠT (có ảnh)", 20f, true, if (dat >= tongFile && dat > 0) "#1D7A46" else "#B42318"))
+        tt.addView(chu("File khảo sát ghi: $tongFile cam\nQuét thực tế trên các tên miền: $tongQuet cam" +
+            (if (camLa > 0) "\n  trong đó $camLa cam ở port ngoài cấu hình (app vẫn kiểm, không bỏ sót)" else "") +
+            (if (k.optInt("khong_thay") > 0) "\nFile ghi nhưng không thấy cam: ${k.optInt("khong_thay")} vị trí" else ""), 14f))
+        val bcs = k.optJSONArray("bao_cao_sua")
+        if (bcs != null) {
+            var xong = 0
+            for (i in 0 until bcs.length()) if (bcs.getJSONObject(i).optString("ket_qua") == "HOÀN THÀNH") xong++
+            tt.addView(chu("🔧 Sửa tất cả lúc ${k.optString("luc_sua")}: $xong/${bcs.length()} vấn đề HOÀN THÀNH", 15f, true, if (xong == bcs.length()) "#1D7A46" else "#9A5B00"))
+            tt.addView(nut("Xem báo cáo sửa (từng vấn đề)") { xemBaoCaoSua(bcs) })
+        }
+        if (tong - dat > 0 && bcs == null) tt.addView(nut("🔧 SỬA TẤT CẢ ${tong - dat} VẤN ĐỀ (rồi báo cáo)") { suaTatCa() })
         val daSua = k.optInt("da_sua")
         if (daSua > 0) tt.addView(chu("🔧 App đã tự sửa $daSua cam có vấn đề → ${k.optInt("sua_xong")} cam đã chạy lại", 14f, true, "#0F5D8C"))
         tt.addView(chu("Cam đang chạy tốt: chỉ đọc, không thay đổi gì", 12f, mau = "#5B6776"))
@@ -246,7 +260,6 @@ class TuXaActivity : Activity() {
         t.addView(chu(p.optString("ghi_so"), 12f, mau = "#5B6776"))
         val cb = p.optJSONArray("canh_bao")
         if (cb != null) for (i in 0 until cb.length()) t.addView(chu("⚠ ${cb.getString(i)}", 13f, true, "#B42318"))
-        t.addView(nut("Sửa số cam thực tế (đang ${p.optInt("so")})") { suaSoCam(p) })
         val cams = p.optJSONArray("cam") ?: JSONArray()
         for (i in 0 until cams.length()) t.addView(dongCam(p, cams.getJSONObject(i)))
         return t
@@ -264,7 +277,7 @@ class TuXaActivity : Activity() {
         val ct = LinearLayout(this)
         ct.orientation = LinearLayout.VERTICAL
         ct.setPadding(dp(10), dp(4), 0, dp(4))
-        ct.visibility = if (muc == "xanh") View.GONE else View.VISIBLE
+        ct.visibility = View.VISIBLE   // luôn mở: cam lên được phải thấy ảnh ngay
         dau.setOnClickListener { ct.visibility = if (ct.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
 
         ct.addView(chu("Nguyên nhân: ${c.optString("nguyen_nhan")}", 14f))
@@ -315,6 +328,45 @@ class TuXaActivity : Activity() {
         }
         hop.addView(ct)
         return hop
+    }
+
+    private fun suaTatCa() {
+        val k = ketQua ?: return
+        if (dangChay) return
+        AlertDialog.Builder(this)
+            .setTitle("Sửa tất cả vấn đề?")
+            .setMessage("App chỉ đụng tới cam ĐANG CÓ VẤN ĐỀ (khởi động lại, đặt lại port, khôi phục gateway/DNS/DDNS). Cam đang chạy tốt không thay đổi gì. Xong app kiểm tra lại và báo cáo từng vấn đề: hoàn thành hay chưa, nguyên nhân, giải pháp.")
+            .setPositiveButton("SỬA TẤT CẢ") { _, _ ->
+                dangChay = true
+                khung.removeAllViews()
+                khung.addView(chu("🔧 Đang sửa tất cả… (vài phút, cam khởi động lại mất ~2 phút)", 15f, mau = "#0F5D8C"))
+                thread {
+                    gan4G(true)
+                    try {
+                        val j = core.callAttr("tuxa_sua_tat_ca", ma, k.toString(), nk).toString()
+                        ui.post { ketQua = JSONObject(j); veBang("Đã sửa tất cả và kiểm tra lại"); xemBaoCaoSua(ketQua!!.optJSONArray("bao_cao_sua") ?: JSONArray()) }
+                    } catch (e: Exception) { ui.post { nk.ghi("✖ ${e.message}"); veBang("Sửa tất cả bị lỗi: ${e.message}") } }
+                    finally { gan4G(false); dangChay = false }
+                }
+            }
+            .setNegativeButton("Huỷ", null)
+            .show()
+    }
+
+    private fun xemBaoCaoSua(bcs: JSONArray) {
+        val sb = StringBuilder()
+        for (i in 0 until bcs.length()) {
+            val b = bcs.getJSONObject(i)
+            sb.append(if (b.optString("ket_qua") == "HOÀN THÀNH") "✅ " else "❌ ").append(b.optString("diem")).append(" — ").append(b.optString("cam")).append("\n")
+            sb.append("Vấn đề: ").append(b.optString("van_de")).append("\n")
+            val dl = b.optJSONArray("da_lam"); if (dl != null) for (j in 0 until dl.length()) sb.append("• ").append(dl.getString(j)).append("\n")
+            if (b.optString("ket_qua") != "HOÀN THÀNH") {
+                sb.append("Nguyên nhân: ").append(b.optString("nguyen_nhan")).append("\n")
+                val gp = b.optJSONArray("giai_phap"); if (gp != null) for (j in 0 until gp.length()) sb.append("→ ").append(gp.getString(j)).append("\n")
+            }
+            sb.append("\n")
+        }
+        AlertDialog.Builder(this).setTitle("Báo cáo sửa tất cả").setMessage(sb.toString().trim()).setPositiveButton("Đóng", null).show()
     }
 
     private fun suaSoCam(p: JSONObject) {

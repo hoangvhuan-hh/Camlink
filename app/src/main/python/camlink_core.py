@@ -535,3 +535,10 @@ def sua_so_cam(ma, stt, n):
     da["diem"][stt]["so_thuc"] = int(n)
     _ghi_du_an(ma, da)
     return f"Điểm {stt}: đã ghi {n} cam thực tế"
+
+
+def tuxa_sua_tat_ca(ma, json_kq, log):
+    import camlink_tuxa as T
+    log = _cb(log)
+    kq = T.sua_tat_ca(GOC, _doc_du_an(ma), ma, json.loads(json_kq), C.doc_cai_dat(), log)
+    return json.dumps(kq, ensure_ascii=False)
