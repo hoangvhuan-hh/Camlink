@@ -11,8 +11,8 @@ android {
         applicationId = "vn.vinalite.camlink"
         minSdk = 24
         targetSdk = 34
-        versionCode = 22
-        versionName = "1.5.10"
+        versionCode = 23
+        versionName = "1.5.11"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
     signingConfigs {

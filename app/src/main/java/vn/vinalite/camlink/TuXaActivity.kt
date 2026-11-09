@@ -93,7 +93,11 @@ class TuXaActivity : Activity() {
                     ui.postDelayed({ phatLive(khungAnh, url, trangThai, tcp = false) }, 800)
                     return
                 }
-                trangThai.text = "✖ App không phát được luồng này.\nChi tiết: $ct\nBấm ▶ lần nữa để mở bằng VLC/app khác."
+                val nk = cauRtsp[url]?.nhatKy?.toString()?.take(1500) ?: ""
+                trangThai.text = "✖ App không phát được luồng này.\nChi tiết: $ct\n" +
+                    (if (nk.isNotEmpty()) "Hội thoại với cam:\n$nk\n" else "Cam chưa trả lời gì qua cầu.\n") +
+                    "Bấm nút để mở bằng VLC/app khác."
+                trangThai.setTextIsSelectable(true)
                 trangThai.setTextColor(Color.parseColor("#B42318"))
                 khungAnh.removeAllViews()
                 val b = Button(this@TuXaActivity)
@@ -173,7 +177,7 @@ class TuXaActivity : Activity() {
         goc.orientation = LinearLayout.VERTICAL
         goc.setPadding(dp(14), dp(18), dp(14), dp(10))
         goc.setBackgroundColor(Color.parseColor("#EEF1F4"))
-        goc.addView(chu("Kiểm tra từ xa", 22f, true))
+        goc.addView(chu("Kiểm tra từ xa  ·  CamLink ${packageManager.getPackageInfo(packageName, 0).versionName}", 22f, true))
         val hang = LinearLayout(this)
         hang.orientation = LinearLayout.HORIZONTAL
         hang.addView(nut("🔄 Kiểm tra lại") { kiem() }, LinearLayout.LayoutParams(0, -2, 1f))

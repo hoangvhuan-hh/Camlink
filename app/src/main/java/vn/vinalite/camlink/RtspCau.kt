@@ -18,6 +18,10 @@ import kotlin.concurrent.thread
  */
 class RtspCau(private val host: String, private val port: Int, private val mang: Network? = null) {
     private var sv: ServerSocket? = null
+    val nhatKy = StringBuilder()   // hội thoại RTSP (phần chữ) để chẩn đoán khi không phát được
+    private fun ghi(huong: String, t: String) {
+        synchronized(nhatKy) { if (nhatKy.length < 6000) nhatKy.append(huong).append(' ').append(t.trim().replace("\r\n", " | ").take(600)).append('\n') }
+    }
     val cong: Int get() = sv?.localPort ?: 0
 
     fun bat(): Int {
@@ -48,18 +52,20 @@ class RtspCau(private val host: String, private val port: Int, private val mang:
             cam.soTimeout = 0
             kh.soTimeout = 0
             val diaChiCau = "rtsp://127.0.0.1:$cong"
-            val diaChiCam = "rtsp://$host:$port"
+            // Chiều trình phát → cam: GIỮ NGUYÊN (không đổi địa chỉ trong dòng lệnh/Authorization, nếu đổi thì
+            // chữ ký Digest của trình phát không còn khớp và cam trả 401). Cam vốn đã quảng bá 127.0.0.1 nên không
+            // quan tâm phần host trong URL, chỉ xét đường dẫn.
             val t1 = thread(isDaemon = true) {
-                chuyen(BufferedInputStream(kh.getInputStream()), cam.getOutputStream()) { s ->
-                    s.replace(Regex("rtsp://127\\.0\\.0\\.1:$cong"), diaChiCam)
-                }
+                chuyen(BufferedInputStream(kh.getInputStream()), cam.getOutputStream()) { s -> ghi("→cam", s); s }
             }
             chuyen(BufferedInputStream(cam.getInputStream()), kh.getOutputStream()) { s ->
+                ghi("←cam", s)
                 // mọi địa chỉ rtsp cam quảng bá (localhost, IP LAN, tên miền) → về cầu
                 s.replace(Regex("rtsp://[^/\\s\"]+"), diaChiCau)
             }
             t1.join(500)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            ghi("!!", "cầu lỗi: ${e.javaClass.simpleName} ${e.message}")
         } finally {
             try { kh.close() } catch (_: Exception) {}
             try { cam.close() } catch (_: Exception) {}
