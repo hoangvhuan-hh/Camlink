@@ -612,6 +612,32 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
     khong_thay = sum(1 for p in kqs for c in p["cam"] if c.get("khong_thay"))
     # tách: "cam KHÔNG LÊN" (có cam, không xem được) ≠ "file ghi dư" (quét đủ cam nhưng file ghi nhiều hơn)
     chua_xac_nhan = sum(1 for p in kqs for c in p["cam"] if c.get("khong_thay") and not c.get("tung_thay"))
+    # ---- TỰ HIỆU CHỈNH hồ sơ theo thực tế quét (ghi lại thay đổi để xuất file khảo sát đã hiệu chỉnh)
+    hieu_chinh = []
+    for p in kqs:
+        q = p.get("quet") or {}
+        la_o_day = [c for c in p["cam"] if c.get("them")]
+        if la_o_day and q.get("so_quet", 0) > int(diem[p["stt"]].get("so") or 0):
+            so_moi = q["so_quet"]
+            bs_them = sum(1 for c in la_o_day if re.search(r"ITS|ANPR|LPR", (c.get("model") or ""), re.I))
+            hieu_chinh.append({"stt": p["stt"], "ten": p["ten"], "truong": "so_cam", "cu": int(diem[p["stt"]].get("so") or 0), "moi": so_moi,
+                               "bs_cu": int(diem[p["stt"]].get("bs") or 0), "bs_moi": int(diem[p["stt"]].get("bs") or 0) + bs_them,
+                               "ly_do": "Quét thấy thêm cam thật tại tên miền này: " + "; ".join(
+                                   f"port {c['http']} {c.get('hang', '')} {c.get('model', '')} MAC {c.get('mac', '')}".strip() for c in la_o_day)})
+    # vị trí thiếu có đúng MỘT ứng viên bị cam lạ bù → file ghi nhầm điểm, tự giảm số cam điểm đó
+    ung_vien = [(p, c) for p in kqs for c in p["cam"] if c.get("co_the_nham")]
+    so_la_bu = sum(1 for p in kqs for c in p["cam"] if c.get("bu_duoc"))
+    if ung_vien and len(ung_vien) == so_la_bu:
+        for p, c in ung_vien:
+            hieu_chinh.append({"stt": p["stt"], "ten": p["ten"], "truong": "so_cam", "cu": int(diem[p["stt"]].get("so") or 0),
+                               "moi": int(diem[p["stt"]].get("so") or 0) - 1, "bs_cu": int(diem[p["stt"]].get("bs") or 0),
+                               "bs_moi": max(0, int(diem[p["stt"]].get("bs") or 0) - 1),
+                               "ly_do": f"Cam {c['so']} (port {c['http']}) file ghi ở đây nhưng cam loại này thực tế đang chạy ở điểm khác (xem dòng điểm đó)"})
+            c["nhan"] = "File ghi nhầm điểm (đã tự hiệu chỉnh)"
+            c["muc"] = VANG
+    elif ung_vien:
+        for p, c in ung_vien:
+            c["cho_xac_dinh"] = True
     # số vị trí thiếu được cam lạ "bù" tối đa = số cam lạ có ứng viên; phần còn lại vẫn là cam không lên
     so_bu = min(sum(1 for p in kqs for c in p["cam"] if c.get("bu_duoc")),
                 sum(1 for p in kqs for c in p["cam"] if c.get("co_the_nham")))
@@ -627,7 +653,7 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
                     dem[c["nhan"]] = dem.get(c["nhan"], 0) + 1
     out = {"du_an": da["ten"], "ma": ma, "luc": time.strftime("%d/%m/%Y %H:%M"), "giay": round(time.time() - t0),
            "tong_cam": tong_cam, "dat": dat, "tong_file": tong_file, "tong_quet": tong_quet, "khong_thay": khong_thay, "file_du": file_du, "chua_xac_nhan": chua_xac_nhan, "khong_len": khong_len,
-           "tung_thay": sorted(list(x) for x in tung_thay), "cam_la": ds_la, "so_cam_la": len(ds_la), "da_sua": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua")),
+           "tung_thay": sorted(list(x) for x in tung_thay), "hieu_chinh": hieu_chinh, "cam_la": ds_la, "so_cam_la": len(ds_la), "da_sua": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua")),
            "sua_xong": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua") and c["muc"] == XANH), "rot": sum(1 for p in kqs for c in p["cam"] if c.get("vua_rot")),
            "nhom_loi": dem, "ho_so": ho_so, "diem": sorted(kqs, key=lambda p: (int(p["stt"]) if str(p["stt"]).isdigit() else 0))}
     if not chi_diem:
@@ -978,4 +1004,36 @@ if(D.length)m.fitBounds(g.getBounds().pad(0.2));else m.setView([16,107],6);</scr
     f = os.path.join(goc, "ketqua", f"BanDo_{kq['ma']}.html")
     with open(f, "w", encoding="utf-8") as fh:
         fh.write(page)
+    return f
+
+
+def xuat_khao_sat_hieu_chinh(goc, da, kq):
+    """File khảo sát ĐÃ HIỆU CHỈNH theo thực tế: giữ cột gốc + cột thực tế + lý do, để thay cho file cũ."""
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Khao sat hieu chinh"
+    ws.append([f"FILE KHẢO SÁT HIỆU CHỈNH THEO THỰC TẾ — {da['ten']} — kiểm {kq['luc']}"]); ws["A1"].font = Font(bold=True, size=13)
+    ws.append(["No", "Tên điểm", "Domain", "Camera (file)", "Camera BS (file)", "Tổng (file)", "Cam thực tế quét", "Cam BS thực tế",
+               "Trạng thái hôm nay", "Lý do hiệu chỉnh", "Toạ độ"])
+    for c in ws[2]:
+        c.font = Font(bold=True, color="FFFFFF"); c.fill = PatternFill("solid", fgColor="0F5D8C")
+    hc = {}
+    for h in kq.get("hieu_chinh", []):
+        hc.setdefault(h["stt"], []).append(h)
+    theo = {p["stt"]: p for p in kq["diem"]}
+    for stt, d in da["diem"].items():
+        p = theo.get(stt, {})
+        so_f, bs_f = int(d.get("so") or 0), int(d.get("bs") or 0)
+        hs = hc.get(stt, [])
+        so_t = hs[-1]["moi"] if hs else (p.get("quet") or {}).get("so_quet", so_f)
+        bs_t = hs[-1]["bs_moi"] if hs else bs_f
+        ws.append([stt, d["ten"], d["domain"], so_f - bs_f, bs_f, so_f, so_t, bs_t, p.get("tong", ""),
+                   "\n".join(h["ly_do"] for h in hs), (f"{p['lat']:.6f}, {p['lng']:.6f}" if p.get("lat") else "")])
+        if hs:
+            for cell in ws[ws.max_row]:
+                cell.fill = PatternFill("solid", fgColor="FFF1C7"); cell.alignment = Alignment(wrap_text=True, vertical="top")
+    for col, w in zip("ABCDEFGHIJK", [5, 30, 30, 12, 14, 10, 14, 13, 18, 60, 22]):
+        ws.column_dimensions[col].width = w
+    f = os.path.join(goc, "ketqua", f"KhaoSat_HieuChinh_{kq['ma']}_{time.strftime('%Y%m%d_%H%M')}.xlsx")
+    wb.save(f)
     return f

@@ -144,9 +144,13 @@ def nhap_excel(duong_dan, ten_file, log):
             if td:
                 toa_do[k] = td
             log(f"  {k}. {v['ten']}: {'%.5f, %.5f' % tuple(td) if td else 'không có toạ độ'}")
-        for k, v in ds.items():   # giữ số cam thực tế đã sửa trong app
-            if (cu.get("diem") or {}).get(k, {}).get("so_thuc"):
-                v["so_thuc"] = cu["diem"][k]["so_thuc"]
+        for k, v in ds.items():   # giữ hiệu chỉnh theo thực tế đã ghi trong app
+            dc = (cu.get("diem") or {}).get(k, {})
+            if dc.get("so_thuc"):
+                v["so_thuc"] = dc["so_thuc"]
+                v["goc"] = {"so": v.get("so"), "bs": v.get("bs")}
+                v["so"], v["bs"] = dc.get("so", v.get("so")), dc.get("bs", v.get("bs"))
+                v["hieu_chinh"] = dc.get("hieu_chinh", [])
         _ghi_du_an(ma, {"ten": ten, "diem": ds, "toa_do": toa_do, "da_xong": cu.get("da_xong", {}),
                         "ho_so": cu.get("ho_so", {})})
         canh = _diem_trung_vi_tri(ma, toa_do)
@@ -493,8 +497,26 @@ def ds_du_an():
 def tuxa_kiem(ma, log):
     import camlink_tuxa as T
     log = _cb(log)
-    kq = T.kiem_du_an(GOC, _doc_du_an(ma), ma, C.doc_cai_dat(), log)
+    da = _doc_du_an(ma)
+    kq = T.kiem_du_an(GOC, da, ma, C.doc_cai_dat(), log)
+    # tự ghi hiệu chỉnh vào hồ sơ dự án (giữ giá trị gốc của file để đối chiếu)
+    doi = False
+    for h in kq.get("hieu_chinh", []):
+        d = da["diem"].get(h["stt"])
+        if d and (d.get("so") != h["moi"] or d.get("bs") != h["bs_moi"]):
+            d.setdefault("goc", {"so": d.get("so"), "bs": d.get("bs")})
+            d["so"], d["bs"], d["so_thuc"] = h["moi"], h["bs_moi"], h["moi"]
+            d.setdefault("hieu_chinh", []).append({"luc": kq["luc"], "ly_do": h["ly_do"], "cu": h["cu"], "moi": h["moi"]})
+            doi = True
+            log(f"✎ Đã tự hiệu chỉnh điểm {h['stt']}: {h['cu']} → {h['moi']} cam ({h['ly_do'][:80]})")
+    if doi:
+        _ghi_du_an(ma, da)
     return json.dumps(kq, ensure_ascii=False)
+
+
+def tuxa_khao_sat(ma, json_kq):
+    import camlink_tuxa as T
+    return T.xuat_khao_sat_hieu_chinh(GOC, _doc_du_an(ma), json.loads(json_kq))
 
 
 def tuxa_kiem_diem(ma, stt, log):

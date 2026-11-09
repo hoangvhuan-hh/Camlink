@@ -325,6 +325,17 @@ class TuXaActivity : Activity() {
             (if (camLa > 0) "\n  = theo file $tongFile cam + $camLa CAM LẠ ngoài hồ sơ" else "") +
             "\nCam KHÔNG LÊN (có cam, không xem được): ${k.optInt("khong_len")}" +
             (if (k.optInt("file_du") > 0) "\nTrong đó ${k.optInt("file_du")} vị trí nhiều khả năng là file ghi NHẦM ĐIỂM (cam lạ ở điểm khác bù vào) — xem cảnh báo ⚠ ở điểm có cam lạ" else ""), 14f))
+        val hc = k.optJSONArray("hieu_chinh")
+        if (hc != null && hc.length() > 0) {
+            val h = the("#0F5D8C", "#EAF2FA")
+            h.addView(chu("✎ Đã tự hiệu chỉnh hồ sơ theo thực tế (file khảo sát gốc vẫn giữ để đối chiếu)", 15f, true, "#0F5D8C"))
+            for (i in 0 until hc.length()) {
+                val x = hc.getJSONObject(i)
+                h.addView(chu("• Điểm ${x.optString("stt")}. ${x.optString("ten")}: ${x.optInt("cu")} → ${x.optInt("moi")} cam (BS ${x.optInt("bs_cu")} → ${x.optInt("bs_moi")})\n  ${x.optString("ly_do")}", 13f))
+            }
+            h.addView(chu("Bấm \"Xuất Excel + gửi\" để nhận kèm file khảo sát đã hiệu chỉnh.", 12f, mau = "#5B6776"))
+            tt.addView(h)
+        }
         val dsLa = k.optJSONArray("cam_la")
         if (dsLa != null && dsLa.length() > 0) {
             val la = the("#7A1FA2", "#F3E8FA")
@@ -628,12 +639,14 @@ class TuXaActivity : Activity() {
             try {
                 val f = File(core.callAttr("tuxa_excel", k.toString()).toString())
                 val fm = File(core.callAttr("tuxa_ban_do", k.toString()).toString())
+                val fk = File(core.callAttr("tuxa_khao_sat", ma, k.toString()).toString())
                 ui.post {
                     val i = Intent(Intent.ACTION_SEND_MULTIPLE)
                     i.type = "*/*"
                     i.putParcelableArrayListExtra(Intent.EXTRA_STREAM, arrayListOf(
                         FileProvider.getUriForFile(this, "vn.vinalite.camlink.files", f),
-                        FileProvider.getUriForFile(this, "vn.vinalite.camlink.files", fm)))
+                        FileProvider.getUriForFile(this, "vn.vinalite.camlink.files", fm),
+                        FileProvider.getUriForFile(this, "vn.vinalite.camlink.files", fk)))
                     i.putExtra(Intent.EXTRA_TEXT, "Kiểm tra từ xa ${k.optString("du_an")} ${k.optString("luc")}: ${k.optInt("dat")}/${k.optInt("tong_cam")} cam đạt")
                     i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     startActivity(Intent.createChooser(i, "Gửi kết quả kiểm tra từ xa"))
