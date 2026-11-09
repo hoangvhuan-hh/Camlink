@@ -230,7 +230,7 @@ class TuXaActivity : Activity() {
         val daNoi = tt.optString("ten").isNotEmpty()
         val dong = ArrayList<String>()
         dong.add(if (daNoi) "🔄 Đồng bộ lại ghim từ LiteMark" else "🔗 Chọn công trình LiteMark để nối")
-        if (daNoi) { dong.add("🧭 Xác minh vị trí cam theo thực tế (ảnh / GPS)"); dong.add("🔁 Đổi sang công trình khác"); dong.add("🌐 Mở công trình trên LiteMark"); dong.add("✂ Ngắt nối (về toạ độ Excel)") }
+        if (daNoi) { dong.add("🧭 Xác minh vị trí cam theo thực tế (ảnh / GPS)"); dong.add("🧪 Thử đường dây: tô đỏ 1 điểm trên LiteMark"); dong.add("🧪 Gỡ thử (LiteMark về đạt hết)"); dong.add("🔁 Đổi sang công trình khác"); dong.add("🌐 Mở công trình trên LiteMark"); dong.add("✂ Ngắt nối (về toạ độ Excel)") }
         dong.add("🔑 Đổi khoá kết nối")
         val ghiChu = tt.optJSONArray("ghi_chu")?.let { a -> (0 until a.length()).joinToString("\n") { "· " + a.getString(it) } } ?: ""
         AlertDialog.Builder(this)
@@ -242,6 +242,14 @@ class TuXaActivity : Activity() {
                     "🔗 Chọn công trình LiteMark để nối", "🔁 Đổi sang công trình khác" -> chonCongTrinh()
                     "🔄 Đồng bộ lại ghim từ LiteMark" -> thread { goiLm("lm_dong_bo", ma, nk) }
                     "🧭 Xác minh vị trí cam theo thực tế (ảnh / GPS)" -> startActivity(Intent(this, XacMinhActivity::class.java).putExtra("ma", ma))
+                    "🧪 Thử đường dây: tô đỏ 1 điểm trên LiteMark" -> {
+                        val ds = JSONArray(core.callAttr("lm_ds_diem", ma).toString())
+                        val nhan = (0 until ds.length()).map { i -> val r = ds.getJSONArray(i); "Điểm ${r.getString(0)} · ${r.getString(1)} · ${r.getString(2)} → ghim LM ${r.getString(3)}" }
+                        AlertDialog.Builder(this).setTitle("Tô đỏ THỬ điểm nào? (mở LiteMark xem ghim nào sáng)")
+                            .setItems(nhan.toTypedArray()) { _, i -> thread { try { val g = core.callAttr("lm_thu_canh_bao", ma, ds.getJSONArray(i).getString(0), true, nk).toString(); ui.post { nk.ghi("🧪 Đã tô thử ghim LiteMark $g — mở LiteMark kiểm tra, xong bấm Gỡ thử") } } catch (e: Exception) { ui.post { nk.ghi("✖ ${e.message?.take(120)}") } } } }
+                            .setNegativeButton("Huỷ", null).show()
+                    }
+                    "🧪 Gỡ thử (LiteMark về đạt hết)" -> thread { try { core.callAttr("lm_thu_canh_bao", ma, "0", false, nk) } catch (e: Exception) { ui.post { nk.ghi("✖ ${e.message?.take(120)}") } } }
                     "🌐 Mở công trình trên LiteMark" -> startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("${tt.optString("may_chu")}/ct/${tt.optString("id")}")))
                     "✂ Ngắt nối (về toạ độ Excel)" -> { core.callAttr("lm_ngat", ma); nk.ghi("Đã ngắt nối LiteMark, dùng lại toạ độ Excel") }
                     "🔑 Đổi khoá kết nối" -> nhapKhoa()

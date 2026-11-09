@@ -243,7 +243,7 @@ def goi_canh_bao(ma, kq, phien_ban, log=print, da=None):
         if p.get("lm_stt_that"):   # tên miền đổi: báo theo ghim của điểm thật (nhận diện bằng MAC/IP)
             return str(p["lm_stt_that"])
         return str(dm.get(str(p["stt"]), {}).get("lm_stt") or p["stt"])
-    than = {"luc": time.strftime("%Y-%m-%dT%H:%M:%S"), "nguon": "camlink", "phien_ban": phien_ban,
+    than = {"luc": time.strftime("%Y-%m-%dT%H:%M:%S%z")[:-2] + ":" + time.strftime("%z")[-2:], "nguon": "camlink", "phien_ban": phien_ban,
             "khong_tin_cay": kq.get("khong_tin_cay", ""), "tong": {"dat": kq.get("dat", 0), "tong": kq.get("tong_cam", 0)},
             "chi_bao_loi": True, "diem_dat": [lm(p) for p in kq.get("diem", []) if p["muc"] == "xanh"],
             "diem": [{"stt": lm(p), "stt_camlink": p["stt"], "ten": p["ten"], "domain": p.get("domain", ""), "muc": p["muc"], "tong": p["tong"],
@@ -400,3 +400,26 @@ def doi_chieu_vet(da, kq, log=print):
             doi.append((stt, that, can_cu))
             log(f"🔁 {p['domain']}: theo {can_cu} là điểm {that} (hồ sơ ghi điểm {stt}) → báo theo điểm {that}")
     return doi
+
+
+def thu_canh_bao(ma, da, stt, bat, phien_ban, log=print):
+    """Thử đường dây CamLink → LiteMark: tô ĐỎ một điểm (ghi rõ THỬ) để xem LiteMark sáng đúng ghim nào; bat=False → gỡ."""
+    lk = lien_ket(ma)
+    if not lk.get("id"):
+        raise RuntimeError("Dự án chưa nối LiteMark")
+    d = da["diem"].get(str(stt), {})
+    lm_stt = str(d.get("lm_stt") or stt)
+    tat_ca = [str(x.get("lm_stt") or s) for s, x in da["diem"].items()]
+    if bat:
+        than = {"luc": time.strftime("%Y-%m-%dT%H:%M:%S%z")[:-2] + ":" + time.strftime("%z")[-2:], "nguon": "camlink", "phien_ban": phien_ban,
+                "khong_tin_cay": "", "thu": True, "tong": {"dat": len(tat_ca) - 1, "tong": len(tat_ca)}, "chi_bao_loi": True,
+                "diem_dat": [g for g in tat_ca if g != lm_stt],
+                "diem": [{"stt": lm_stt, "stt_camlink": str(stt), "ten": d.get("ten", ""), "domain": d.get("domain", ""), "muc": "do",
+                          "tong": "THỬ KẾT NỐI — không phải lỗi thật",
+                          "cam": [{"so": 1, "http": 0, "muc": "do", "nhan": "THỬ", "nguyen_nhan": f"CamLink thử đường dây: điểm CamLink {stt} «{d.get('ten', '')}» ({d.get('domain', '')}) → ghim LiteMark {lm_stt}. Gỡ thử trong CamLink.", "viec": []}]}]}
+    else:
+        than = {"luc": time.strftime("%Y-%m-%dT%H:%M:%S%z")[:-2] + ":" + time.strftime("%z")[-2:], "nguon": "camlink", "phien_ban": phien_ban,
+                "khong_tin_cay": "", "thu": True, "tong": {"dat": len(tat_ca), "tong": len(tat_ca)}, "chi_bao_loi": True, "diem_dat": tat_ca, "diem": []}
+    _goi(f"/api/camlink/cong-trinh/{lk['id']}/canh-bao", than)
+    log(("🧪 Đã tô THỬ ghim LiteMark " + lm_stt) if bat else "🧪 Đã gỡ thử, LiteMark về trạng thái đạt hết")
+    return lm_stt

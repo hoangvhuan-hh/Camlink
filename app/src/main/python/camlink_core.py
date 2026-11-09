@@ -612,6 +612,16 @@ def lm_dung_tai_day(ma, stt, lat, lng, log):
     return json.dumps(r, ensure_ascii=False)
 
 
+def lm_thu_canh_bao(ma, stt, bat, log):
+    import camlink_litemark as L
+    return L.thu_canh_bao(ma, _doc_du_an(ma), stt, bool(bat), PHIEN_BAN_LOI, _cb(log))
+
+
+def lm_ds_diem(ma):
+    da = _doc_du_an(ma)
+    return json.dumps([[s, d.get("ten", ""), d.get("domain", ""), str(d.get("lm_stt", ""))] for s, d in sorted(da["diem"].items(), key=lambda x: int(x[0]) if x[0].isdigit() else 0)], ensure_ascii=False)
+
+
 def lm_dat_ghim(ma, stt, lm_stt, log):
     """Người dùng chốt điểm CamLink `stt` = ghim LiteMark `lm_stt`, rồi đồng bộ lại."""
     import camlink_litemark as L
