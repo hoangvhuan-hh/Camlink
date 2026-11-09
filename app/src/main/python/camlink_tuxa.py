@@ -340,8 +340,11 @@ def rtsp_describe(host, port, path, user, pw, cho=6):
             m = re.match(r"RTSP/1\.\d (\d+)", h)
             ma = int(m.group(1)) if m else 0
         codec = ", ".join(sorted(set(re.findall(r"a=rtpmap:\d+ ([\w-]+)", b)))) or "?"
+        ctl = re.findall(r"a=control:rtsp://([^/\s:]+)", b) + re.findall(r"Content-Base:\s*rtsp://([^/\s:]+)", h)
+        noi_bo = [x for x in ctl if x in ("127.0.0.1", "localhost") or x.startswith(("192.168.", "10."))]
         if ma == 200:
-            return ma, codec, f"Luồng video RTSP: DESCRIBE 200, codec {codec}"
+            return ma, codec, (f"Luồng video RTSP: DESCRIBE 200, codec {codec}"
+                               + (f" — cam quảng bá địa chỉ nội bộ {noi_bo[0]} trong luồng, app tự chuyển hướng khi xem live" if noi_bo else ""))
         if ma == 401:
             return ma, codec, "Luồng video RTSP: 401 — cam từ chối user/pass cho video"
         if ma == 404:

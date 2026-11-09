@@ -51,20 +51,29 @@ class TuXaActivity : Activity() {
     private var dangChay = false
     private val maFile = 21
     private val dangPhat = java.util.LinkedHashMap<String, ExoPlayer>()   // url → player đang chạy
+    private val cauRtsp = HashMap<String, RtspCau>()                      // url → cầu RTSP cục bộ
+    private var mang4G: android.net.Network? = null
     private val TOI_DA_LIVE = 4
 
     /** Phát trực tiếp RTSP ngay trong thẻ cam. Quá TOI_DA_LIVE thì dừng cái cũ nhất. */
     private fun phatLive(khungAnh: FrameLayout, url: String, trangThai: TextView, tcp: Boolean = true) {
         if (url.isEmpty()) { trangThai.text = "Không có link video"; return }
         dangPhat.remove(url)?.release()
-        while (dangPhat.size >= TOI_DA_LIVE) { val k = dangPhat.keys.first(); dangPhat.remove(k)?.release() }
+        cauRtsp.remove(url)?.tat()
+        while (dangPhat.size >= TOI_DA_LIVE) { val k = dangPhat.keys.first(); dangPhat.remove(k)?.release(); cauRtsp.remove(k)?.tat() }
+        // cầu RTSP: tránh cam quảng bá 127.0.0.1/IP LAN trong luồng, và ép đi 4G nếu có
+        val u = Uri.parse(url)
+        val cau = RtspCau(u.host ?: "", if (u.port > 0) u.port else 554, mang4G)
+        cau.bat()
+        cauRtsp[url] = cau
+        val urlPhat = cau.doiUrl(url)
         khungAnh.removeAllViews()
         val pv = PlayerView(this)
         pv.useController = false
         khungAnh.addView(pv, FrameLayout.LayoutParams(-1, dp(200)))
         val p = ExoPlayer.Builder(this).build()
         pv.player = p
-        p.setMediaSource(RtspMediaSource.Factory().setForceUseRtpTcp(tcp).setDebugLoggingEnabled(true).createMediaSource(MediaItem.fromUri(url)))
+        p.setMediaSource(RtspMediaSource.Factory().setForceUseRtpTcp(true).setDebugLoggingEnabled(true).createMediaSource(MediaItem.fromUri(urlPhat)))
         p.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 trangThai.text = when (state) {
@@ -80,8 +89,8 @@ class TuXaActivity : Activity() {
                 while (ng != null) { chuoi.append(ng.javaClass.simpleName).append(": ").append(ng.message ?: "").append(" ← "); ng = ng.cause }
                 val ct = chuoi.toString().trimEnd(' ', '←')
                 if (tcp) {
-                    trangThai.text = "⏳ TCP không được ($ct) — thử lại kiểu UDP…"
-                    ui.postDelayed({ phatLive(khungAnh, url, trangThai, tcp = false) }, 500)
+                    trangThai.text = "⏳ Lần 1 lỗi ($ct) — thử lại…"
+                    ui.postDelayed({ phatLive(khungAnh, url, trangThai, tcp = false) }, 800)
                     return
                 }
                 trangThai.text = "✖ App không phát được luồng này.\nChi tiết: $ct\nBấm ▶ lần nữa để mở bằng VLC/app khác."
@@ -101,7 +110,7 @@ class TuXaActivity : Activity() {
         dangPhat[url] = p
     }
 
-    override fun onDestroy() { dangPhat.values.forEach { it.release() }; dangPhat.clear(); super.onDestroy() }
+    override fun onDestroy() { dangPhat.values.forEach { it.release() }; dangPhat.clear(); cauRtsp.values.forEach { it.tat() }; cauRtsp.clear(); super.onDestroy() }
     override fun onPause() { dangPhat.values.forEach { it.pause() }; super.onPause() }
     override fun onResume() { dangPhat.values.forEach { it.play() }; super.onResume() }
 
@@ -242,9 +251,7 @@ class TuXaActivity : Activity() {
     private fun gan4G(bat: Boolean): Boolean {
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         if (!bat) {
-            cm.bindProcessToNetwork(null)
-            yeuCau4G?.let { try { cm.unregisterNetworkCallback(it) } catch (_: Exception) {} }
-            yeuCau4G = null
+            cm.bindProcessToNetwork(null)   // giữ yêu cầu 4G để cầu RTSP còn dùng được
             return true
         }
         fun tim() = cm.allNetworks.firstOrNull { n ->
@@ -267,6 +274,7 @@ class TuXaActivity : Activity() {
             } catch (_: Exception) {}
         }
         val n = dd ?: return false
+        mang4G = n
         return cm.bindProcessToNetwork(n)
     }
 
