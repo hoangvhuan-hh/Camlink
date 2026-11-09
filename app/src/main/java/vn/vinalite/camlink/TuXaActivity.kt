@@ -94,11 +94,12 @@ class TuXaActivity : Activity() {
         }
     }
     private val TOI_DA_LIVE = 4
+    private val boPhat by lazy { BoPhat(this) }   // CÙNG bộ phát với màn giám sát (đã xem được thật)
 
     /** Phát trực tiếp RTSP ngay trong thẻ cam. Quá TOI_DA_LIVE thì dừng cái cũ nhất. */
     private fun phatLive(khungAnh: FrameLayout, url: String, trangThai: TextView, tcp: Boolean = true, dungVlc: Boolean = true) {
         if (url.isEmpty()) { trangThai.text = "Không có link video"; return }
-        if (dungVlc && phatVlc(khungAnh, url, trangThai)) return
+        if (dungVlc) { boPhat.phat(khungAnh, url, trangThai, if (khungAnh.height > dp(60)) (khungAnh.height / resources.displayMetrics.density).toInt() else 200); return }
         dangPhat.remove(url)?.release()
         cauRtsp.remove(url)?.tat()
         while (dangPhat.size >= TOI_DA_LIVE) { val k = dangPhat.keys.first(); dangPhat.remove(k)?.release(); cauRtsp.remove(k)?.tat() }
@@ -159,12 +160,13 @@ class TuXaActivity : Activity() {
     }
 
     override fun onDestroy() {
+        boPhat.dungHet()
         dangPhat.values.forEach { it.release() }; dangPhat.clear(); cauRtsp.values.forEach { it.tat() }; cauRtsp.clear()
         vlcPlayers.values.forEach { it.stop(); it.detachViews(); it.release() }; vlcPlayers.clear(); libVlc?.release(); libVlc = null
         super.onDestroy()
     }
-    override fun onPause() { dangPhat.values.forEach { it.pause() }; vlcPlayers.values.forEach { it.pause() }; super.onPause() }
-    override fun onResume() { dangPhat.values.forEach { it.play() }; vlcPlayers.values.forEach { it.play() }; super.onResume() }
+    override fun onPause() { boPhat.tamDung(); dangPhat.values.forEach { it.pause() }; vlcPlayers.values.forEach { it.pause() }; super.onPause() }
+    override fun onResume() { boPhat.tiepTuc(); dangPhat.values.forEach { it.play() }; vlcPlayers.values.forEach { it.play() }; super.onResume() }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
@@ -561,8 +563,50 @@ class TuXaActivity : Activity() {
         val cb = p.optJSONArray("canh_bao")
         if (cb != null) for (i in 0 until cb.length()) t.addView(chu("⚠ ${cb.getString(i)}", 13f, true, "#B42318"))
         val cams = p.optJSONArray("cam") ?: JSONArray()
+        t.addView(luoiCam(p, cams))
         for (i in 0 until cams.length()) t.addView(dongCam(p, cams.getJSONObject(i)))
         return t
+    }
+
+    /** Lưới ô hình: mỗi cam một ô. Ô cam lên: ảnh chụp, bấm là phát trực tiếp ngay tại ô. Ô cam lỗi: ghi lý do ngay trong ô. */
+    private fun luoiCam(p: JSONObject, cams: JSONArray): android.widget.GridLayout {
+        val n = cams.length()
+        val o = android.widget.GridLayout(this)
+        o.columnCount = if (n <= 1) 1 else 2
+        o.setPadding(0, dp(6), 0, dp(2))
+        val cao = if (n <= 1) 210 else 120
+        for (i in 0 until n) {
+            val c = cams.getJSONObject(i)
+            val muc = c.optString("muc")
+            val oCam = LinearLayout(this)
+            oCam.orientation = LinearLayout.VERTICAL
+            val khung = FrameLayout(this)
+            khung.setBackgroundColor(Color.parseColor(if (muc == "xanh") "#172029" else "#5A1E1E"))
+            val tt = chu("", 11f, true, mauVien[muc] ?: "#17202B")
+            val anh = c.optString("anh")
+            val live = c.optString("live")
+            if (muc == "xanh" && anh.isNotEmpty() && File(anh).exists()) {
+                val iv = ImageView(this)
+                iv.scaleType = ImageView.ScaleType.CENTER_CROP
+                thread { val bm = BitmapFactory.decodeFile(anh); ui.post { iv.setImageBitmap(bm) } }
+                khung.addView(iv, FrameLayout.LayoutParams(-1, -1))
+                khung.addView(chu("▶", 30f, true, "#FFFFFF"), FrameLayout.LayoutParams(-2, -2, android.view.Gravity.CENTER))
+                tt.text = "Bấm ô để xem trực tiếp"
+            } else if (muc != "xanh") {
+                khung.addView(chu(c.optString("nhan"), 12f, true, "#FFD7D2").apply { setPadding(dp(8), dp(22), dp(8), dp(4)) }, FrameLayout.LayoutParams(-1, -2))
+            }
+            khung.addView(chu(" C${c.optInt("so")} ${if (muc == "xanh") "✓" else "✖"} ", 12f, true, "#FFFFFF").apply { setBackgroundColor(Color.parseColor("#99000000")) },
+                FrameLayout.LayoutParams(-2, -2, android.view.Gravity.TOP or android.view.Gravity.START))
+            if (live.isNotEmpty() && muc == "xanh") {
+                khung.setOnClickListener { boPhat.phat(khung, live, tt, cao) }
+                khung.tag = Triple(khung, live, tt)          // cho nút "Live tất cả"
+            }
+            oCam.addView(khung, LinearLayout.LayoutParams(-1, dp(cao)))
+            oCam.addView(tt)
+            o.addView(oCam, android.widget.GridLayout.LayoutParams(android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f),
+                android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)).apply { width = 0; setMargins(dp(2), dp(2), dp(2), dp(2)) })
+        }
+        return o
     }
 
     private fun dongCam(p: JSONObject, c: JSONObject): LinearLayout {
@@ -577,7 +621,7 @@ class TuXaActivity : Activity() {
         val ct = LinearLayout(this)
         ct.orientation = LinearLayout.VERTICAL
         ct.setPadding(dp(10), dp(4), 0, dp(4))
-        ct.visibility = View.VISIBLE   // luôn mở: cam lên được phải thấy ảnh ngay
+        ct.visibility = View.GONE      // gọn: hình đã ở lưới ô phía trên; bấm "▸ chi tiết" để xem nguyên nhân, link, user/pass, sửa
         dau.setOnClickListener { ct.visibility = if (ct.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
 
         ct.addView(chu("Nguyên nhân: ${c.optString("nguyen_nhan")}", 14f))
@@ -585,28 +629,6 @@ class TuXaActivity : Activity() {
         if (viec != null && viec.length() > 0) {
             ct.addView(chu("Việc tiếp theo:", 14f, true, "#0F5D8C"))
             for (i in 0 until viec.length()) ct.addView(chu("${i + 1}) ${viec.getString(i)}", 14f))
-        }
-        // Khung hình: LIVE trực tiếp (bấm là phát tại chỗ); ảnh chụp chỉ là bằng chứng lúc kiểm
-        val anh = c.optString("anh")
-        val live = c.optString("live")
-        if (live.isNotEmpty() || (anh.isNotEmpty() && File(anh).exists())) {
-            val khungAnh = FrameLayout(this)
-            val tt = chu("", 13f, true, "#1D7A46")
-            if (anh.isNotEmpty() && File(anh).exists()) {
-                val iv = ImageView(this)
-                iv.setImageBitmap(BitmapFactory.decodeFile(anh))
-                iv.adjustViewBounds = true
-                khungAnh.addView(iv, FrameLayout.LayoutParams(-1, -2))
-                tt.text = "Ảnh chụp lúc kiểm · bấm ▶ để xem TRỰC TIẾP"
-            }
-            val nutLive = Button(this)
-            nutLive.text = "▶ XEM TRỰC TIẾP"
-            nutLive.isAllCaps = false
-            nutLive.setOnClickListener { phatLive(khungAnh, live, tt) }
-            khungAnh.addView(nutLive, FrameLayout.LayoutParams(-2, -2, android.view.Gravity.CENTER))
-            ct.addView(khungAnh, LinearLayout.LayoutParams(-1, -2))
-            ct.addView(tt)
-            if (muc == "xanh") khungAnh.tag = Triple(khungAnh, live, tt)   // để nút "Live tất cả" bật lên
         }
         val thongTin = "Web: ${c.optString("web")}\nXem trực tiếp: ${c.optString("live")}\n" +
             "User cam: ${c.optString("user")}   Pass cam: ${c.optString("pass")}\n" +
