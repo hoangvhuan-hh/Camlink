@@ -511,6 +511,17 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
     except (OSError, ValueError):
         pass
     tr_cam = {(p["stt"], c["so"]): c.get("muc") for p in truoc.get("diem", []) for c in p.get("cam", [])}
+    # ---- cam từng ĐẠT lần trước mà nay im lặng → đo lại một lần (6 giây) trước khi kết luận
+    tr_muc = {(p["domain"], c["http"]): c.get("muc") for p in truoc.get("diem", []) for c in p.get("cam", [])}
+    for i, p in enumerate(kqs):
+        nghi = [c for c in p["cam"] if c.get("t_http") == "im_lang" and tr_muc.get((p["domain"], c["http"])) == XANH]
+        if nghi and any(cham(p["domain"], c["http"], 6) == "mo" for c in nghi):
+            log(f"   ↻ điểm {p['stt']}: cam từng đạt nay im lặng nhưng đo lại thấy mở → kiểm lại điểm")
+            try:
+                kqs[i] = kiem_diem(p["stt"], diem[p["stt"]], cd, anh_dir, ma, ho_so.get(p["stt"]))
+                kqs[i]["lat"], kqs[i]["lng"], kqs[i]["map"], kqs[i]["map_goc"] = p.get("lat"), p.get("lng"), p.get("map", ""), p.get("map_goc", "")
+            except Exception:
+                pass
     # ---- đối chiếu chéo: phát hiện tên miền bị đổi / gộp / trỏ nhầm điểm
     tr_fp = {(p["domain"], c["http"]): (c.get("serial") or c.get("mac")) for p in truoc.get("diem", []) for c in p.get("cam", [])}
     tr_so = {p["domain"]: (p.get("quet") or {}).get("so_quet") for p in truoc.get("diem", [])}
@@ -585,8 +596,8 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
                 ten = ", ".join(f"điểm {pt['stt']} (cam {ct['so']}, port {ct['http']})" for pt, ct in ung)
                 loai = "cam biển số (model " + cl.get("model", "") + ")" if la_bs else "cam thường"
                 pl.setdefault("canh_bao", []).append(
-                    f"Cam lạ port {cl['http']} là {loai}; file không ghi loại này ở điểm {pl['stt']} nhưng ghi ở {ten} mà ở đó không thấy → "
-                    f"khả năng file khảo sát ghi NHẦM ĐIỂM cho cam này. Xác minh rồi sửa file.")
+                    f"Cam port {cl['http']} là {loai}, đã bổ sung vào hồ sơ điểm {pl['stt']}; file gốc ghi loại này ở {ten} mà ở đó không thấy → "
+                    f"file khảo sát ghi nhầm điểm. " + ("Đã tự hiệu chỉnh." if len(ung) == 1 else "Chờ xác định 1 trong các vị trí đó (tự chốt khi một cam lên lại)."))
                 cl["viec"] = [f"Khả năng cao đây là cam file ghi nhầm sang {ten} → đối chiếu thực địa, sửa file khảo sát."] + cl.get("viec", [])
                 for pt, ct in ung:
                     them = f" (chỉ 1 trong {len(ung)} vị trí: {ten})" if len(ung) > 1 else ""
@@ -605,13 +616,6 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
                               "lan_dau": cu_la[k]["lan_dau"] if k in cu_la else time.strftime("%d/%m/%Y %H:%M"),
                               "moi": k not in cu_la})
                 c["cam_la_moi"] = k not in cu_la
-    tong_cam = sum(len(p["cam"]) for p in kqs)
-    dat = sum(1 for p in kqs for c in p["cam"] if c["muc"] == XANH)
-    tong_file = sum(int(diem[p["stt"]].get("so") or 0) for p in kqs)
-    tong_quet = sum(p.get("so_quet", 0) for p in kqs)
-    khong_thay = sum(1 for p in kqs for c in p["cam"] if c.get("khong_thay"))
-    # tách: "cam KHÔNG LÊN" (có cam, không xem được) ≠ "file ghi dư" (quét đủ cam nhưng file ghi nhiều hơn)
-    chua_xac_nhan = sum(1 for p in kqs for c in p["cam"] if c.get("khong_thay") and not c.get("tung_thay"))
     # ---- TỰ HIỆU CHỈNH hồ sơ theo thực tế quét (ghi lại thay đổi để xuất file khảo sát đã hiệu chỉnh)
     hieu_chinh = []
     for p in kqs:
@@ -624,6 +628,17 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
                                "bs_cu": int(diem[p["stt"]].get("bs") or 0), "bs_moi": int(diem[p["stt"]].get("bs") or 0) + bs_them,
                                "ly_do": "Quét thấy thêm cam thật tại tên miền này: " + "; ".join(
                                    f"port {c['http']} {c.get('hang', '')} {c.get('model', '')} MAC {c.get('mac', '')}".strip() for c in la_o_day)})
+            for c in la_o_day:   # áp dụng ngay: là cam của điểm này, ghi chú nguồn gốc
+                c["them"] = False
+                c["bo_sung"] = True
+                if c.get("anh"):
+                    c["muc"], c["nhan"] = XANH, "Đạt (bổ sung theo thực tế)"
+                    c["nguyen_nhan"] = f"Cam thật tại tên miền này, file khảo sát chưa ghi — đã tự bổ sung vào hồ sơ điểm {p['stt']}"
+                    c["viec"] = []
+            p["so"] = so_moi
+            hong = [c for c in p["cam"] if c["muc"] != XANH]
+            p["muc"] = DO if any(c["muc"] == DO for c in p["cam"]) else (VANG if hong else XANH)
+            p["tong"] = "ĐẠT" if not hong else f"{len(p['cam']) - len(hong)}/{len(p['cam'])} cam đạt"
     # vị trí thiếu có đúng MỘT ứng viên bị cam lạ bù → file ghi nhầm điểm, tự giảm số cam điểm đó
     ung_vien = [(p, c) for p in kqs for c in p["cam"] if c.get("co_the_nham")]
     so_la_bu = sum(1 for p in kqs for c in p["cam"] if c.get("bu_duoc"))
@@ -638,6 +653,15 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
     elif ung_vien:
         for p, c in ung_vien:
             c["cho_xac_dinh"] = True
+    ds_la = [x for x in ds_la if any(c.get("them") and c["http"] == x["http"] for p in kqs if p["domain"] == x["domain"] for c in p["cam"])]
+    tong_cam = sum(len(p["cam"]) for p in kqs)
+    dat = sum(1 for p in kqs for c in p["cam"] if c["muc"] == XANH)
+    tong_file = sum(int(diem[p["stt"]].get("so") or 0) for p in kqs)
+    tong_hc = tong_file + sum(h["moi"] - h["cu"] for h in hieu_chinh)
+    tong_quet = sum(p.get("so_quet", 0) for p in kqs)
+    khong_thay = sum(1 for p in kqs for c in p["cam"] if c.get("khong_thay"))
+    # tách: "cam KHÔNG LÊN" (có cam, không xem được) ≠ "file ghi dư" (quét đủ cam nhưng file ghi nhiều hơn)
+    chua_xac_nhan = sum(1 for p in kqs for c in p["cam"] if c.get("khong_thay") and not c.get("tung_thay"))
     # số vị trí thiếu được cam lạ "bù" tối đa = số cam lạ có ứng viên; phần còn lại vẫn là cam không lên
     so_bu = min(sum(1 for p in kqs for c in p["cam"] if c.get("bu_duoc")),
                 sum(1 for p in kqs for c in p["cam"] if c.get("co_the_nham")))
@@ -653,7 +677,7 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
                     dem[c["nhan"]] = dem.get(c["nhan"], 0) + 1
     out = {"du_an": da["ten"], "ma": ma, "luc": time.strftime("%d/%m/%Y %H:%M"), "giay": round(time.time() - t0),
            "tong_cam": tong_cam, "dat": dat, "tong_file": tong_file, "tong_quet": tong_quet, "khong_thay": khong_thay, "file_du": file_du, "chua_xac_nhan": chua_xac_nhan, "khong_len": khong_len,
-           "tung_thay": sorted(list(x) for x in tung_thay), "hieu_chinh": hieu_chinh, "cam_la": ds_la, "so_cam_la": len(ds_la), "da_sua": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua")),
+           "tung_thay": sorted(list(x) for x in tung_thay), "hieu_chinh": hieu_chinh, "tong_hc": tong_hc, "cam_la": ds_la, "so_cam_la": len(ds_la), "da_sua": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua")),
            "sua_xong": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua") and c["muc"] == XANH), "rot": sum(1 for p in kqs for c in p["cam"] if c.get("vua_rot")),
            "nhom_loi": dem, "ho_so": ho_so, "diem": sorted(kqs, key=lambda p: (int(p["stt"]) if str(p["stt"]).isdigit() else 0))}
     if not chi_diem:

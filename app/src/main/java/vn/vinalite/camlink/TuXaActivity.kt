@@ -321,8 +321,10 @@ class TuXaActivity : Activity() {
         val tongQuet = k.optInt("tong_quet")
         val camLa = k.optInt("so_cam_la")
         tt.addView(chu("$dat cam ĐẠT (có ảnh)", 20f, true, if (dat >= tongFile && dat > 0) "#1D7A46" else "#B42318"))
-        tt.addView(chu("File khảo sát ghi: $tongFile cam\nQuét thực tế trên các tên miền: $tongQuet cam" +
-            (if (camLa > 0) "\n  = theo file $tongFile cam + $camLa CAM LẠ ngoài hồ sơ" else "") +
+        val tongHc = k.optInt("tong_hc", tongFile)
+        tt.addView(chu("File khảo sát ghi: $tongFile cam" + (if (tongHc != tongFile) "  →  hồ sơ đã hiệu chỉnh theo thực tế: $tongHc cam" else "") +
+            "\nQuét thực tế trên các tên miền: $tongQuet cam" +
+            (if (camLa > 0) "\n  trong đó $camLa CAM LẠ ngoài hồ sơ (xem khung tím)" else "") +
             "\nCam KHÔNG LÊN (có cam, không xem được): ${k.optInt("khong_len")}" +
             (if (k.optInt("file_du") > 0) "\nTrong đó ${k.optInt("file_du")} vị trí nhiều khả năng là file ghi NHẦM ĐIỂM (cam lạ ở điểm khác bù vào) — xem cảnh báo ⚠ ở điểm có cam lạ" else ""), 14f))
         val hc = k.optJSONArray("hieu_chinh")
