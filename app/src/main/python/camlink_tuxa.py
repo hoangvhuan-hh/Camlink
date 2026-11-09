@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 import camlink_dt as C
 import camlink_oryza
 
-PORT_QUET = [80, 81, 82, 85, 88, 443, 7547, 8888] + list(range(8000, 8011)) + list(range(8080, 8100))  # cổng web cam/modem hay dùng
+PORT_QUET = ([80, 81, 82, 85, 88, 443, 7547, 8888, 9000, 10080] + list(range(8000, 8011)) + list(range(8080, 8110)))  # cổng web cam/modem hay dùng
 RTSP_CHUNG = [554, 5541, 5542, 5543]
 
 XANH, VANG, DO = "xanh", "vang", "do"
@@ -595,8 +595,14 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
     if thieu_ds and la_ds:
         for pl, cl in la_ds:
             la_bs = bool(re.search(r"ITS|ANPR|LPR|BS", (cl.get("model") or "") + (cl.get("hang") or ""), re.I))
-            ung = [(pt, ct) for pt, ct in thieu_ds
-                   if (int(diem[pt["stt"]].get("bs") or 0) > 0) == la_bs or not cl.get("model")]
+            # ưu tiên khớp ĐÚNG loại: cam lạ là biển số → chỉ ghép với điểm file có ghi cam BS; chỉ khi không có mới nới lỏng
+            ung = [(pt, ct) for pt, ct in thieu_ds if (int(diem[pt["stt"]].get("bs") or 0) > 0) == la_bs]
+            if not ung and not cl.get("model"):
+                ung = list(thieu_ds)
+            if len(ung) > 1 and la_bs:   # nhiều điểm có BS thiếu: chọn điểm mà vị trí thiếu chính là slot BS (số cuối) và các cam còn lại đều lên
+                chat = [(pt, ct) for pt, ct in ung if ct["so"] == len(pt["cam"]) and all(x["muc"] == XANH for x in pt["cam"] if x is not ct)]
+                if len(chat) == 1:
+                    ung = chat
             if ung:
                 ten = ", ".join(f"điểm {pt['stt']} (cam {ct['so']}, port {ct['http']})" for pt, ct in ung)
                 loai = "cam biển số (model " + cl.get("model", "") + ")" if la_bs else "cam thường"
@@ -647,14 +653,23 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
     # vị trí thiếu có đúng MỘT ứng viên bị cam lạ bù → file ghi nhầm điểm, tự giảm số cam điểm đó
     ung_vien = [(p, c) for p in kqs for c in p["cam"] if c.get("co_the_nham")]
     so_la_bu = sum(1 for p in kqs for c in p["cam"] if c.get("bu_duoc"))
+    so_bo = 0
     if ung_vien and len(ung_vien) == so_la_bu:
+        so_bo = len(ung_vien)
         for p, c in ung_vien:
             hieu_chinh.append({"stt": p["stt"], "ten": p["ten"], "truong": "so_cam", "cu": int(diem[p["stt"]].get("so") or 0),
                                "moi": int(diem[p["stt"]].get("so") or 0) - 1, "bs_cu": int(diem[p["stt"]].get("bs") or 0),
                                "bs_moi": max(0, int(diem[p["stt"]].get("bs") or 0) - 1),
                                "ly_do": f"Cam {c['so']} (port {c['http']}) file ghi ở đây nhưng cam loại này thực tế đang chạy ở điểm khác (xem dòng điểm đó)"})
-            c["nhan"] = "File ghi nhầm điểm (đã tự hiệu chỉnh)"
-            c["muc"] = VANG
+            # CHỐT THEO THỰC TẾ: bỏ hẳn ô cam dư khỏi điểm, điểm chỉ còn đúng số cam quét thấy
+            p["cam"] = [x for x in p["cam"] if x is not c]
+            p["so"] = len(p["cam"])
+            p.setdefault("canh_bao", []).append(
+                f"Đã bỏ cam {c['so']} (port {c['http']}) khỏi hồ sơ điểm này: file ghi dư, cam loại này thực tế đang chạy ở điểm khác. "
+                f"Điểm còn {p['so']} cam theo đúng thực tế quét.")
+            hong = [x for x in p["cam"] if x["muc"] != XANH]
+            p["muc"] = DO if any(x["muc"] == DO for x in p["cam"]) else (VANG if hong else XANH)
+            p["tong"] = "ĐẠT" if not hong else f"{len(p['cam']) - len(hong)}/{len(p['cam'])} cam đạt"
     elif ung_vien:
         for p, c in ung_vien:
             c["cho_xac_dinh"] = True
@@ -670,7 +685,7 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
     # số vị trí thiếu được cam lạ "bù" tối đa = số cam lạ có ứng viên; phần còn lại vẫn là cam không lên
     so_bu = min(sum(1 for p in kqs for c in p["cam"] if c.get("bu_duoc")),
                 sum(1 for p in kqs for c in p["cam"] if c.get("co_the_nham")))
-    file_du = so_bu
+    file_du = so_bu + so_bo
     khong_len = sum(1 for p in kqs for c in p["cam"] if c["muc"] != XANH and not c.get("anh")) - so_bu
     dem = {}
     for p in kqs:

@@ -9,7 +9,7 @@ GPS tìm điểm gần nhất trên TẤT CẢ dự án → tự chọn đúng d
 import json, os, re, time, unicodedata
 import camlink_dt as C
 
-PHIEN_BAN_LOI = "1.6.1"
+PHIEN_BAN_LOI = "1.6.2"
 KENH_CAP_NHAT = "https://claude.ai/artifact/D5udnnkXEqbKMRBmsMhjGy"   # kênh cập nhật (đổi được bằng gói zip, không cần APK)   # phiên bản phần logic Python (cập nhật đè được, vài trăm KB)
 
 GOC = None
