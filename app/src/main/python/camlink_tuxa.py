@@ -120,6 +120,19 @@ def kiem_diem(stt, d, cd, anh_dir, ma, ho_so=None):
         return ca_diem(DO, "MẤT ĐIỆN / MẤT MẠNG CẢ ĐIỂM",
                        f"quét {len(cong)} port trên {dom}: modem và mọi cam đều không trả lời", viec)
 
+    if cam_port == [] and all(ket[c["http"]][0] == "im_lang" for c in cams):
+        viec = ["(a) Cả cam/switch tại điểm mất nguồn hoặc đứt dây sau modem → nhờ người tại điểm kiểm tra tủ nguồn.",
+                f"(b) Tên miền đang trỏ IP CŨ {ip}: cam 1 (giữ DDNS) mất nguồn nên không cập nhật, IP này đã cấp cho thuê bao khác → đối chiếu với nhà mạng xem đường truyền điểm còn online không.",
+                "Nhà mạng xác nhận đường truyền mất → là (b): xử lý điện/cáp tại điểm; khi lên lại tên miền tự đúng."]
+        for c in cams:
+            c["t_http"], c["ms_http"] = ket[c["http"]]
+            c["t_rtsp"], c["ms_rtsp"] = ket[c["rtsp"]]
+        if ho_so and ho_so.get("wan") and ho_so["wan"] != ip:
+            viec.insert(0, f"Lúc cài IP WAN là {ho_so['wan']}, nay tên miền trỏ {ip} → nghiêng về (b).")
+        kq["quet"]["ip_song"] = [x for x in cong if ket[x][0] != "im_lang"]
+        return ca_diem(DO, "KHÔNG CAM NÀO TRẢ LỜI (IP còn sống)",
+                       f"IP {ip} có trả lời ở port {', '.join(map(str, kq['quet']['ip_song']))} nhưng mọi port cam đều im lặng", viec)
+
     # cam phát hiện thêm ở port không có trong cấu hình
     du_kien = {c["http"] for c in cams}
     for x in cam_port:
@@ -141,10 +154,13 @@ def kiem_diem(stt, d, cd, anh_dir, ma, ho_so=None):
                      goi_y + [f"Bấm Sửa từ xa để thêm luật NAT {c['http']}/{c['rtsp']} → 192.168.1.{C.IP_TU + c['so'] - 1} (cần vào được web modem).",
                               "Không vào được web modem: ra điểm chạy lại CamLink."], ["them_nat"], "Không thấy cam / thiếu NAT")
             elif c["t_http"] == "im_lang":
-                _ket(c, DO, f"Modem có mạng nhưng cam {c['so']} (port {c['http']}) không trả lời → cam mất nguồn, lỏng dây mạng, hoặc bị đổi IP",
+                tung = (ho_so or {}).get("cam") and any(str(x.get("so")) == str(c["so"]) for x in ho_so["cam"])
+                c["tung_thay"] = bool(tung)   # sẽ bổ sung từ lịch sử kiểm ở kiem_du_an
+                _ket(c, DO, f"IP của điểm còn trả lời nhưng port {c['http']} (cam {c['so']}) KHÔNG trả lời → cam mất nguồn/lỏng dây/đổi IP, "
+                            f"HOẶC modem chưa mở port này (modem VNPT không báo từ chối nên từ ngoài không phân biệt được)",
                      goi_y + [f"Gọi người tại điểm kiểm tra đèn nguồn cam {c['so']} và dây mạng/PoE.",
-                              "Nếu cam vẫn sáng: có thể cam bị reset về IP mặc định → ra điểm chạy lại CamLink.",
-                              "Có web modem: bấm Sửa từ xa để khởi động lại modem."], ["khoi_dong_modem"], "Cam mất nguồn / lỏng dây")
+                              "Nếu cam vẫn sáng: kiểm tra luật mở port trên modem, hoặc cam bị reset IP → ra điểm chạy lại CamLink.",
+                              "Có web modem: bấm Sửa từ xa để khởi động lại modem."], ["khoi_dong_modem"], "Cam không trả lời")
             else:
                 _ket(c, VANG, f"Port {c['http']} mở nhưng không phải cam trả lời (ONVIF tắt hoặc cam treo)",
                      [f"Mở web {c['web']} xem có vào được không.", "Bấm Sửa từ xa để khởi động lại modem; còn lỗi thì ra điểm khởi động lại cam."],
@@ -542,6 +558,21 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
             cu_m = tr_cam.get((p["stt"], c["so"]))
             c["vua_rot"] = cu_m == XANH and c["muc"] != XANH
             c["vua_len"] = cu_m is not None and cu_m != XANH and c["muc"] == XANH
+    tung_thay = set(tuple(x) for x in truoc.get("tung_thay", []))
+    for p in kqs:
+        for c in p["cam"]:
+            if c.get("anh") or c.get("onvif", "").startswith("đăng nhập") or c.get("t_http") == "mo":
+                tung_thay.add((p["domain"], c["http"]))
+    for p in kqs:
+        for c in p["cam"]:
+            if c.get("khong_thay"):
+                da_thay = (p["domain"], c["http"]) in tung_thay or c.get("tung_thay")
+                c["tung_thay"] = bool(da_thay)
+                if not da_thay:
+                    c["nhan"] = "Chưa từng xác nhận có cam"
+                    c["nguyen_nhan"] = (f"File ghi cam {c['so']} ở port {c['http']} nhưng chưa lần kiểm nào thấy cam này trả lời, "
+                                        f"và không có hồ sơ lúc cài → không khẳng định được là cam hỏng hay file ghi dư/chưa mở port")
+                    c["viec"] = [f"Xác minh tại điểm có cam {c['so']} thật không. Có → kiểm nguồn + luật mở port {c['http']}. Không → sửa file khảo sát."] + c.get("viec", [])[1:]
     cu_la = {(x["domain"], x["http"]): x for x in truoc.get("cam_la", [])}
     ds_la = []
     for p in kqs:
@@ -560,8 +591,9 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
     tong_quet = sum(p.get("so_quet", 0) for p in kqs)
     khong_thay = sum(1 for p in kqs for c in p["cam"] if c.get("khong_thay"))
     # tách: "cam KHÔNG LÊN" (có cam, không xem được) ≠ "file ghi dư" (quét đủ cam nhưng file ghi nhiều hơn)
-    file_du = sum(1 for p in kqs for c in p["cam"] if c.get("khong_thay") and c.get("t_http") == "tu_choi")
-    khong_len = sum(1 for p in kqs for c in p["cam"] if c["muc"] != XANH and not c.get("anh") and not (c.get("khong_thay") and c.get("t_http") == "tu_choi"))
+    chua_xac_nhan = sum(1 for p in kqs for c in p["cam"] if c.get("khong_thay") and not c.get("tung_thay"))
+    file_du = chua_xac_nhan
+    khong_len = sum(1 for p in kqs for c in p["cam"] if c["muc"] != XANH and not c.get("anh") and not (c.get("khong_thay") and not c.get("tung_thay")))
     dem = {}
     for p in kqs:
         if p["muc"] == DO and not any(c["muc"] == XANH for c in p["cam"]) and p["tong"].isupper():
@@ -571,7 +603,8 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True):
                 if c["muc"] != XANH:
                     dem[c["nhan"]] = dem.get(c["nhan"], 0) + 1
     out = {"du_an": da["ten"], "ma": ma, "luc": time.strftime("%d/%m/%Y %H:%M"), "giay": round(time.time() - t0),
-           "tong_cam": tong_cam, "dat": dat, "tong_file": tong_file, "tong_quet": tong_quet, "khong_thay": khong_thay, "file_du": file_du, "khong_len": khong_len, "cam_la": ds_la, "so_cam_la": len(ds_la), "da_sua": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua")),
+           "tong_cam": tong_cam, "dat": dat, "tong_file": tong_file, "tong_quet": tong_quet, "khong_thay": khong_thay, "file_du": file_du, "chua_xac_nhan": chua_xac_nhan, "khong_len": khong_len,
+           "tung_thay": sorted(list(x) for x in tung_thay), "cam_la": ds_la, "so_cam_la": len(ds_la), "da_sua": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua")),
            "sua_xong": sum(1 for p in kqs for c in p["cam"] if c.get("da_sua") and c["muc"] == XANH), "rot": sum(1 for p in kqs for c in p["cam"] if c.get("vua_rot")),
            "nhom_loi": dem, "ho_so": ho_so, "diem": sorted(kqs, key=lambda p: (int(p["stt"]) if str(p["stt"]).isdigit() else 0))}
     if not chi_diem:

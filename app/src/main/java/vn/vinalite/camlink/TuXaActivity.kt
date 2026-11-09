@@ -320,7 +320,7 @@ class TuXaActivity : Activity() {
         tt.addView(chu("File khảo sát ghi: $tongFile cam\nQuét thực tế trên các tên miền: $tongQuet cam" +
             (if (camLa > 0) "\n  = theo file $tongFile cam + $camLa CAM LẠ ngoài hồ sơ" else "") +
             "\nCam KHÔNG LÊN (có cam, không xem được): ${k.optInt("khong_len")}" +
-            (if (k.optInt("file_du") > 0) "\nFile ghi dư (file ghi có cam, quét không có, modem từ chối port): ${k.optInt("file_du")} vị trí — sửa file khảo sát" else ""), 14f))
+            (if (k.optInt("chua_xac_nhan") > 0) "\nChưa từng xác nhận có cam: ${k.optInt("chua_xac_nhan")} vị trí (file ghi, chưa lần nào thấy trả lời) — xác minh tại điểm" else ""), 14f))
         val dsLa = k.optJSONArray("cam_la")
         if (dsLa != null && dsLa.length() > 0) {
             val la = the("#7A1FA2", "#F3E8FA")
