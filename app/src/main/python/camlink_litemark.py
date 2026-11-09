@@ -125,14 +125,58 @@ def ngat(ma):
         pass
 
 
-def link_diem(ma, stt):
+def link_diem(ma, stt, da=None):
     lk = lien_ket(ma)
-    return f"{MAY_CHU}/ct/{lk['id']}/diem/{stt}" if lk.get("id") else ""
+    if not lk.get("id"):
+        return ""
+    lm_stt = (da or {}).get("diem", {}).get(str(stt), {}).get("lm_stt") or stt
+    return f"{MAY_CHU}/ct/{lk['id']}/diem/{lm_stt}"
+
+
+def ghep_ghim(da, ghim):
+    """Ghép điểm CamLink ↔ ghim LiteMark THEO VỊ TRÍ (số thứ tự hai bên KHÔNG trùng nhau: LiteMark đánh số lại theo tuyến).
+    Ghép 1-1 theo khoảng cách tăng dần (toạ độ Excel của CamLink so với ghim); điểm đã ghép tay (lm_tay) giữ nguyên.
+    Trả về {stt_camlink: {"lm_stt", "kc", "chac"}} và danh sách ghi chú."""
+    goc = da.get("toa_do_goc") or da.get("toa_do") or {}
+    ket, ghi_chu = {}, []
+    da_dung = set()
+    for stt, d in da["diem"].items():
+        if d.get("lm_tay") and str(d["lm_tay"]) in ghim:
+            ket[stt] = {"lm_stt": str(d["lm_tay"]), "kc": 0, "chac": True, "tay": True}
+            da_dung.add(str(d["lm_tay"]))
+    cap = []
+    for stt, d in da["diem"].items():
+        if stt in ket or stt not in goc:
+            continue
+        for g_stt, g in ghim.items():
+            cap.append((_khoang_cach(goc[stt][0], goc[stt][1], float(g["lat"]), float(g["lng"])), stt, g_stt))
+    cap.sort()
+    for kc, stt, g_stt in cap:
+        if stt in ket or g_stt in da_dung:
+            continue
+        ket[stt] = {"lm_stt": g_stt, "kc": int(kc), "chac": kc <= 300}
+        da_dung.add(g_stt)
+    con_lai = [g for g in ghim if g not in da_dung]
+    for stt in da["diem"]:
+        if stt not in ket:   # không có toạ độ Excel hoặc ghim đã hết: lấy ghim còn trống đầu tiên, đánh dấu chưa chắc
+            if con_lai:
+                ket[stt] = {"lm_stt": con_lai.pop(0), "kc": -1, "chac": False}
+            else:
+                ghi_chu.append(f"Điểm {stt} ({da['diem'][stt].get('ten', '')}): không còn ghim LiteMark nào để ghép")
+    for stt, k in ket.items():
+        if k.get("tay"):
+            continue
+        if not k["chac"]:
+            ghi_chu.append(f"Điểm {stt} ({da['diem'][stt].get('ten', '')}) ↔ ghim LiteMark {k['lm_stt']}: "
+                           + (f"cách {k['kc']} m — CHƯA CHẮC" if k["kc"] >= 0 else "không có toạ độ Excel — CHƯA CHẮC")
+                           + " → mở điểm trong màn giám sát, so ảnh khảo sát LiteMark với hình live rồi bấm 'Sai ghim? chọn lại' nếu cần")
+    for g in con_lai:
+        ghi_chu.append(f"Ghim LiteMark {g} ({ghim[g].get('ten', '')}) không ghép với điểm CamLink nào")
+    return ket, ghi_chu
 
 
 def dong_bo_ghim(ma, da, log=print):
-    """Lấy ghim LiteMark về làm toạ độ chính của dự án; giữ toạ độ Excel ở toa_do_goc để đối chiếu.
-    Trả về (da đã cập nhật, ghi chú đối chiếu)."""
+    """Lấy ghim LiteMark về: ghép theo vị trí, dùng toạ độ ghim làm toạ độ chính; giữ toạ độ Excel ở toa_do_goc để đối chiếu."""
     lk = lien_ket(ma)
     if not lk.get("id"):
         raise RuntimeError("Dự án chưa nối với công trình LiteMark")
@@ -141,36 +185,41 @@ def dong_bo_ghim(ma, da, log=print):
     if not ghim:
         raise RuntimeError("Công trình LiteMark chưa có ghim nào")
     da.setdefault("toa_do_goc", dict(da.get("toa_do", {})))
+    ket, ghi_chu = ghep_ghim(da, ghim)
     toa_do = {}
-    ghi_chu = []
+    bang = []
     for stt, d in da["diem"].items():
-        g = ghim.get(str(stt))
-        if not g:
-            ghi_chu.append(f"Điểm {stt} ({d.get('ten', '')}): LiteMark không có ghim số {stt} → giữ toạ độ Excel")
-            if stt in da.get("toa_do_goc", {}):
+        k = ket.get(stt)
+        if not k:
+            if stt in da["toa_do_goc"]:
                 toa_do[stt] = da["toa_do_goc"][stt]
             continue
+        g = ghim[k["lm_stt"]]
         toa_do[stt] = [float(g["lat"]), float(g["lng"])]
-        d["lm_ten"] = g.get("ten", "")
-        goc = da.get("toa_do_goc", {}).get(stt)
-        if goc:
-            lech = _khoang_cach(goc[0], goc[1], toa_do[stt][0], toa_do[stt][1])
-            if lech > 150:
-                ghi_chu.append(f"Điểm {stt}: ghim LiteMark cách toạ độ Excel {int(lech)} m → dùng ghim LiteMark (thực tế thi công)")
+        d["lm_stt"], d["lm_kc"], d["lm_chac"] = k["lm_stt"], k["kc"], k["chac"]
+        d["lm_ten"], d["lm_anh"] = g.get("ten", ""), g.get("anh_dai_dien", "")
         so_lm = g.get("so_camera")
-        if so_lm not in (None, "") and int(so_lm) != int(d.get("so") or 0):
-            ghi_chu.append(f"Điểm {stt}: LiteMark ghi {so_lm} camera, hồ sơ CamLink {d.get('so')} → đối chiếu khi kiểm")
+        if so_lm not in (None, ""):
             d["lm_so"] = int(so_lm)
-    for stt in ghim:
-        if stt not in da["diem"]:
-            ghi_chu.append(f"LiteMark có ghim số {stt} ({ghim[stt].get('ten', '')}) nhưng dự án CamLink không có điểm này")
+            if int(so_lm) != int(d.get("so") or 0):
+                ghi_chu.append(f"Điểm {stt} (ghim LM {k['lm_stt']}): LiteMark ghi {so_lm} camera, hồ sơ CamLink {d.get('so')} → đối chiếu khi kiểm")
+        bang.append(f"CamLink {stt} «{d.get('ten', '')[:28]}» ↔ ghim LM {k['lm_stt']}" + ("" if k["kc"] <= 0 else f" ({k['kc']} m)") + ("" if k["chac"] else " ⚠ chưa chắc"))
     da["toa_do"] = toa_do
     da["litemark"] = {"id": lk["id"], "ten": kq.get("ten", lk.get("ten", "")), "luc_dong_bo": time.strftime("%d/%m/%Y %H:%M"),
-                      "so_ghim": len(ghim), "ghi_chu": ghi_chu}
-    log(f"🔗 LiteMark «{da['litemark']['ten']}»: {len(ghim)} ghim → đã dùng làm toạ độ {len(toa_do)} điểm" + (f"; {len(ghi_chu)} ghi chú" if ghi_chu else ""))
+                      "so_ghim": len(ghim), "ghi_chu": ghi_chu, "bang_ghep": bang,
+                      "ghim": {g: {"ten": v.get("ten", ""), "lat": v["lat"], "lng": v["lng"]} for g, v in ghim.items()}}
+    log(f"🔗 LiteMark «{da['litemark']['ten']}»: {len(ghim)} ghim, ghép theo vị trí {len(ket)} điểm" + (f"; {len(ghi_chu)} ghi chú" if ghi_chu else ""))
+    for b in bang:
+        log("   · " + b)
     for g in ghi_chu:
-        log("   · " + g)
+        log("   ⚠ " + g)
     return da, ghi_chu
+
+
+def dat_ghim_tay(ma, da, stt, lm_stt):
+    """Người dùng chốt: điểm CamLink `stt` chính là ghim LiteMark `lm_stt` (sau khi so ảnh khảo sát với live)."""
+    da["diem"][stt]["lm_tay"] = str(lm_stt)
+    return da
 
 
 def _khoang_cach(a1, o1, a2, o2):
@@ -182,17 +231,24 @@ def _khoang_cach(a1, o1, a2, o2):
     return 2 * r * math.asin(math.sqrt(h))
 
 
-def goi_canh_bao(ma, kq, phien_ban, log=print):
-    """Đẩy kết quả kiểm lên LiteMark. Không gửi được → xếp hàng, lần sau gửi bù (bản mới nhất thắng)."""
+def goi_canh_bao(ma, kq, phien_ban, log=print, da=None):
+    """Đẩy kết quả kiểm lên LiteMark theo SỐ GHIM LITEMARK (đã ghép theo vị trí). Chỉ gửi điểm có vấn đề + danh sách điểm đạt
+    để LiteMark xoá cảnh báo cũ; điểm đạt không tô màu (trạng thái hoàn thành của LiteMark đã nói đủ).
+    Không gửi được → xếp hàng, lần sau gửi bù (bản mới nhất thắng)."""
     lk = lien_ket(ma)
     if not lk.get("id"):
         return False
+    dm = (da or {}).get("diem", {})
+    def lm(p):
+        return str(dm.get(str(p["stt"]), {}).get("lm_stt") or p["stt"])
     than = {"luc": time.strftime("%Y-%m-%dT%H:%M:%S"), "nguon": "camlink", "phien_ban": phien_ban,
             "khong_tin_cay": kq.get("khong_tin_cay", ""), "tong": {"dat": kq.get("dat", 0), "tong": kq.get("tong_cam", 0)},
-            "diem": [{"stt": p["stt"], "ten": p["ten"], "muc": p["muc"], "tong": p["tong"],
+            "chi_bao_loi": True, "diem_dat": [lm(p) for p in kq.get("diem", []) if p["muc"] == "xanh"],
+            "diem": [{"stt": lm(p), "stt_camlink": p["stt"], "ten": p["ten"], "domain": p.get("domain", ""), "muc": p["muc"], "tong": p["tong"],
+                      "chua_chac_ghim": not dm.get(str(p["stt"]), {}).get("lm_chac", True),
                       "cam": [{"so": c["so"], "http": c["http"], "muc": c["muc"], "nhan": c.get("nhan", ""),
                                "nguyen_nhan": c.get("nguyen_nhan", ""), "viec": c.get("viec", [])[:3]} for c in p["cam"]]}
-                     for p in kq.get("diem", [])]}
+                     for p in kq.get("diem", []) if p["muc"] != "xanh"]}
     _ghi(f"cho_{ma}.json", than)   # hàng đợi: luôn ghi bản mới nhất
     return gui_bu(ma, log)
 

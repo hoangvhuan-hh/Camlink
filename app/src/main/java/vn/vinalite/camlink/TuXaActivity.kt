@@ -292,9 +292,11 @@ class TuXaActivity : Activity() {
             val r = JSONObject(core.callAttr(ham, *thamSo).toString())
             ui.post {
                 val gc = r.optJSONArray("ghi_chu")
-                val chuoi = if (gc != null && gc.length() > 0) "\n" + (0 until gc.length()).joinToString("\n") { "· " + gc.getString(it) } else ""
+                val bg = r.optJSONArray("bang_ghep")
+                val bang = if (bg != null && bg.length() > 0) "\n\nGhép theo VỊ TRÍ (số điểm hai bên khác nhau):\n" + (0 until bg.length()).joinToString("\n") { bg.getString(it) } else ""
+                val chuoi = if (gc != null && gc.length() > 0) "\n\n" + (0 until gc.length()).joinToString("\n") { "⚠ " + gc.getString(it) } else ""
                 AlertDialog.Builder(this).setTitle("Đã nối LiteMark «${r.optString("ten")}»")
-                    .setMessage("${r.optInt("so_ghim")} ghim đã dùng làm vị trí điểm. Kết quả kiểm tra từ nay tự đẩy lên bản đồ LiteMark.$chuoi")
+                    .setMessage("${r.optInt("so_ghim")} ghim đã dùng làm vị trí điểm. Kết quả kiểm tra từ nay tự đẩy lên bản đồ LiteMark theo số ghim LiteMark.$bang$chuoi")
                     .setPositiveButton("Kiểm tra lại ngay") { _, _ -> kiem() }
                     .setNegativeButton("Đóng", null).show()
             }

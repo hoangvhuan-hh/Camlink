@@ -524,9 +524,12 @@ def tuxa_kiem(ma, log, nhanh=True):
     if lk.get("id"):
         kq["litemark"] = {"id": lk["id"], "ten": lk.get("ten", "")}
         for p in kq.get("diem", []):
-            p["lm_link"] = L.link_diem(ma, p["stt"])
+            d = da["diem"].get(p["stt"], {})
+            p["lm_link"] = L.link_diem(ma, p["stt"], da)
+            p["lm_stt"], p["lm_chac"], p["lm_anh"], p["lm_kc"] = d.get("lm_stt", ""), d.get("lm_chac", True), d.get("lm_anh", ""), d.get("lm_kc", 0)
+            p["lm_ghim"] = [[g, v.get("ten", "")] for g, v in sorted(da.get("litemark", {}).get("ghim", {}).items(), key=lambda x: int(x[0]) if str(x[0]).isdigit() else 0)]
         try:
-            kq["litemark"]["da_gui"] = L.goi_canh_bao(ma, kq, PHIEN_BAN_LOI, log)
+            kq["litemark"]["da_gui"] = L.goi_canh_bao(ma, kq, PHIEN_BAN_LOI, log, da)
         except Exception as e:
             log(f"⚠ LiteMark: {e}")
     return json.dumps(kq, ensure_ascii=False)
@@ -577,7 +580,16 @@ def lm_dong_bo(ma, log):
     da, ghi_chu = L.dong_bo_ghim(ma, da, log)
     _ghi_du_an(ma, da)
     L.gui_bu(ma, log)
-    return json.dumps({"ok": True, "ten": da["litemark"]["ten"], "so_ghim": da["litemark"]["so_ghim"], "ghi_chu": ghi_chu}, ensure_ascii=False)
+    return json.dumps({"ok": True, "ten": da["litemark"]["ten"], "so_ghim": da["litemark"]["so_ghim"], "ghi_chu": ghi_chu,
+                       "bang_ghep": da["litemark"].get("bang_ghep", [])}, ensure_ascii=False)
+
+
+def lm_dat_ghim(ma, stt, lm_stt, log):
+    """Người dùng chốt điểm CamLink `stt` = ghim LiteMark `lm_stt`, rồi đồng bộ lại."""
+    import camlink_litemark as L
+    da = L.dat_ghim_tay(ma, _doc_du_an(ma), str(stt), str(lm_stt))
+    _ghi_du_an(ma, da)
+    return lm_dong_bo(ma, log)
 
 
 def lm_ngat(ma):

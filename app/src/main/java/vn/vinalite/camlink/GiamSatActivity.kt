@@ -122,6 +122,25 @@ class GiamSatActivity : Activity() {
         dau.addView(chu("Điểm ${p.optString("stt")}. ${p.optString("ten")} · lên $len/$tong", 15f, true, "#E7EDF2").apply { setPadding(dp(8), 0, 0, 0) }, LinearLayout.LayoutParams(0, -2, 1f))
         goc.addView(dau)
         goc.addView(chu("${p.optString("domain")} → ${p.optString("ip")} · ${p.optString("tong")}", 12f, false, "#9AA8B5").apply { setPadding(dp(4), 0, dp(4), dp(6)) })
+        val lmStt = p.optString("lm_stt")
+        if (lmStt.isNotEmpty()) {
+            val chac = p.optBoolean("lm_chac", true)
+            val hangLm = LinearLayout(this)
+            hangLm.orientation = LinearLayout.HORIZONTAL
+            hangLm.gravity = Gravity.CENTER_VERTICAL
+            hangLm.addView(chu((if (chac) "📍 Ghim LiteMark $lmStt" else "⚠ Ghim LiteMark $lmStt — CHƯA CHẮC (cách toạ độ Excel ${p.optInt("lm_kc")} m)") +
+                "\nSo hình live với ảnh khảo sát LiteMark: đúng chỗ thì thôi, sai thì chọn lại ghim.", 11f, false, if (chac) "#9AA8B5" else "#FFD27A").apply { setPadding(dp(4), 0, dp(4), dp(4)) }, LinearLayout.LayoutParams(0, -2, 1f))
+            hangLm.addView(Button(this).apply { text = "Sai ghim? chọn lại"; isAllCaps = false; textSize = 12f; setOnClickListener { chonGhim(p) } })
+            goc.addView(hangLm)
+            val anhLm = p.optString("lm_anh")
+            if (anhLm.isNotEmpty()) {
+                val iv = android.widget.ImageView(this)
+                iv.scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                goc.addView(iv, LinearLayout.LayoutParams(-1, dp(110)).apply { setMargins(dp(4), 0, dp(4), dp(4)) })
+                Thread { try { val bm = android.graphics.BitmapFactory.decodeStream(java.net.URL(anhLm).openStream()); runOnUiThread { iv.setImageBitmap(bm) } } catch (_: Exception) {} }.start()
+                goc.addView(chu("↑ ảnh khảo sát LiteMark tại ghim $lmStt", 10f, false, "#9AA8B5").apply { setPadding(dp(4), 0, dp(4), dp(6)) })
+            }
+        }
         val cs = p.optJSONArray("cam") ?: JSONArray()
         val o = GridLayout(this)
         o.columnCount = if (cs.length() <= 1) 1 else 2
@@ -174,6 +193,24 @@ class GiamSatActivity : Activity() {
     }
 
     private val daXacMinh = HashSet<String>()
+
+    /** Người dùng chốt điểm này là ghim LiteMark nào (sau khi so live với ảnh khảo sát). */
+    private fun chonGhim(p: JSONObject) {
+        val ds = p.optJSONArray("lm_ghim") ?: return
+        val nhan = (0 until ds.length()).map { i -> val g = ds.getJSONArray(i); "Ghim ${g.getString(0)} — ${g.getString(1)}" }
+        AlertDialog.Builder(this).setTitle("Điểm ${p.optString("stt")} «${p.optString("ten")}» thực tế là ghim LiteMark nào?")
+            .setItems(nhan.toTypedArray()) { _, i ->
+                val lm = ds.getJSONArray(i).getString(0)
+                Thread {
+                    try {
+                        val core = com.chaquo.python.Python.getInstance().getModule("camlink_core")
+                        core.callAttr("lm_dat_ghim", ma, p.optString("stt"), lm, null)
+                        p.put("lm_stt", lm); p.put("lm_chac", true)
+                        runOnUiThread { Toast.makeText(this, "Đã chốt: điểm ${p.optString("stt")} = ghim LiteMark $lm. Kiểm tra lại để LiteMark nhận đúng điểm.", Toast.LENGTH_LONG).show(); moDiem(p) }
+                    } catch (e: Exception) { runOnUiThread { Toast.makeText(this, "Lỗi: ${e.message?.take(100)}", Toast.LENGTH_LONG).show() } }
+                }.start()
+            }.setNegativeButton("Huỷ", null).show()
+    }
 
     /** Cam lấy từ lịch sử mà live không lên → kiểm đầy đủ lại điểm đó ngay (một lần), cập nhật ô. */
     private fun xacMinhDiem(p: JSONObject) {
