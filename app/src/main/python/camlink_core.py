@@ -120,7 +120,7 @@ def nhap_excel(duong_dan, ten_file, log):
             k = str(g(c_no) or len(ds) + 1).strip()
             ds[k] = {"ten": str(g(c_ten) or "").strip(), "domain": str(dom).strip().lower(),
                      "u": str(g(c_u) or ""), "p": str(g(c_p) or ""),
-                     "so": int(g(c_cam) or 0) + int(g(c_bs) or 0), "map": str(g(c_map) or "")}
+                     "so": int(g(c_cam) or 0) + int(g(c_bs) or 0), "bs": int(g(c_bs) or 0), "map": str(g(c_map) or "")}
         if not ds:
             continue
         ten = _ten_tu_file(ten_file)
