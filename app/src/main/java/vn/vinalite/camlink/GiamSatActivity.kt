@@ -238,6 +238,13 @@ class GiamSatActivity : Activity() {
 
     private val daXacMinh = HashSet<String>()
 
+    /** Đọc trạng thái bộ phát (chạy trên luồng giao diện) từ luồng nền. */
+    private fun runOnUiThreadKq(f: () -> Boolean): Boolean {
+        val q = java.util.concurrent.ArrayBlockingQueue<Boolean>(1)
+        runOnUiThread { q.offer(try { f() } catch (_: Exception) { false }) }
+        return q.poll(3, java.util.concurrent.TimeUnit.SECONDS) ?: false
+    }
+
     /** Người dùng chốt điểm này là ghim LiteMark nào (sau khi so live với ảnh khảo sát). */
     private fun chonGhim(p: JSONObject) {
         val ds = p.optJSONArray("lm_ghim") ?: return
@@ -265,6 +272,15 @@ class GiamSatActivity : Activity() {
             try {
                 val core = com.chaquo.python.Python.getInstance().getModule("camlink_core")
                 val moi = JSONObject(core.callAttr("tuxa_kiem_diem", ma, stt, null).toString())
+                // Video là sự thật: cam vừa có hình trong 90 giây thì giữ "lên", không để kết quả quét (vd báo sai user/pass lúc cam bận) đè lên
+                val cu = p.optJSONArray("cam") ?: JSONArray()
+                val csMoi = moi.optJSONArray("cam") ?: JSONArray()
+                for (i in 0 until csMoi.length()) {
+                    val c = csMoi.getJSONObject(i)
+                    val ccu = (0 until cu.length()).map { cu.getJSONObject(it) }.firstOrNull { it.optInt("http") == c.optInt("http") } ?: continue
+                    if (c.optString("muc") != "xanh" && ccu.optString("live").isNotEmpty() && runOnUiThreadKq { boPhat.vuaCoHinh(ccu.optString("live")) })
+                        csMoi.put(i, ccu.put("ghi_chu_quet", c.optString("nhan")))
+                }
                 val ds = kq.optJSONArray("diem")!!
                 for (i in 0 until ds.length()) if (ds.getJSONObject(i).optString("stt") == stt) ds.put(i, moi)
                 File(intent.getStringExtra("file")!!).writeText(kq.toString())

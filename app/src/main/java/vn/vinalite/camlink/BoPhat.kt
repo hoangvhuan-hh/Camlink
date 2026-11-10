@@ -22,9 +22,11 @@ class BoPhat(private val act: Activity) {
         LibVLC(act, arrayListOf("--rtsp-tcp", "--network-caching=600", "--no-drop-late-frames", "--no-skip-frames", "--no-audio"))
     }
     private val dang = HashMap<String, MediaPlayer>()
+    val coHinhLuc = HashMap<String, Long>()              // url → lần cuối thấy hình (video là sự thật)
     private val ngatLuc = HashMap<String, Long>()        // url → lúc luồng bắt đầu rớt (giữ tới khi có hình lại)
     private val canh = HashMap<String, Runnable>()       // url → vòng gõ cửa / canh hình đứng
     @Volatile private var dungHan = false
+    @Volatile private var tamNghi = 0L                   // >0 = app đang tạm nghỉ (hộp xin quyền, chuyển app) — không được coi là cam rớt
     private val gio = java.text.SimpleDateFormat("HH:mm:ss")
     private fun dp(v: Int) = (v * act.resources.displayMetrics.density).toInt()
 
@@ -52,6 +54,7 @@ class BoPhat(private val act: Activity) {
             when (ev.type) {
                 MediaPlayer.Event.Buffering -> if (ev.buffering < 100f) trangThai.text = "⏳ Đang tải ${ev.buffering.toInt()}%"
                 MediaPlayer.Event.Vout -> if (ev.voutCount > 0) {
+                    coHinhLuc[url] = System.currentTimeMillis()
                     val nl = ngatLuc.remove(url)
                     val them = if (nl != null) " · lên lại sau rớt ${(System.currentTimeMillis() - nl) / 1000}s" else ""
                     trangThai.text = "🔴 TRỰC TIẾP · ${gio.format(java.util.Date())}$them"
@@ -81,7 +84,8 @@ class BoPhat(private val act: Activity) {
             if (dungHan || dang[url] !== mp || !khung.isAttachedToWindow) return
             val t = try { mp.time } catch (_: Exception) { -1L }
             val now = System.currentTimeMillis()
-            if (t != tCu || !mp.isPlaying && t < 0) { tCu = t; dungTu = now }
+            if (tamNghi > 0L || now - tiepLuc < 8000) { tCu = t; dungTu = now; ui.postDelayed(this, 5000); return }
+            if (t != tCu || !mp.isPlaying && t < 0) { tCu = t; dungTu = now; if (t > 0) coHinhLuc[url] = now }
             else if (now - dungTu > 15000) { loi(khung, url, trangThai, "Hình đứng im — cam ngắt luồng video", chieuCao); khiLoi?.invoke(); return }
             ui.postDelayed(this, 5000)
         } }
@@ -147,6 +151,9 @@ class BoPhat(private val act: Activity) {
     }
 
     fun dungHet() { dungHan = true; canh.values.forEach { ui.removeCallbacks(it) }; canh.clear(); ArrayList(dang.keys).forEach { dung(it) } }
-    fun tamDung() { dang.values.forEach { try { it.pause() } catch (_: Exception) {} } }
-    fun tiepTuc() { dang.values.forEach { try { it.play() } catch (_: Exception) {} } }
+    /** Cam này vừa có hình trong 90 giây qua (hoặc đang phát)? */
+    fun vuaCoHinh(url: String) = System.currentTimeMillis() - (coHinhLuc[url] ?: 0L) < 90_000
+    @Volatile private var tiepLuc = 0L
+    fun tamDung() { tamNghi = System.currentTimeMillis(); dang.values.forEach { try { it.pause() } catch (_: Exception) {} } }
+    fun tiepTuc() { tamNghi = 0L; tiepLuc = System.currentTimeMillis(); dang.values.forEach { try { it.play() } catch (_: Exception) {} } }
 }

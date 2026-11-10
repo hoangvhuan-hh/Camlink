@@ -43,6 +43,12 @@ def cham(host, port, cho=4):
             s.close()
 
 
+def _la_tu_choi_mk(e):
+    """Chỉ coi là SAI user/pass khi cam trả lời rõ là từ chối đăng nhập (401/400 kèm NotAuthorized…), không phải hết giờ/đứt kết nối."""
+    t = str(e or "")
+    return t.startswith("ONVIF 4") or any(k in t for k in ("NotAuthorized", "not authorized", "Unauthorized", "Authority failure", "Sender not Authorized"))
+
+
 def mang_dien_thoai_ok(cho=4):
     """Điện thoại có ra được Internet không (đo trên chính đường mạng app đang dùng)."""
     if os.environ.get("CAMLINK_THU_NOI_BO"):
@@ -183,9 +189,23 @@ def kiem_diem(stt, d, cd, anh_dir, ma, ho_so=None):
             continue
         ov = C.Onvif(dom, c["http"], cu, cp)
         c["onvif"] = "trả lời (chưa đăng nhập)"
+        tt, loi_dn = None, None
+        for _lan in range(2):      # cam bận (đang phát video) hay trả lời chậm/lệch giờ → thử lại 1 lần trước khi kết luận
+            try:
+                ov.co()            # lấy giờ cam để mã hoá mật khẩu đúng; lần đầu hỏng giờ thì lần 2 lấy lại
+                tt = ov.thong_tin()
+                break
+            except Exception as e:
+                loi_dn = e
+                time.sleep(2)
+        if tt is None and not _la_tu_choi_mk(loi_dn):
+            c["onvif"] = f"trả lời chậm/lỗi ({str(loi_dn)[:60]})"
+            _ket(c, VANG, "Cam có mạng nhưng trả lời chậm (bận hoặc mạng yếu) — CHƯA kết luận sai user/pass",
+                 ["Mở xem trực tiếp: có hình là cam vẫn tốt.", "Kiểm tra lại sau vài phút."], nhan="Cam trả lời chậm")
+            continue
         try:
-            ov.co()
-            tt = ov.thong_tin()
+            if tt is None:
+                raise loi_dn
             c["hang"], c["model"], c["serial"] = tt.get("hang", ""), tt.get("model", ""), tt.get("serial", "")
             try:
                 c["mac"] = ov.token_mang()[1]
