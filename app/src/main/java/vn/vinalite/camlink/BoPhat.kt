@@ -23,7 +23,8 @@ class BoPhat(private val act: Activity) {
     }
     private val dang = HashMap<String, MediaPlayer>()
     val coHinhLuc = HashMap<String, Long>()              // url → lần cuối thấy hình (video là sự thật)
-    private val ngatLuc = HashMap<String, Long>()        // url → lúc luồng bắt đầu rớt (giữ tới khi có hình lại)
+    private val ngatLuc = HashMap<String, Long>()
+    private val baoXemLuc = HashMap<String, Long>()        // url → lúc luồng bắt đầu rớt (giữ tới khi có hình lại)
     private val canh = HashMap<String, Runnable>()       // url → vòng gõ cửa / canh hình đứng
     @Volatile private var dungHan = false
     @Volatile private var tamNghi = 0L                   // >0 = app đang tạm nghỉ (hộp xin quyền, chuyển app) — không được coi là cam rớt
@@ -86,6 +87,7 @@ class BoPhat(private val act: Activity) {
             val now = System.currentTimeMillis()
             if (tamNghi > 0L || now - tiepLuc < 8000) { tCu = t; dungTu = now; ui.postDelayed(this, 5000); return }
             if (t != tCu || !mp.isPlaying && t < 0) { tCu = t; dungTu = now; if (t > 0) coHinhLuc[url] = now }
+            if (now - (baoXemLuc[url] ?: 0L) > 25_000) { baoXemLuc[url] = now; baoXem(url, "len") }
             else if (now - dungTu > 15000) { loi(khung, url, trangThai, "Hình đứng im — cam ngắt luồng video", chieuCao); khiLoi?.invoke(); return }
             ui.postDelayed(this, 5000)
         } }
@@ -117,6 +119,7 @@ class BoPhat(private val act: Activity) {
         val r = object : Runnable { override fun run() {
             if (dungHan || !khung.isAttachedToWindow) return
             lan++
+            baoXem(url, "ngat")
             Thread {
                 val mo = try { java.net.Socket().use { it.connect(java.net.InetSocketAddress(host, port), 4000) }; true } catch (_: Exception) { false }
                 ui.post {
@@ -131,6 +134,14 @@ class BoPhat(private val act: Activity) {
         } }
         canh[url] = r
         ui.postDelayed(r, 10000)
+    }
+
+    /** Báo lõi: đang xem cam này (có hình / đang rớt) → Theo dõi lấy màn xem làm số đo, không hỏi cam thêm. */
+    private fun baoXem(url: String, tt: String) {
+        val u = try { Uri.parse(url) } catch (_: Exception) { return }
+        val host = u.host ?: return
+        val port = if (u.port > 0) u.port else 554
+        Thread { try { com.chaquo.python.Python.getInstance().getModule("camlink_core").callAttr("theodoi_dang_xem", host, port, tt) } catch (_: Exception) {} }.start()
     }
 
     /** Ghi lần ngắt/lên lại sang lõi — nếu cam này đang được Theo dõi thì báo cáo có luôn (hai màn khớp nhau). */

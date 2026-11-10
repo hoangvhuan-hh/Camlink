@@ -180,8 +180,9 @@ class GiamSatActivity : Activity() {
             if (c.optString("muc") == "xanh" && c.optString("live").isNotEmpty() && soPhat < 4) {
                 soPhat++
                 val lichSu = c.optString("tu_lich_su")
-                if (lichSu.isNotEmpty()) oCam.addView(chu("↺ lấy từ lần kiểm $lichSu — live lên = còn tốt; không lên app tự kiểm lại điểm", 10f, false, "#9AA8B5"), 1)
-                boPhat.phat(khung, c.optString("live"), tt, cao, if (lichSu.isNotEmpty() && !daXacMinh.contains(p.optString("stt"))) ({ xacMinhDiem(p) }) else null)
+                if (lichSu.isNotEmpty()) oCam.addView(chu("↺ lấy từ lần kiểm $lichSu — live lên = còn tốt; không lên thì bấm Chi tiết / sửa → kiểm lại", 10f, false, "#9AA8B5"), 1)
+                // Không tự quét lại cả điểm khi hình rớt (dồn việc lên cam đúng lúc cam yếu) — bộ phát tự gõ cửa nhẹ tới khi cam lên
+                boPhat.phat(khung, c.optString("live"), tt, cao)
             } else {
                 khung.setBackgroundColor(Color.parseColor("#5A1F1A"))
                 val ly = c.optString("nguyen_nhan").take(140)

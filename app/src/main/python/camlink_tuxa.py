@@ -46,7 +46,7 @@ def cham(host, port, cho=4):
 def _la_tu_choi_mk(e):
     """Chỉ coi là SAI user/pass khi cam trả lời rõ là từ chối đăng nhập (401/400 kèm NotAuthorized…), không phải hết giờ/đứt kết nối."""
     t = str(e or "")
-    return t.startswith("ONVIF 4") or any(k in t for k in ("NotAuthorized", "not authorized", "Unauthorized", "Authority failure", "Sender not Authorized"))
+    return t.startswith("ONVIF 4") or any(k in t.lower() for k in ("notauthorized", "not authorized", "unauthorized", "authority failure", "authentication"))
 
 
 def mang_dien_thoai_ok(cho=4):

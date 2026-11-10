@@ -39,3 +39,20 @@ assert a["rtsp_xac_thuc"] == 10 and len(a["live"]) == 1 and a["live"][0]["len"] 
 m = T._doc(T._thu_muc(tid, "meta.json")); print("PDF:", m.get("pdf"), m.get("loi_pdf", ""))
 assert m.get("pdf")
 print("✓ 1.9.2 theo dõi lấy video làm chuẩn")
+
+# --- 1.9.4: đang mở xem cam → không hỏi cam, lấy màn xem làm số đo; không xem → hỏi 2 phút/lần, đang hỏng thì mỗi nhịp
+import camlink_tuxa
+goi = []
+camlink_tuxa.rtsp_describe = lambda *a, **k: (goi.append(1), (200, ""))[1]
+T._cham = lambda h, p: ("mo", 150)
+T._mang_ok = lambda: True
+T._ip = lambda d: "113.166.223.36"
+m2 = {"domain": "phuly-chuaphapbao.ddns.net", "http": 8080, "rtsp": 554, "rtsp_path": "/", "user": "a", "pass": "b", "ban": [], "lan_do": 0, "ip_dau": ""}
+for i in range(8):
+    T.do_mot_lan(m2); m2["lan_do"] += 1
+assert len(goi) == 2, goi                     # 8 nhịp (4 phút) → hỏi 2 lần
+T.bao_dang_xem("113.166.223.36", 554, "len")
+x = T.do_mot_lan(m2); assert x["rtsp"] == "ok_xem" and len(goi) == 2
+T.bao_dang_xem("phuly-chuaphapbao.ddns.net", 554, "ngat")
+x = T.do_mot_lan(m2); assert x["rtsp"] == "loi_xem" and len(goi) == 2
+print("✓ 1.9.4: 4 phút hỏi cam 2 lần; đang xem thì không hỏi, màn xem rớt = video hỏng")

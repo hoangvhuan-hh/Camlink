@@ -12,8 +12,8 @@ Hết t (hoặc bấm dừng) → báo cáo PDF 1–3 trang A4: tóm tắt, nguy
 import json, os, socket, threading, time
 
 NHIP = 30            # giây giữa 2 lần đo
-RTSP_MOI = 1         # đo luồng video MỖI lần (Huan 10/11: video hỏng là tính rớt, kể cả web vẫn lên)
-ANH_MOI = 600        # làm mới ảnh "trước khi rớt" mỗi 10 phút
+RTSP_MOI = 4         # hỏi luồng video mỗi 4 nhịp = 2 phút (Huan 10/11: nhẹ cho cam); đang hỏng video thì hỏi mỗi nhịp tới khi lên
+ANH_MOI = 3600       # làm mới ảnh "trước khi rớt" mỗi 1 giờ (chụp bắt cam nén JPEG — hạn chế)
 ROT_SAU = 2          # cần 2 lần đo liên tiếp không vào được mới tính là rớt (tránh rớt 1 gói lẻ)
 GIU_NGAY = 7         # dữ liệu một lần theo dõi tự xoá sau 7 ngày (PDF đã xuất giữ ở ketqua/)
 
@@ -198,7 +198,11 @@ def do_mot_lan(m):
     cam = kq.get("cam") or ("im_lang", 0)
     mau = {"t": round(kq["t"], 1), "net": bool(kq.get("net")), "ip": ip, "cam": cam[0], "ms": cam[1],
            "ban": {str(b): (kq.get(f"b{b}") or ("im_lang", 0))[0] for b in m["ban"]}}
-    if cam[0] == "mo" and m.get("rtsp") and m["lan_do"] % RTSP_MOI == 0:
+    xem = dang_xem(m, ip)
+    if cam[0] == "mo" and xem is not None:
+        # Huan đang mở xem đúng cam này → lấy chính màn xem làm số đo, KHÔNG hỏi cam thêm
+        mau["rtsp"] = "loi_xem" if xem == "ngat" else "ok_xem"
+    elif cam[0] == "mo" and m.get("rtsp") and (m["lan_do"] % RTSP_MOI == 0 or str(m.get("rtsp_cuoi", "")).startswith("loi")):
         try:
             from camlink_tuxa import rtsp_describe
             ma_rtsp = rtsp_describe(dich, m["rtsp"], m.get("rtsp_path", "/"), m["user"], m["pass"])[0]
@@ -264,7 +268,11 @@ def _xu_ly_mau(m, mau):
         m["khong_do"] = m.get("khong_do", 0) + 1
         return
     web = mau["cam"] == "mo"
-    vid_hong = web and _video_hong(mau)
+    if mau.get("rtsp"):
+        m["rtsp_cuoi"] = mau["rtsp"]
+    elif not web:
+        m["rtsp_cuoi"] = ""                 # web mất → lần lên sau phải đo lại video từ đầu
+    vid_hong = web and _video_hong({"rtsp": mau.get("rtsp") or m.get("rtsp_cuoi", "")})
     if mau.get("rtsp") == "xac_thuc":
         m["rtsp_xac_thuc"] = m.get("rtsp_xac_thuc", 0) + 1
     if web:
@@ -319,6 +327,21 @@ def _xu_ly_mau(m, mau):
             import shutil
             shutil.copy(anh, _thu_muc(m["id"], f"truoc_{n}.jpg"))
             m["dang_rot"]["anh_truoc"] = _thu_muc(m["id"], f"truoc_{n}.jpg")
+
+
+_DANG_XEM = {}      # (tên/IP, port rtsp) → (lúc báo, "len"/"ngat") — màn xem trực tiếp báo mỗi ~30 giây
+
+
+def bao_dang_xem(host, port_rtsp, trang_thai):
+    _DANG_XEM[(str(host).lower(), int(port_rtsp))] = (time.time(), trang_thai)
+
+
+def dang_xem(m, ip=""):
+    """Cam này đang được mở xem trực tiếp (báo trong 60 giây qua)? → "len"/"ngat", không xem → None."""
+    ten = {str(m["domain"]).lower(), str(m.get("ip_dau") or ""), str(m.get("ip_cuoi_len") or ""), str(ip or "")} - {""}
+    hop = [(t, tt) for (h, pt), (t, tt) in list(_DANG_XEM.items())
+           if h in ten and pt == int(m.get("rtsp") or 0) and time.time() - t < 60]
+    return max(hop)[1] if hop else None       # báo mới nhất thắng
 
 
 def ghi_live(domain, port_rtsp, luc_ngat, luc_len=0.0):

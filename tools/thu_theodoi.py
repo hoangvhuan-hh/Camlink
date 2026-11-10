@@ -36,7 +36,7 @@ for i in range(2880):
                 s["cam"] = "im_lang"; s["ban"] = {"8081": "mo" if c2 == "mo" else "im_lang"}; s["ms"] = 0
             ip_hien = IP[ipk] if ipk == "B" and c1 == "im" and c2 == "im" else ip_hien
             s["ip"] = ip_hien if not (c1 == "im" and c2 == "im" and ipk == "B") else IP["A"]
-    if s["net"] and s["cam"] == "mo" and i % 4 == 0:
+    if s["net"] and s["cam"] == "mo" and (i % 4 == 0 or i - 1 in (400, 404, 1200)):
         s["rtsp"] = "loi_0" if i in (400, 404, 1200) else "ok"
     if t >= H("20:04"): s["ip"] = s["ip"] if s["cam"] != "mo" else IP["B"]
     T._xu_ly_mau(m, s)
