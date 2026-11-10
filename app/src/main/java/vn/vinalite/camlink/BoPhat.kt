@@ -34,7 +34,12 @@ class BoPhat(private val act: Activity) {
     private fun dp(v: Int) = (v * act.resources.displayMetrics.density).toInt()
 
     /** Phát url vào khung; trangThai nhận dòng trạng thái. Lỗi → hiện lý do + nút mở VLC ngoài. */
-    fun phat(khung: FrameLayout, url: String, trangThai: TextView, chieuCao: Int = 200, khiLoi: (() -> Unit)? = null, ghiChu: String = "") {
+    private val khongGoCua = HashSet<String>()        // url ở màn lưới: rớt thì dừng hẳn, để bộ đo trạng thái chung quyết khi nào phát lại
+    private val khiLoiUrl = HashMap<String, () -> Unit>()
+
+    fun phat(khung: FrameLayout, url: String, trangThai: TextView, chieuCao: Int = 200, khiLoi: (() -> Unit)? = null, ghiChu: String = "", tuGoCua: Boolean = true) {
+        if (tuGoCua) khongGoCua.remove(url) else khongGoCua.add(url)
+        if (khiLoi != null) khiLoiUrl[url] = khiLoi else khiLoiUrl.remove(url)
         dungHan = false
         oKhung[khung]?.let { cu -> if (cu != url) { canh.remove(cu)?.let { ui.removeCallbacks(it) }; dung(cu) } }
         oKhung[khung] = url
@@ -104,6 +109,7 @@ class BoPhat(private val act: Activity) {
     /** Rớt → báo GIỜ RỚT, rồi gõ cửa cam 10 giây/lần (1 kết nối TCP, không kéo video). Cam trả lời là tự phát lại — không cần bấm. */
     private fun loi(khung: FrameLayout, url: String, trangThai: TextView, ly: String, chieuCao: Int = 200) {
         dung(url)
+        if (url in khongGoCua) { canh.remove(url)?.let { ui.removeCallbacks(it) }; khung.removeAllViews(); trangThai.text = ly; return }
         khung.removeAllViews()
         val dau = ngatLuc[url] == null
         if (dau) { ngatLuc[url] = System.currentTimeMillis(); ghiLoi(url, ngatLuc[url]!!, 0L) }
@@ -174,6 +180,17 @@ class BoPhat(private val act: Activity) {
     fun dung(url: String) {
         dang.remove(url)?.let { try { it.stop(); it.detachViews(); it.release() } catch (_: Exception) {} }
     }
+
+    /** Tắt hẳn khung này (ô cuộn khuất màn hình): dừng phát + huỷ vòng gõ cửa. */
+    fun tat(khung: FrameLayout) {
+        val u = oKhung.remove(khung) ?: return
+        canh.remove(u)?.let { ui.removeCallbacks(it) }
+        dung(u)
+        khung.removeAllViews()
+    }
+
+    /** Có đang phát (có hình) ở khung này không. */
+    fun dangPhat(khung: FrameLayout) = oKhung[khung]?.let { dang.containsKey(it) && vuaCoHinh(it) } ?: false
 
     fun dungHet() { dungHan = true; canh.values.forEach { ui.removeCallbacks(it) }; canh.clear(); ArrayList(dang.keys).forEach { dung(it) } }
     /** Cam này vừa có hình trong 90 giây qua (hoặc đang phát)? */

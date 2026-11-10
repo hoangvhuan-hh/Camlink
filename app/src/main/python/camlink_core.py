@@ -1008,3 +1008,31 @@ def theodoi_dang_xem(host, port_rtsp, trang_thai):
     """Màn xem trực tiếp báo đang xem cam (trang_thai "len" có hình / "ngat" đang rớt) — theo dõi dùng thay cho việc hỏi cam."""
     import camlink_theodoi as TD
     TD.bao_dang_xem(host, int(port_rtsp), trang_thai)
+
+
+def tuxa_luong_phu(ma, stt, http):
+    """Màn giám sát: cam chưa có luồng phụ trong lịch sử → hỏi cam 1 lần, lưu lại. Trả đường dẫn ("" = cam không có luồng phụ)."""
+    import camlink_tuxa as T
+    f = T._f_lich_su(GOC, ma)
+    with open(f, encoding="utf-8") as fh:
+        kq = json.load(fh)
+    p = next(x for x in kq["diem"] if str(x["stt"]) == str(stt))
+    c = next(x for x in p["cam"] if int(x.get("http") or 0) == int(http))
+    if c.get("live_phu") or c.get("live_phu_da_hoi"):
+        return c.get("live_phu", "")
+    cd = C.doc_cai_dat()
+    try:
+        url = T.luong_phu(p["domain"], int(http), int(c.get("rtsp") or 554), c.get("user") or cd.get("cam_user", "admin"), c.get("pass") or cd.get("cam_pw", ""))
+    except Exception:
+        return ""                       # cam bận/chậm: lần mở sau hỏi lại
+    c["live_phu"], c["live_phu_da_hoi"] = url, True
+    with open(f, "w", encoding="utf-8") as fh:
+        json.dump(kq, fh, ensure_ascii=False)
+    return url
+
+
+def truc_tiep_bao(ma, json_b):
+    """Màn giám sát trực tiếp: cam rớt ≥ 5 phút / lên lại → ghi vào kết quả gần nhất + đẩy ghim LiteMark (như Theo dõi)."""
+    b = json.loads(json_b)
+    b["ma"] = ma
+    return bool(_theodoi_bao_lm(b))

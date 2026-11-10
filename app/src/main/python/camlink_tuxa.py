@@ -49,6 +49,15 @@ def _la_tu_choi_mk(e):
     return t.startswith("ONVIF 4") or any(k in t.lower() for k in ("notauthorized", "not authorized", "unauthorized", "authority failure", "authentication"))
 
 
+def luong_phu(dom, http, rtsp, cu, cp):
+    """Lấy đường dẫn LUỒNG PHỤ của một cam (2 lệnh ONVIF nhỏ, ~5 KB) — dùng cho màn giám sát khi lịch sử chưa có."""
+    ov = C.Onvif(dom, http, cu, cp)
+    ov.co()
+    um = ov.url_media()
+    ds = ov.ds_profile(um)
+    return ov.luong_video(um, ds[1], rtsp) if len(ds) > 1 else ""
+
+
 def mang_dien_thoai_ok(cho=4):
     """Điện thoại có ra được Internet không (đo trên chính đường mạng app đang dùng)."""
     if os.environ.get("CAMLINK_THU_NOI_BO"):
@@ -526,7 +535,9 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True, nhanh=Fal
     tai_su_dung = {}
     if nhanh and not chi_diem and ls_truoc.get("diem") and not ls_truoc.get("khong_tin_cay"):
         for p in ls_truoc["diem"]:
-            if p["cam"] and all(c["muc"] == XANH for c in p["cam"]) and p["stt"] in diem and p["domain"] == diem[p["stt"]]["domain"]:
+            # chỉ chép lại kết quả ĐO THẬT dưới 30 phút (trước đây chép nối mãi → điểm đạt có thể xanh hàng giờ dù cam đã rớt)
+            if (p["cam"] and all(c["muc"] == XANH for c in p["cam"]) and p["stt"] in diem and p["domain"] == diem[p["stt"]]["domain"]
+                    and time.time() - float(p.get("do_luc") or 0) < 1800):
                 tai_su_dung[p["stt"]] = p
     quet_ds = [k for k in ds if k not in tai_su_dung]
     if tai_su_dung:
@@ -556,6 +567,7 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True, nhanh=Fal
         except Exception as e:
             r = {"stt": k, "ten": diem[k]["ten"], "domain": diem[k]["domain"], "muc": DO, "tong": f"LỖI KIỂM TRA: {e}",
                  "viec": ["Kiểm tra lại."], "cam": [], "ip": "", "web_modem": "", "noip_user": "", "noip_pass": ""}
+        r["do_luc"] = time.time()          # giờ ĐO THẬT của điểm này (lần chép lại sau giữ nguyên giờ này)
         td = toa_do.get(k)
         if td:
             r["lat"], r["lng"] = td[0], td[1]
@@ -577,7 +589,7 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True, nhanh=Fal
             kqs.append(kq_quet[k])
         else:
             p = dict(tai_su_dung[k])
-            p["tu_lich_su"] = ls_truoc.get("luc", "")
+            p["tu_lich_su"] = time.strftime("%d/%m/%Y %H:%M", time.localtime(float(p.get("do_luc") or 0)))
             for c in p["cam"]:
                 c["tu_lich_su"] = p["tu_lich_su"]
             kqs.append(p)

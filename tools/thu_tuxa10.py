@@ -29,5 +29,24 @@ ls = json.load(open(T._f_lich_su(G, "pl"), encoding="utf-8"))
 assert [c["muc"] for x in ls["diem"] if x["stt"] == "4" for c in x["cam"]][0] != "xanh"
 r3 = T.kiem_du_an(G, da, "pl", cd, log=lambda s: None, tu_sua=False, nhanh=True)
 assert r3["so_tai_su_dung"] == 0, "điểm 4 đã có sự cố thì lần nhanh sau phải quét lại"
+# 3. luồng phụ có sẵn sau quét đầy đủ; cam chưa có thì hỏi lẻ 1 lần
+p4 = [p for p in r1["diem"] if p["stt"] == "4"][0]
+print("   luồng phụ:", [c.get("live_phu", "")[-25:] for c in p4["cam"]])
+assert all(c.get("live_phu", "").endswith("/102") for c in p4["cam"] if c["muc"] == "xanh")
+p8 = [p for p in ls["diem"] if p["stt"] == "8"][0]
+c8 = [c for c in p8["cam"] if c["muc"] == "xanh"][0]
+c8.pop("live_phu", None); json.dump(ls, open(T._f_lich_su(G, "pl"), "w", encoding="utf-8"))
+u = K.tuxa_luong_phu("pl", "8", c8["http"])
+assert u.endswith("/102"), u
+print("3 ✓ luồng phụ: quét đầy đủ có sẵn; thiếu thì hỏi lẻ 1 lần và lưu lại")
 print("2 ✓ cam lịch sử hỏng → kiểm điểm lẻ phát hiện, lịch sử cập nhật, lần nhanh sau quét lại điểm đó")
+# 4. chỉ chép lại kết quả đo dưới 30 phút
+ls = json.load(open(T._f_lich_su(G, "pl"), encoding="utf-8"))
+for x in ls["diem"]:
+    x["do_luc"] = time.time() - 31 * 60
+    for c in x["cam"]: c["muc"] = "xanh"
+json.dump(ls, open(T._f_lich_su(G, "pl"), "w", encoding="utf-8"))
+r4 = T.kiem_du_an(G, da, "pl", cd, log=lambda s: None, tu_sua=False, nhanh=True)
+assert r4["so_tai_su_dung"] == 0, r4["so_tai_su_dung"]
+print("4 ✓ kết quả cũ hơn 30 phút → đo lại, không chép xanh mãi")
 S.tat_het()

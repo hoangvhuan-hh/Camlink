@@ -456,6 +456,7 @@ class TuXaActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == maGiamSat) {
+            if (data?.getBooleanExtra("kiem_sau", false) == true) { kiem(nhanh = false); return }   // kiểm tra sâu là bước sau màn trực tiếp
             val stt = data?.getStringExtra("stt") ?: return
             val v = khung.findViewWithTag<View>("diem_$stt") ?: return
             (khung.parent as? ScrollView)?.post { (khung.parent as ScrollView).smoothScrollTo(0, v.top) }
