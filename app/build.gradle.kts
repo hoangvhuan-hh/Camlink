@@ -11,8 +11,8 @@ android {
         applicationId = "vn.vinalite.camlink"
         minSdk = 24
         targetSdk = 34
-        versionCode = 40
-        versionName = "1.8.0"
+        versionCode = 41
+        versionName = "1.9.0"
         ndk { abiFilters += listOf("arm64-v8a") }   // chỉ arm64 (điện thoại Android hiện nay) → APK nhỏ hơn nhiều
     }
     signingConfigs {
@@ -43,6 +43,7 @@ chaquopy {
             install("openpyxl")
             install("rsa")
             install("pillow")
+            install("reportlab==4.2.5")
         }
     }
 }

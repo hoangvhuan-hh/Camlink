@@ -53,6 +53,13 @@ class HuongDanActivity : Activity() {
             "Bấm \"📤 Xuất Excel + gửi\" để gửi bảng kết quả qua Zalo/Gmail.",
             "🔗 LiteMark (một lần cho mỗi dự án): bấm \"🔗 LiteMark\" → dán khoá kết nối (lấy trong LiteMark → Tài khoản → Kết nối CamLink) → chọn đúng công trình trong danh sách (⭐ = khớp tên/số điểm). Từ đó vị trí điểm lấy theo ghim thực tế của LiteMark; mỗi lần kiểm xong, cam lỗi tự hiện đỏ/vàng trên bản đồ công trình LiteMark; ở màn giám sát có nút \"🔗 LiteMark\" mở thẳng điểm đó."
         ),
+        "D2. THEO DÕI ỔN ĐỊNH MỘT CAM (cam chập chờn)" to listOf(
+            "Dưới ô cam (màn Kiểm tra từ xa hoặc màn giám sát) bấm \"📈 Theo dõi\" → chọn 2 giờ / 6 giờ / 24 giờ / tuỳ chọn. Bật cam nào thì chỉ theo dõi cam đó; bật nhiều cam được.",
+            "App chạy nền (có thông báo trên điện thoại), mỗi 30 giây đo: mạng điện thoại, tên miền → IP, port cam, cam khác cùng điểm, luồng video. Điện thoại mất mạng thì không tính là cam rớt.",
+            "Hết giờ (hoặc bấm Dừng & lấy báo cáo) → báo cáo PDF 1–3 trang: tóm tắt, nguyên nhân các lần rớt, danh sách lần rớt, đề xuất khắc phục, ảnh trước/sau. Chạm thông báo để mở, có nút gửi Zalo.",
+            "Nút \"📈 Theo dõi\" trên cùng màn Kiểm tra từ xa: xem các cam đang theo dõi và mở lại báo cáo cũ.",
+            "Để điện thoại cắm sạc, có sóng ổn định. Dữ liệu khoảng 1 MB/ngày mỗi cam, tự xoá sau 7 ngày (PDF giữ lại)."
+        ),
         "E. NÚT KHÁC" to listOf(
             "\"Chọn điểm bằng tay\": dùng khi GPS yếu hoặc dự án chưa có toạ độ.",
             "\"Xem sơ đồ + ảnh lần chạy gần nhất\": mở lại kết quả lần trước.",

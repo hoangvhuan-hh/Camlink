@@ -181,6 +181,10 @@ class GiamSatActivity : Activity() {
                     })
                 }
             }
+            oCam.addView(Button(this).apply {
+                text = "📈 Theo dõi"; isAllCaps = false; textSize = 11f; minHeight = 0; minimumHeight = 0; setPadding(dp(6), dp(2), dp(6), dp(2))
+                setOnClickListener { TheoDoi.bam(this@GiamSatActivity, ma, p, c, kq.optString("du_an")) }
+            }, LinearLayout.LayoutParams(-2, -2))
             o.addView(oCam, GridLayout.LayoutParams(GridLayout.spec(GridLayout.UNDEFINED, 1f), GridLayout.spec(GridLayout.UNDEFINED, 1f)).apply { width = 0; setMargins(dp(3), dp(3), dp(3), dp(3)) })
         }
         goc.addView(o)

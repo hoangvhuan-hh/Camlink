@@ -29,6 +29,8 @@ def _thu_muc_du_an():
 def khoi_tao(thu_muc):
     import camlink_litemark as L
     L.khoi_tao(thu_muc)
+    import camlink_theodoi as TD
+    TD.khoi_tao(thu_muc)
     global GOC
     GOC = thu_muc
     os.makedirs(os.path.join(GOC, "ketqua"), exist_ok=True)
@@ -921,3 +923,29 @@ def tuxa_hanh_dong(ma, stt, so, http, id_hd, json_kq, log):
     _ghi_du_an(ma, da)
     kq = T.kiem_du_an(GOC, _doc_du_an(ma), ma, C.doc_cai_dat(), log, chi_diem=[stt], tu_sua=False)
     return json.dumps(kq["diem"][0], ensure_ascii=False)
+
+
+# ---------------- THEO DÕI ỔN ĐỊNH MỘT CAM ----------------
+def theodoi_bat(ma, json_p, so, phut, ten_du_an=""):
+    """Bật theo dõi cam `so` của điểm (lấy từ kết quả kiểm tra từ xa) trong `phut` phút. Trả id."""
+    import camlink_theodoi as TD
+    p = json.loads(json_p)
+    if ten_du_an:
+        p["du_an"] = ten_du_an
+    return TD.bat(ma, p, int(so), float(phut), C.doc_cai_dat())
+
+
+def theodoi_vong():
+    """Gọi mỗi 30 giây từ dịch vụ chạy nền. JSON {dang:[…], xong_moi:[id], pdf_moi:[đường dẫn]}."""
+    import camlink_theodoi as TD
+    return json.dumps(TD.vong(), ensure_ascii=False)
+
+
+def theodoi_ds():
+    import camlink_theodoi as TD
+    return json.dumps([TD.tom_tat(m) for m in TD.ds()], ensure_ascii=False)
+
+
+def theodoi_dung(tid):
+    import camlink_theodoi as TD
+    return TD.dung(tid)

@@ -333,6 +333,7 @@ class TuXaActivity : Activity() {
         hang.orientation = LinearLayout.HORIZONTAL
         hang.addView(nut("🔄 Kiểm tra lại") { kiem() }.apply { setOnLongClickListener { kiem(false); true } }, LinearLayout.LayoutParams(0, -2, 1f))
         hang.addView(nut("📤 Xuất Excel + gửi") { xuat() }, LinearLayout.LayoutParams(0, -2, 1f))
+        hang.addView(nut("📈 Theo dõi") { TheoDoi.danhSach(this) }, LinearLayout.LayoutParams(0, -2, 1f))
         goc.addView(hang)
         goc.addView(nut("📁 Chọn dự án / nạp file cấu hình") { chonDuAn() })
         val hang2 = LinearLayout(this)
@@ -357,6 +358,7 @@ class TuXaActivity : Activity() {
         cuon.addView(khung)
         goc.addView(cuon, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(goc)
+        if (intent.getBooleanExtra("mo_theo_doi", false)) ui.postDelayed({ TheoDoi.danhSach(this) }, 400)
         val nhanCt = intent.getStringExtra("nhan_ct")
         if (nhanCt != null) nhanDuAn(nhanCt, intent.getStringExtra("nhan_ten") ?: "")
         else { chonDuAn(); kiemChoNhan() }
@@ -675,6 +677,10 @@ class TuXaActivity : Activity() {
             }
             oCam.addView(khung, LinearLayout.LayoutParams(-1, dp(cao)))
             oCam.addView(tt)
+            oCam.addView(Button(this).apply {
+                text = "📈 Theo dõi"; isAllCaps = false; textSize = 11f; minHeight = 0; minimumHeight = 0; setPadding(dp(6), dp(2), dp(6), dp(2))
+                setOnClickListener { TheoDoi.bam(this@TuXaActivity, ma, p, c, tenDuAn) }
+            }, LinearLayout.LayoutParams(-2, -2))
             o.addView(oCam, android.widget.GridLayout.LayoutParams(android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f),
                 android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)).apply { width = 0; setMargins(dp(2), dp(2), dp(2), dp(2)) })
         }
