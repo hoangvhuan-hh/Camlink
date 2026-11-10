@@ -223,18 +223,12 @@ class GiamSatActivity : Activity() {
         duoi.addView(h1); duoi.addView(h2)
     }
 
-    /** Theo dõi: 1 cam thì vào thẳng; nhiều cam thì chọn cam (ghi rõ cam nào đang được theo dõi). */
+    /** Theo dõi: 1 cam thì vào thẳng; nhiều cam thì tick chọn một hay nhiều cam. */
     private fun chonCamTheoDoi(p: JSONObject) {
         val cs = p.optJSONArray("cam") ?: JSONArray()
         if (cs.length() == 0) return
-        if (cs.length() == 1) { TheoDoi.bam(this, ma, p, cs.getJSONObject(0), kq.optString("du_an")); return }
-        val dang = TheoDoi.ds().let { a -> (0 until a.length()).map { a.getJSONObject(it) }
-            .filter { it.optString("trang_thai") == "dang" && it.optString("domain") == p.optString("domain") }.map { it.optInt("http") }.toSet() }
-        val nhan = (0 until cs.length()).map { i -> val c = cs.getJSONObject(i)
-            "Cam ${c.optInt("so")} · port ${c.optInt("http")} · ${c.optString("nhan")}" + if (c.optInt("http") in dang) "  — đang theo dõi" else "" }
-        AlertDialog.Builder(this).setTitle("Theo dõi cam nào?")
-            .setItems(nhan.toTypedArray()) { _, i -> TheoDoi.bam(this, ma, p, cs.getJSONObject(i), kq.optString("du_an")) }
-            .setNegativeButton("Huỷ", null).show()
+        if (cs.length() == 1) TheoDoi.bam(this, ma, p, cs.getJSONObject(0), kq.optString("du_an"))
+        else TheoDoi.chonNhieu(this, ma, p, kq.optString("du_an"))
     }
 
     private val daXacMinh = HashSet<String>()

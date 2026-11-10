@@ -69,6 +69,62 @@ object TheoDoi {
             }.setNegativeButton("Huỷ", null).show()
     }
 
+    /** Màn mở một điểm: tick chọn MỘT hay NHIỀU cam cùng lúc. Cam đang theo dõi đã tick sẵn — bỏ tick là dừng & lấy báo cáo. */
+    fun chonNhieu(act: Activity, ma: String, p: JSONObject, tenDuAn: String) {
+        val cs = p.optJSONArray("cam") ?: JSONArray()
+        if (cs.length() == 0) return
+        val cams = (0 until cs.length()).map { cs.getJSONObject(it) }
+        val dang = cams.map { dangTheoDoi(p.optString("domain"), it.optInt("http")) }
+        val nhan = cams.mapIndexed { i, c ->
+            "Cam ${c.optInt("so")} · port ${c.optInt("http")}" + (dang[i]?.let { "  — đang theo dõi, rớt ${it.optInt("so_rot")} lần, còn ${it.optInt("con_phut")} phút" } ?: "")
+        }.toTypedArray()
+        val tick = BooleanArray(cams.size) { dang[it] != null }
+        AlertDialog.Builder(act).setTitle("Theo dõi cam nào? (chọn được nhiều)")
+            .setMultiChoiceItems(nhan, tick) { _, i, b -> tick[i] = b }
+            .setPositiveButton("Tiếp") { _, _ ->
+                val batMoi = cams.indices.filter { tick[it] && dang[it] == null }.map { cams[it] }
+                val dungDi = cams.indices.filter { !tick[it] && dang[it] != null }
+                if (dungDi.isNotEmpty())
+                    AlertDialog.Builder(act).setTitle("Dừng theo dõi " + dungDi.joinToString(", ") { "cam ${cams[it].optInt("so")}" } + "?")
+                        .setMessage("App dừng và làm báo cáo PDF cho cam đã bỏ chọn.")
+                        .setPositiveButton("Dừng & lấy báo cáo") { _, _ -> dungDi.forEach { dung(act, dang[it]!!.optString("id")) } }
+                        .setNegativeButton("Không", null).show()
+                if (batMoi.isNotEmpty()) chonThoiGian(act, "Theo dõi " + batMoi.joinToString(", ") { "cam ${it.optInt("so")}" } + " · điểm ${p.optString("stt")}") { phut ->
+                    batNhieu(act, ma, p, batMoi, phut, tenDuAn)
+                }
+            }.setNegativeButton("Huỷ", null).show()
+    }
+
+    private fun chonThoiGian(act: Activity, tieuDe: String, xong: (Double) -> Unit) {
+        val chon = arrayOf("2 giờ", "6 giờ", "24 giờ", "Tuỳ chọn (nhập số giờ)")
+        AlertDialog.Builder(act).setTitle(tieuDe).setItems(chon) { _, i ->
+            when (i) {
+                0 -> xong(120.0); 1 -> xong(360.0); 2 -> xong(1440.0)
+                else -> {
+                    val o = EditText(act); o.hint = "Số giờ, vd 12"; o.inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                    AlertDialog.Builder(act).setTitle("Theo dõi bao nhiêu giờ?").setView(o)
+                        .setPositiveButton("Bắt đầu") { _, _ -> o.text.toString().replace(",", ".").toDoubleOrNull()?.let { if (it > 0) xong(it * 60) } }
+                        .setNegativeButton("Huỷ", null).show()
+                }
+            }
+        }.setNegativeButton("Huỷ", null).show()
+    }
+
+    private fun batNhieu(act: Activity, ma: String, p: JSONObject, cams: List<JSONObject>, phut: Double, tenDuAn: String) {
+        if (Build.VERSION.SDK_INT >= 33 && act.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+            act.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 77)
+        val ok = ArrayList<Int>(); var loi = ""
+        for (c in cams) try { core().callAttr("theodoi_bat", ma, p.toString(), c.optInt("so"), phut, tenDuAn); ok.add(c.optInt("so")) }
+            catch (e: Exception) { loi = e.message?.substringAfterLast("Error: ")?.take(100) ?: "" }
+        if (ok.isNotEmpty()) {
+            val i = Intent(act, TheoDoiService::class.java)
+            if (Build.VERSION.SDK_INT >= 26) act.startForegroundService(i) else act.startService(i)
+        }
+        val gio = (phut / 60).let { if (it % 1.0 == 0.0) it.toInt().toString() else "%.1f".format(it) }
+        Toast.makeText(act, (if (ok.isNotEmpty()) "Đã bật theo dõi cam ${ok.joinToString(", ")} điểm ${p.optString("stt")} trong $gio giờ — mỗi cam một báo cáo PDF. Để điện thoại có mạng, nên cắm sạc." else "") +
+            (if (loi.isNotEmpty()) "\nKhông bật được: $loi" else ""), Toast.LENGTH_LONG).show()
+    }
+
     private fun bat(act: Activity, ma: String, p: JSONObject, c: JSONObject, phut: Double, tenDuAn: String) {
         if (Build.VERSION.SDK_INT >= 33 && act.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             act.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 77)
