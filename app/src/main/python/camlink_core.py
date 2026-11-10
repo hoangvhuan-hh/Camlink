@@ -32,6 +32,8 @@ def khoi_tao(thu_muc):
     import camlink_theodoi as TD
     TD.khoi_tao(thu_muc)
     TD.KHI_BAO = _theodoi_bao_lm
+    import camlink_chandoan as CD
+    CD.khoi_tao(thu_muc)
     global GOC
     GOC = thu_muc
     os.makedirs(os.path.join(GOC, "ketqua"), exist_ok=True)
@@ -1041,3 +1043,24 @@ def truc_tiep_bao(ma, json_b):
 def theodoi_lam_lai(tid):
     import camlink_theodoi as TD
     return TD.lam_lai_pdf(tid)
+
+
+def chandoan_tinh(ma, json_bang_chung, giai_doan="dang_mat"):
+    """Phiếu chẩn đoán theo % khả năng lỗi cho màn hình (bằng chứng do app thu được: cả điểm mất / 1 cam / treo / từ chối / video đứt / câu trả lời hiện trường)."""
+    import camlink_chandoan as CD
+    return json.dumps(CD.tinh(json.loads(json_bang_chung), ma, giai_doan), ensure_ascii=False)
+
+
+def chandoan_viec_sua(json_pd, json_sua_co_san):
+    import camlink_chandoan as CD
+    return json.dumps(CD.viec_sua(json.loads(json_pd), json.loads(json_sua_co_san)), ensure_ascii=False)
+
+
+def chandoan_xac_nhan(ma, su_co, nguyen_nhan, ghi_chu=""):
+    import camlink_chandoan as CD
+    return CD.xac_nhan(ma, su_co, nguyen_nhan, ghi_chu)
+
+
+def chandoan_ds_nguyen_nhan():
+    import camlink_chandoan as CD
+    return json.dumps([[k, v[0]] for k, v in CD.NGUYEN_NHAN.items()], ensure_ascii=False)

@@ -81,7 +81,7 @@ class GiamSatActivity : Activity() {
     }
 
     // ---------------- TRẠNG THÁI TRỰC TIẾP (nguồn sự thật của màn này) ----------------
-    private class TT { var tt = ""; var luc = 0L; var hong = 0; var rotTu = 0L; var daBao = false; var ly = ""; var videoHong = 0; var thuVideoSau = 0L }
+    private class TT { var tt = ""; var luc = 0L; var hong = 0; var rotTu = 0L; var daBao = false; var ly = ""; var videoHong = 0; var thuVideoSau = 0L; var kq = "" }
     private class O(val khung: FrameLayout, val nhan: TextView, val bm: android.graphics.Bitmap?, val p: JSONObject, val c: JSONObject)
     private val ttCam = HashMap<String, TT>()                 // "stt:http"
     private val oLuoi = LinkedHashMap<String, O>()
@@ -141,6 +141,7 @@ class GiamSatActivity : Activity() {
             val o = oLuoi[k] ?: continue
             val t = ttCam.getOrPut(k) { TT() }
             t.luc = now
+            t.kq = r
             if (r == "mo" || r == "xem") {
                 if (t.daBao) baoLm(o, "len", t)
                 t.hong = 0; t.rotTu = 0; t.daBao = false
@@ -191,11 +192,26 @@ class GiamSatActivity : Activity() {
             the.first.background = GradientDrawable().apply { setColor(Color.parseColor("#172029")); cornerRadius = dp(8).toFloat(); setStroke(dp(2), Color.parseColor(mauVien[muc] ?: "#5B6776")) }
             val cs = oLuoi.filter { it.value.p.optString("stt") == stt }
             val l = cs.keys.count { ttCam[it]?.tt == "xanh" }
-            the.second.text = "Điểm $stt · $l/${cs.size} lên · ${cs.values.first().p.optString("ten")}"
+            the.second.text = "Điểm $stt · $l/${cs.size} lên · ${cs.values.first().p.optString("ten")}" + khaNangGon(cs.values.first().p, muc)
             the.second.setTextColor(Color.parseColor(when (muc) { "xanh" -> "#7ED6A0"; "vang" -> "#FFD166"; "do" -> "#FF8A80"; else -> "#E7EDF2" }))
         }
         tieuDe?.text = "${kq.optString("du_an")} · $len/$tong cam lên · TRỰC TIẾP" +
             (if (cuNhat > 0) " (đo ${((now - cuNhat) / 1000)}s trước)" else " (đang đo…)")
+    }
+
+    private val dmCache = HashMap<String, Pair<String, String>>()   // stt → (bằng chứng, dòng khả năng)
+    private fun khaNangGon(p: JSONObject, muc: String): String {
+        if (muc != "do") return ""
+        val bc = bangChung(p).toString()
+        val stt = p.optString("stt")
+        dmCache[stt]?.let { if (it.first == bc) return it.second }
+        val dong = try {
+            val pd = JSONObject(core().callAttr("chandoan_tinh", ma, bc, "dang_mat").toString())
+            val kn = pd.optJSONArray("kha_nang") ?: JSONArray()
+            "\n🩺 " + (0 until minOf(2, kn.length())).joinToString(" · ") { kn.getJSONObject(it).let { k -> k.optString("ten").split("(")[0].trim().replace("Modem hoặc đường truyền VNPT bị đứt", "Modem/VNPT").replace("Mất điện lưới tại điểm", "Mất điện") + " ${k.optInt("pt")}%" } }
+        } catch (_: Exception) { "" }
+        dmCache[stt] = bc to dong
+        return dong
     }
 
     /** Video luồng phụ cho các ô ĐANG HIỆN trên màn, tối đa 4 (Wi-Fi) / 2 (4G). Ô khuất tắt ngay. */
@@ -257,7 +273,7 @@ class GiamSatActivity : Activity() {
             val k = LinearLayout(this)
             k.orientation = LinearLayout.VERTICAL
             k.setPadding(dp(6), dp(6), dp(6), dp(6))
-            val dau = chu("Điểm ${p.optString("stt")} · ${p.optString("ten")}", 13f, true, "#E7EDF2").apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
+            val dau = chu("Điểm ${p.optString("stt")} · ${p.optString("ten")}", 13f, true, "#E7EDF2").apply { maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END }
             k.addView(dau)
             theDiem[p.optString("stt")] = k to dau
             val cs = p.optJSONArray("cam") ?: JSONArray()
@@ -332,6 +348,7 @@ class GiamSatActivity : Activity() {
                 goc.addView(chu("↑ ảnh khảo sát LiteMark tại ghim $lmStt", 10f, false, "#9AA8B5").apply { setPadding(dp(4), 0, dp(4), dp(6)) })
             }
         }
+        theChanDoan(p)
         val cs = p.optJSONArray("cam") ?: JSONArray()
         val o = GridLayout(this)
         // 1–2 cam: mỗi cam một hàng, khung rộng hết màn (16:9); 3 cam trở lên: 2 cột. Chiều cao chia theo phần màn còn trống.
@@ -401,6 +418,144 @@ class GiamSatActivity : Activity() {
         h2.addView(nutDuoi("📋 Chi tiết / sửa") { setResult(RESULT_OK, Intent().putExtra("stt", p.optString("stt"))); finish() }, lp())
         h2.addView(nutDuoi("✕ Đóng") { veLuoi() }, lp())
         duoi.addView(h1); duoi.addView(h2)
+    }
+
+    // ---------------- CHẨN ĐOÁN THEO % KHẢ NĂNG LỖI (không khẳng định) ----------------
+    private val traLoi = HashMap<String, HashSet<String>>()     // stt → câu trả lời của người tại điểm (mã bằng chứng)
+
+    /** Bằng chứng của điểm từ trạng thái đo trực tiếp + kết quả quét + câu trả lời hiện trường. */
+    private fun bangChung(p: JSONObject): JSONArray {
+        val cs = p.optJSONArray("cam") ?: JSONArray()
+        val stt = p.optString("stt")
+        val b = LinkedHashSet<String>()
+        var hong = 0; var len = 0
+        for (i in 0 until cs.length()) {
+            val c = cs.getJSONObject(i)
+            val t = ttCam[khoa(p, c)]
+            val loi = if (t != null && t.tt.isNotEmpty()) t.tt != "xanh" else c.optString("muc") != "xanh"
+            if (loi) hong++ else len++
+            when (t?.kq ?: "") { "treo", "treo_hoac_im" -> b.add("treo"); "tu_choi" -> b.add("tu_choi") }
+            if (t != null && t.videoHong > 0 && t.hong == 0) b.add("video_ngat_web_con")
+            if (t == null || t.tt.isEmpty()) {
+                if (c.optString("t_http") == "tu_choi") b.add("tu_choi")
+                if (c.optString("nhan").contains("user/pass")) b.add("sai_mat_khau")
+                if (c.optString("nhan").contains("treo", true)) b.add("treo")
+            }
+        }
+        if (hong > 0 && len == 0 && !b.contains("tu_choi") && !b.contains("sai_mat_khau")) b.add("ca_diem_mat") else if (hong > 0 && len > 0) b.add("mot_cam_mat")
+        // điểm khác của dự án đang mất cả điểm cùng lúc → khả năng điện/VNPT khu vực
+        val khac = diemList().count { q -> q.optString("stt") != stt && (q.optJSONArray("cam") ?: JSONArray()).let { a ->
+            a.length() > 0 && (0 until a.length()).all { ttCam[khoa(q, a.getJSONObject(it))]?.tt == "do" } } }
+        if (khac >= 2 && b.contains("ca_diem_mat")) b.add("nhieu_diem_cung_luc")
+        traLoi[stt]?.let { b.addAll(it) }
+        return JSONArray(b.toList())
+    }
+
+    private fun core() = com.chaquo.python.Python.getInstance().getModule("camlink_core")
+
+    private fun theChanDoan(p: JSONObject) {
+        val bc = bangChung(p)
+        val coLoi = (0 until bc.length()).any { bc.getString(it) in setOf("ca_diem_mat", "mot_cam_mat", "treo", "tu_choi", "sai_mat_khau", "video_ngat_web_con") }
+        if (!coLoi) return
+        val pd = try { JSONObject(core().callAttr("chandoan_tinh", ma, bc.toString(), "dang_mat").toString()) } catch (_: Exception) { return }
+        val stt = p.optString("stt")
+        val the = LinearLayout(this); the.orientation = LinearLayout.VERTICAL
+        the.setPadding(dp(8), dp(6), dp(8), dp(8))
+        the.background = GradientDrawable().apply { setColor(Color.parseColor("#1E2731")); cornerRadius = dp(8).toFloat(); setStroke(dp(1), Color.parseColor("#3A4756")) }
+        the.addView(chu("🩺 Khả năng lỗi (không khẳng định)", 13f, true, "#E7EDF2"))
+        val kn = pd.optJSONArray("kha_nang") ?: JSONArray()
+        for (i in 0 until kn.length()) {
+            val k = kn.getJSONObject(i)
+            val hang = LinearLayout(this); hang.orientation = LinearLayout.HORIZONTAL; hang.gravity = Gravity.CENTER_VERTICAL
+            hang.addView(chu("${k.optInt("pt")}%", 13f, true, if (k.optBoolean("tu_xa")) "#7ED6A0" else "#FF8A80").apply { minWidth = dp(44) })
+            val thanh = View(this).apply { setBackgroundColor(Color.parseColor(if (k.optBoolean("tu_xa")) "#1D7A46" else "#B42318")) }
+            hang.addView(thanh, LinearLayout.LayoutParams(dp((k.optInt("pt") * 1.2).toInt().coerceAtLeast(4)), dp(8)).apply { setMargins(0, 0, dp(6), 0) })
+            hang.addView(chu(k.optString("ten") + if (k.optBoolean("tu_xa")) " · sửa từ xa được" else " · tại hiện trường", 11f, false, "#C6D0DA"), LinearLayout.LayoutParams(0, -2, 1f))
+            the.addView(hang)
+        }
+        val bcs = pd.optJSONArray("bang_chung") ?: JSONArray()
+        if (bcs.length() > 0) the.addView(chu("Dựa trên: " + (0 until bcs.length()).joinToString("; ") { bcs.getJSONObject(it).optString("ten") }, 10f, false, "#9AA8B5").apply { setPadding(0, dp(4), 0, dp(4)) })
+        // câu hỏi cho người tại điểm (khi cả điểm đang mất)
+        val hoi = pd.optJSONArray("cau_hoi") ?: JSONArray()
+        for (i in 0 until hoi.length()) {
+            val q = hoi.getJSONObject(i)
+            the.addView(chu("❓ Hỏi người tại điểm: ${q.optString("hoi")}", 11f, true, "#FFD27A").apply { setPadding(0, dp(4), 0, 0) })
+            val hang = LinearLayout(this); hang.orientation = LinearLayout.HORIZONTAL
+            val tl = q.optJSONArray("tra_loi") ?: JSONArray()
+            for (j in 0 until tl.length()) {
+                val t = tl.getJSONArray(j)
+                if (t.getString(1).isEmpty()) continue
+                hang.addView(Button(this).apply {
+                    text = t.getString(0); isAllCaps = false; textSize = 11f
+                    setOnClickListener { traLoi.getOrPut(stt) { HashSet() }.add(t.getString(1)); moDiem(p) }
+                }, LinearLayout.LayoutParams(0, -2, 1f))
+            }
+            the.addView(hang)
+        }
+        // nút theo luật: ≥60% sửa từ xa → sáng; điện + modem ≥50% → ẩn, hướng dẫn hiện trường
+        val nut = pd.optString("nut_sua")
+        val dau = kn.optJSONObject(0)
+        if (nut == "an") {
+            the.addView(chu("⚠ ${pd.optString("loi_nut")}\nViệc cần làm: ${dau?.optString("viec")}\nAi xử lý: ${dau?.optString("ai")}", 12f, true, "#FF8A80").apply { setPadding(0, dp(6), 0, dp(4)) })
+        } else {
+            the.addView(Button(this).apply {
+                text = if (nut == "sang") "🔧 Sửa từ xa (khả năng sửa được ${pd.optInt("p_tu_xa")}%)" else "Thử sửa từ xa (chỉ ${pd.optInt("p_tu_xa")}%)"
+                isAllCaps = false; textSize = 13f; setTextColor(Color.WHITE)
+                background = GradientDrawable().apply { setColor(Color.parseColor(if (nut == "sang") "#1D7A46" else "#4A5563")); cornerRadius = dp(8).toFloat() }
+                setOnClickListener { suaTuXa(p, pd) }
+            }, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, dp(6), 0, 0) })
+            if (nut != "sang") the.addView(chu(pd.optString("loi_nut"), 10f, false, "#9AA8B5"))
+        }
+        the.addView(Button(this).apply {
+            text = "✔ Đã xử lý — nguyên nhân thật là…"; isAllCaps = false; textSize = 12f
+            setOnClickListener { xacNhanNguyenNhan(stt) }
+        }, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, dp(4), 0, 0) })
+        the.addView(chu(pd.optString("ghi_chu"), 9f, false, "#7F8C99"))
+        goc.addView(the, LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(3), dp(2), dp(3), dp(6)) })
+    }
+
+    /** Chỉ chạy đúng thao tác sửa từ xa của các nguyên nhân có khả năng (không "cái gì cũng fix"). */
+    private fun suaTuXa(p: JSONObject, pd: JSONObject) {
+        val cs = p.optJSONArray("cam") ?: JSONArray()
+        val viec = ArrayList<Triple<Int, String, String>>()        // (số cam, mã việc, tên việc)
+        for (i in 0 until cs.length()) {
+            val c = cs.getJSONObject(i)
+            val t = ttCam[khoa(p, c)]
+            val loi = if (t != null && t.tt.isNotEmpty()) t.tt != "xanh" else c.optString("muc") != "xanh"
+            if (!loi) continue
+            val coSan = c.optJSONArray("sua") ?: JSONArray()
+            val ds = try { JSONArray(core().callAttr("chandoan_viec_sua", pd.toString(), coSan.toString()).toString()) } catch (_: Exception) { JSONArray() }
+            for (j in 0 until ds.length()) viec.add(Triple(c.optInt("so"), ds.getString(j), try { core().callAttr("ten_sua", ds.getString(j)).toString() } catch (_: Exception) { ds.getString(j) }))
+        }
+        if (viec.isEmpty()) {
+            AlertDialog.Builder(this).setTitle("Chưa có thao tác từ xa phù hợp")
+                .setMessage("Nguyên nhân có khả năng sửa từ xa nhưng app chưa có thao tác tự động cho cam này (hoặc chưa vào được web modem). Bấm \"Kiểm tra sâu\" để app quét lại và đề xuất thao tác.")
+                .setPositiveButton("Kiểm tra sâu") { _, _ -> xacMinhDiem(p, true) }.setNegativeButton("Đóng", null).show(); return
+        }
+        AlertDialog.Builder(this).setTitle("Sửa từ xa — điểm ${p.optString("stt")}")
+            .setMessage("App sẽ làm:\n" + viec.joinToString("\n") { "• Cam ${it.first}: ${it.third}" } + "\n\nXong tự kiểm tra lại điểm.")
+            .setPositiveButton("Sửa") { _, _ ->
+                Toast.makeText(this, "Đang sửa từ xa…", Toast.LENGTH_SHORT).show()
+                Thread {
+                    val kqs = viec.map { v -> try { val r = core().callAttr("tuxa_sua", ma, p.optString("stt"), v.first, v.second, null).asList(); "Cam ${v.first} · ${v.third}: ${if (r[0].toString() == "OK") "✓" else "✖"} ${r[1]}" } catch (e: Exception) { "Cam ${v.first} · ${v.third}: lỗi ${e.message?.take(60)}" } }
+                    runOnUiThread {
+                        AlertDialog.Builder(this).setTitle("Kết quả sửa từ xa").setMessage(kqs.joinToString("\n")).setPositiveButton("OK", null).show()
+                        xacMinhDiem(p, true)
+                    }
+                }.start()
+            }.setNegativeButton("Huỷ", null).show()
+    }
+
+    private fun xacNhanNguyenNhan(stt: String) {
+        val ds = try { JSONArray(core().callAttr("chandoan_ds_nguyen_nhan").toString()) } catch (_: Exception) { return }
+        val ten = (0 until ds.length()).map { ds.getJSONArray(it).getString(1) }.toTypedArray()
+        AlertDialog.Builder(this).setTitle("Điểm $stt — nguyên nhân thật là?").setItems(ten) { _, i ->
+            val maSuCo = "$stt:" + java.text.SimpleDateFormat("yyyyMMddHH").format(java.util.Date())
+            Thread {
+                val n = try { core().callAttr("chandoan_xac_nhan", ma, maSuCo, ds.getJSONArray(i).getString(0), "").toInt() } catch (_: Exception) { 0 }
+                runOnUiThread { Toast.makeText(this, "Đã ghi. Dự án có $n lần xác nhận — app dùng để chẩn đoán chính xác dần.", Toast.LENGTH_LONG).show() }
+            }.start()
+        }.setNegativeButton("Huỷ", null).show()
     }
 
     /** Theo dõi CẢ ĐIỂM: mọi cam đo chung một lượt, chung một báo cáo. */

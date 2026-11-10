@@ -312,7 +312,7 @@ def vong(loai_mang=""):
     """Đo mọi lần theo dõi tới hạn — cam cùng điểm đo CHUNG một lượt. Trả tóm tắt + báo cáo mới + tin báo ngay."""
     global _MANG
     _MANG = loai_mang or ""
-    xong_moi, bao = [], []
+    xong_moi, bao, dong_moi = [], [], []
     with _KHOA:
         dang = [m for m in ds() if m["trang_thai"] == "dang" and time.time() >= m.get("toi", 0)]
     nhom_do = {}
@@ -334,19 +334,47 @@ def vong(loai_mang=""):
                 r = m2.get("dang_rot")
                 if r and not r.get("da_bao") and mau["t"] - r["bd"] >= BAO_SAU:
                     r["da_bao"] = True
+                    tam = _su_tam(m2, r, mau["t"])
+                    import camlink_chandoan as D
+                    pd = D.tinh(D.tu_su_kien({**tam, "ip_truoc": r["ip_truoc"], "ip_sau": r.get("ip_moi", ""), "ban_co": bool(m2["ban"]),
+                                             "ti_le_ban_len": (r["ban_len"] / r["ban_do"]) if r["ban_do"] else None,
+                                             "treo": r.get("treo", 0) / max(1, r["mau"]), "tu_choi": r["tu_choi"] / max(1, r["mau"])}),
+                                m2["ma"], "dang_mat")
                     bao.append({"kieu": "rot", "id": m2["id"], "ten": _ten(m2), "bd": r["bd"], "ma": m2["ma"], "stt": m2["stt"], "so": m2["so"],
-                                "http": m2["http"], **_su_tam(m2, r, mau["t"])})
-                elif r0.get("da_bao") and not r:
-                    sk = _doc(_thu_muc(m2["id"], "su_kien.json"), [])
-                    x = sk[-1] if sk else {}
-                    bao.append({"kieu": "len", "id": m2["id"], "ten": _ten(m2), "bd": x.get("bd", 0), "dur": x.get("dur", 0), "ma": m2["ma"],
-                                "stt": m2["stt"], "so": m2["so"], "http": m2["http"], "loai": x.get("loai", ""), "nguyen_nhan": x.get("nguyen_nhan", "")})
+                                "http": m2["http"], **tam, "nguyen_nhan": "Khả năng: " + D.dong_mot_dong(pd)})
+                elif r0 and not r:
+                    dong_moi.append((m2["id"], bool(r0.get("da_bao"))))
                 m2["toi"] = mau["t"] + m2["nhip"]
                 if time.time() >= m2["het"]:
                     _ket_thuc(m2)
                     xong_moi.append(m2)
                 else:
                     _ghi(_thu_muc(m2["id"], "meta.json"), m2)
+    # lần rớt vừa kết thúc → đọc nhật ký các cam của điểm: cam có khởi động lại không (tách MẤT ĐIỆN với MODEM/VNPT)
+    for tid, da_bao in dong_moi:
+        try:
+            x = doc_khoi_dong_su_kien(tid)
+        except Exception:
+            x = None
+        if da_bao:
+            m2 = _doc(_thu_muc(tid, "meta.json")) or {}
+            x = x or (_doc(_thu_muc(tid, "su_kien.json"), []) or [{}])[-1]
+            import camlink_chandoan as D
+            pd = D.tinh(D.tu_su_kien(x), m2.get("ma", ""), "sau_khi_len")
+            bao.append({"kieu": "len", "id": tid, "ten": _ten(m2), "bd": x.get("bd", 0), "dur": x.get("dur", 0), "ma": m2.get("ma", ""),
+                        "stt": m2.get("stt"), "so": m2.get("so"), "http": m2.get("http"), "loai": x.get("loai", ""),
+                        "nguyen_nhan": "Khả năng: " + D.dong_mot_dong(pd)})
+    # cả điểm cùng rớt / cùng lên → gộp thành 1 tin cho điểm (không báo từng cam trùng nội dung)
+    gop = {}
+    for b in bao:
+        mb = _doc(_thu_muc(b["id"], "meta.json")) or {}
+        k = (mb.get("nhom") or b["id"], b["kieu"], b.get("nguyen_nhan", ""))
+        if k in gop:
+            gop[k]["ten"] += f", {b.get('so')}"
+            gop[k].setdefault("ds", []).append(b)
+        else:
+            gop[k] = dict(b, ds=[b])
+    bao_tin = list(gop.values())
     for b in bao:
         if KHI_BAO:
             try:
@@ -363,7 +391,48 @@ def vong(loai_mang=""):
         don_cu()
     except Exception:
         pass
-    return {"dang": [x for x in ds_hien() if x["trang_thai"] == "dang"], "xong_moi": [m["id"] for m in xong_moi], "pdf_moi": pdf_moi, "bao": bao}
+    return {"dang": [x for x in ds_hien() if x["trang_thai"] == "dang"], "xong_moi": [m["id"] for m in xong_moi], "pdf_moi": pdf_moi,
+            "bao": [{k: v for k, v in b.items() if k != "ds"} for b in bao_tin]}
+
+
+_NK_CACHE = {}
+
+
+def _nhat_ky_khoi_dong(m, dich):
+    """Các lần khởi động của cam (đọc nhật ký ONVIF). None = cam không cho đọc. Lưu đệm 2 phút để các cam cùng điểm không hỏi lại."""
+    k = (m["domain"], m["http"])
+    if k in _NK_CACHE and time.time() - _NK_CACHE[k][0] < 120:
+        return _NK_CACHE[k][1]
+    import camlink_chandoan as D
+    import camlink_dt as C
+    try:
+        ov = C.Onvif(dich, m["http"], m["user"], m["pass"])
+        ov.co()
+        ds_kd = D.lan_khoi_dong(ov.nhat_ky())
+    except Exception:
+        ds_kd = None
+    _NK_CACHE[k] = (time.time(), ds_kd)
+    return ds_kd
+
+
+def doc_khoi_dong_su_kien(tid):
+    """Lần rớt cuối của cam tid vừa kết thúc → đọc nhật ký mọi cam cùng điểm → ghi 'cam_khoi_dong' vào lần rớt đó."""
+    import camlink_chandoan as D
+    m = _doc(_thu_muc(tid, "meta.json"))
+    sk = _doc(_thu_muc(tid, "su_kien.json"), [])
+    if not m or not sk or sk[-1].get("chua_len"):
+        return None
+    x = sk[-1]
+    dich = _ip(m["domain"]) or m["domain"]
+    cung = _cung_nhom(m["nhom"]) if m.get("nhom") else [m]
+    cua = _nhat_ky_khoi_dong(m, dich)
+    khac = [_nhat_ky_khoi_dong(y, dich) for y in cung if y["id"] != tid]
+    kq, luc = D.xep_khoi_dong(x["bd"], x.get("kt", x["bd"] + x["dur"]), cua, khac)
+    with _KHOA:
+        sk = _doc(_thu_muc(tid, "su_kien.json"), [])
+        sk[-1]["cam_khoi_dong"], sk[-1]["cam_khoi_dong_luc"] = kq, luc
+        _ghi(_thu_muc(tid, "su_kien.json"), sk)
+    return sk[-1]
 
 
 def lam_lai_pdf(tid):
@@ -643,6 +712,15 @@ def phan_tich(tid):
     sk.sort(key=lambda y: y["bd"])
     for i, y in enumerate(sk, 1):
         y["n"] = i
+    # CHẨN ĐOÁN theo % khả năng (không khẳng định) — có đối chiếu điểm khác của dự án rớt cùng lúc
+    import camlink_chandoan as D
+    khac = {}
+    for y in ds():
+        if y.get("ma") == m.get("ma") and y["domain"] != m["domain"]:
+            khac.setdefault(y["domain"], []).extend(z["bd"] for z in _doc(_thu_muc(y["id"], "su_kien.json"), []))
+    for y in sk:
+        cung = sum(1 for _, ds_bd in khac.items() if any(abs(t - y["bd"]) <= 180 for t in ds_bd))
+        y["chan_doan"] = D.tinh(D.tu_su_kien(y, cung), m.get("ma", ""), "dang_mat" if y.get("chua_len") else "sau_khi_len")
     rot = sum(x["dur"] for x in sk)
     tg_do = max(1, tong_tg - khong_do + them_do)
     phu = min(1.0, tg_do / tong_tg)
@@ -663,9 +741,15 @@ def phan_tich(tid):
         ket = ("Không có lần rớt kéo dài, nhưng có " + str(len(cc0)) + " lần chập chờn ngắn (< 1 phút)." if cc0
                else "Cam ổn định trong suốt thời gian theo dõi — không có lần rớt nào.")
     else:
-        ket = f"Rớt {len(sk)} lần, nhiều lần nhất do: {nhom[0]['ten'].split('(')[0].strip().lower()} ({nhom[0]['so']} lần)"
-        lau = max(nhom, key=lambda g: g["giay"])
-        ket += (f"; mất nhiều thời gian nhất do: {lau['ten'].split('(')[0].strip().lower()} ({_thoi_luong(lau['giay'])})." if lau is not nhom[0] else ".")
+        tl = {}
+        for y in sk:
+            k = y["chan_doan"]["kha_nang"][0]
+            g = tl.setdefault(k["ma"], {"ten": k["ten"], "so": 0, "pt": []})
+            g["so"] += 1
+            g["pt"].append(k["pt"])
+        xep = sorted(tl.values(), key=lambda g: -g["so"])
+        ket = f"Rớt {len(sk)} lần — khả năng cao nhất: " + "; ".join(
+            f"{g['ten'].split('(')[0].strip().lower()} ({g['so']} lần, trung bình {round(sum(g['pt']) / len(g['pt']))}%)" for g in xep[:2]) + "."
     thieu = phu < 0.5
     if thieu:      # đo được quá ít → KHÔNG được kết luận ổn định (trước đây ghi "ổn định 100%" dù chỉ đo 3 lượt trong 3 giờ)
         ket = (f"KHÔNG ĐỦ DỮ LIỆU để kết luận — chỉ đo được {round(100 * phu)}% thời gian ({_thoi_luong(tg_do)} / {_thoi_luong(tong_tg)}). "
@@ -736,7 +820,7 @@ def bao_cao_pdf(tid):
     el = []
     cam_txt = ", ".join(f"cam {a['m']['so']} (:{a['m']['http']})" for a in A)
     el.append(Paragraph("BÁO CÁO THEO DÕI ỔN ĐỊNH CAMERA", H1))
-    el.append(Paragraph(f"{m.get('du_an') or ''} · Điểm {m['stt']}. {m['ten_diem']} · <b>{m['domain']}</b> · {cam_txt}", P))
+    el.append(Paragraph((f"{m['du_an']} · " if m.get('du_an') else "") + f"Điểm {m['stt']}. {m['ten_diem']} · <b>{m['domain']}</b> · {cam_txt}", P))
     tong_tg = A[0]["tong_tg"]
     el.append(Paragraph(f"Theo dõi từ {_gio(m['bat_dau'])} đến {_gio(m['het'])} ({_thoi_luong(tong_tg)}), đo {A[0]['so_mau']} lượt, "
                         f"mỗi {m['nhip']} giây (hỏi trang web từng cam, luồng video 2 phút/lần) · CamLink", NHO))
@@ -774,7 +858,7 @@ def bao_cao_pdf(tid):
         el.append(Paragraph(f"<b>{'Cam ' + str(a['m']['so']) + ': ' if nhieu else 'Kết luận: '}</b>{kl}",
                             s(c=10, l=13.5, textColor=VANG if a["thieu"] else (XANH if not a["su_kien"] else (DO if a["len_pt"] < 97 else VANG)))))
     if nhieu and ca_diem:
-        el.append(Paragraph(f"<b>Cả điểm:</b> {ca_diem} lần mọi cam cùng mất → lỗi ở điện / modem / đường truyền, không phải lỗi từng cam.", s(c=10, l=13.5, textColor=DO)))
+        el.append(Paragraph(f"<b>Cả điểm:</b> {ca_diem} lần mọi cam cùng mất → không phải lỗi từng cam; khả năng điện hay modem/VNPT xem mục 1.", s(c=10, l=13.5, textColor=DO)))
     # ---- dải thời gian từng cam
     nhan_w = 42 if nhieu else 0
     BW = W - nhan_w
@@ -801,14 +885,25 @@ def bao_cao_pdf(tid):
     el.append(Paragraph("Dải thời gian: xanh = lên · đỏ = rớt · tím = cam treo · vàng = chập chờn ngắn · xám = không đo được", NHO))
     el.append(d)
     # ---- 2. nguyên nhân
-    el.append(Paragraph("1. Nguyên nhân các lần rớt", H2))
+    el.append(Paragraph("1. Chẩn đoán các lần rớt — khả năng lỗi (không khẳng định)", H2))
     co_rot = False
+    import camlink_chandoan as D
     for a in A:
         tien = f"Cam {a['m']['so']} — " if nhieu else ""
-        for g in a["nhom"]:
+        gop = {}
+        for x in a["su_kien"]:
+            pd = x.get("chan_doan")
+            if not pd:
+                continue
+            k = pd["kha_nang"][0]
+            g = gop.setdefault(k["ma"], {"ten": k["ten"], "so": 0, "giay": 0, "pt": []})
+            g["so"] += 1
+            g["giay"] += x["dur"]
+            g["pt"].append(k["pt"])
+        for k, g in sorted(gop.items(), key=lambda y: -y[1]["so"]):
             co_rot = True
-            el.append(Paragraph(f"• {tien}<b>{g['ten']}</b>: {g['so']} lần, tổng {_thoi_luong(g['giay'])} "
-                                f"({round(100 * g['giay'] / max(1, a['rot']))}% thời gian rớt)", P))
+            el.append(Paragraph(f"• {tien}Khả năng cao nhất <b>{g['ten']}</b> (trung bình {round(sum(g['pt']) / len(g['pt']))}%): "
+                                f"{g['so']} lần, tổng {_thoi_luong(g['giay'])}", P))
         if a["gio"] and len(a["su_kien"]) >= 3:
             h, n = max(a["gio"].items(), key=lambda x: x[1])
             if n >= 2:
@@ -837,7 +932,7 @@ def bao_cao_pdf(tid):
     if tat:
         el.append(Paragraph("2. Danh sách các lần rớt", H2))
         hien = sorted(sorted(tat, key=lambda y: -y[1]["dur"])[:18], key=lambda y: y[1]["bd"])
-        rows = [(["Cam"] if nhieu else []) + ["Bắt đầu", "Lên lại", "Kéo dài", "Nguyên nhân · dấu hiệu"]]
+        rows = [(["Cam"] if nhieu else []) + ["Bắt đầu", "Lên lại", "Kéo dài", "Khả năng lỗi · dấu hiệu"]]
         for so, x in hien:
             dh = []
             if x.get("ti_le_ban_len") is not None:
@@ -846,9 +941,16 @@ def bao_cao_pdf(tid):
                 dh.append(f"IP {x['ip_truoc']} → {x['ip_sau']}")
             if x.get("dns_loi"):
                 dh.append("tên miền không phân giải")
+            kdc = x.get("cam_khoi_dong")
+            if kdc in ("ca_diem", "rieng", "ca_diem_chua_ro"):
+                dh.append(f"nhật ký cam: khởi động lại {x.get('cam_khoi_dong_luc', '')}")
+            elif kdc == "khong":
+                dh.append("nhật ký cam: không khởi động lại")
             rows.append(([str(so)] if nhieu else []) + [_gio(x["bd"])[:8], (Paragraph("chưa lên<br/>(hết giờ theo dõi)", s(c=8, l=10)) if x.get("chua_len")
                         else Paragraph("không ghi được<br/>(rời màn xem)", s(c=8, l=10)) if x.get("chua_ro_len") else _gio(x["kt"])[:8]),
-                        _thoi_luong(x["dur"]), Paragraph(f"{x['nguyen_nhan'].split('(')[0].split(':')[0].strip()}" + (f" · <font color='#5B6776'>{'; '.join(dh)}</font>" if dh else ""), s(c=8.5, l=11))])
+                        _thoi_luong(x["dur"]), Paragraph(("<b>" + D.dong_mot_dong(x["chan_doan"]).replace("Modem hoặc đường truyền VNPT bị đứt", "Modem/VNPT").replace("Mất điện lưới tại điểm", "Mất điện")
+                                                           .replace("Nguồn rời hoặc dây mạng của riêng cam này", "Nguồn/dây cam") + "</b>" if x.get("chan_doan") else x["nguyen_nhan"])
+                                                          + (f"<br/><font color='#5B6776'>{'; '.join(dh)}</font>" if dh else ""), s(c=8, l=10.5))])
         cw = ([W * .06] if nhieu else []) + [W * .13, W * .16, W * .14] + [W * (.51 - (.06 if nhieu else 0) + .06 * (0 if nhieu else 0))]
         cw[-1] = W - sum(cw[:-1])
         t = Table(rows, colWidths=cw, repeatRows=1)
@@ -859,7 +961,21 @@ def bao_cao_pdf(tid):
             con = [x for y in tat if y not in hien for x in [y[1]]]
             el.append(Paragraph(f"Còn {len(con)} lần rớt ngắn khác, tổng {_thoi_luong(sum(x['dur'] for x in con))} (không liệt kê).", NHO))
     # ---- 4. đề xuất (gộp mọi cam, nhóm nhiều lần nhất lên trước, không lặp)
-    el.append(Paragraph("3. Đề xuất khắc phục", H2))
+    el.append(Paragraph("3. Đề xuất khắc phục — theo khả năng lỗi", H2))
+    gop_dx = {}
+    for a in A:
+        for x in a["su_kien"]:
+            pd = x.get("chan_doan")
+            if pd:
+                for k in pd["kha_nang"][:2]:
+                    if k["pt"] >= 20:
+                        g = gop_dx.setdefault(k["ma"], {**k, "so": 0})
+                        g["so"] += 1
+    for i, (k, g) in enumerate(sorted(gop_dx.items(), key=lambda y: -y[1]["so"]), 1):
+        el.append(Paragraph(f"<b>{i}. {g['ten']}</b> ({g['so']} lần có khả năng ≥ 20%) — "
+                            + ("<font color='#1D7A46'>sửa được từ xa bằng CamLink</font>" if g["tu_xa"] else "<font color='#B42318'>phải xử lý tại hiện trường</font>"), P))
+        el.append(Paragraph(f"   – Việc cần làm: {g['viec']}", P))
+        el.append(Paragraph(f"   – Ai xử lý: {g['ai']}", P))
     gom = {}
     for a in A:
         for g in a["nhom"]:
@@ -871,13 +987,8 @@ def bao_cao_pdf(tid):
                             "không tối ưu pin (app tự hỏi khi bật theo dõi), không cài bản app mới giữa chừng.", P))
     elif not gom:
         el.append(Paragraph("Không cần xử lý. Nếu trước đây cam từng chập chờn, nên theo dõi thêm một lần vào khung giờ hay rớt.", P))
-    da = set()
-    for i, (k, g) in enumerate(sorted(gom.items(), key=lambda y: -y[1]["so"]), 1):
-        el.append(Paragraph(f"<b>{i}. {g['ten'].split('(')[0].split(':')[0].strip()}</b> ({g['so']} lần" + (f", cam {', '.join(g['cam'])}" if nhieu else "") + "):", P))
-        for v in NGUYEN_NHAN[k][1]:
-            if v not in da:
-                da.add(v)
-                el.append(Paragraph(f"   – {v}", P))
+    if gop_dx:
+        gom = {}
     ngan_video = any(x["kieu"] == "video" for a in A for x in a["chap_chon"]) or any(a["live"] for a in A)
     if ngan_video and "video_ngat" not in gom and "man_xem_ngat" not in gom:
         el.append(Paragraph("<b>Cho các lần video ngắt ngắn:</b>", P))
@@ -900,7 +1011,9 @@ def bao_cao_pdf(tid):
             el.append(KeepTogether([Paragraph((f"Cam {so} · " if nhieu else "") + f"lần {x['n']} lúc {_gio(x['bd'])}, kéo dài {_thoi_luong(x['dur'])}", P), tbl]))
     el.append(Spacer(1, 6))
     el.append(Paragraph("Cách đọc: \"rớt\" = 2 lượt đo liên tiếp (≥ 1 phút) cam không trả lời trang web, bị treo, hoặc luồng video lỗi, trong khi điện thoại vẫn có mạng; "
-                        "hỏng 1 lượt rồi lên = \"chập chờn ngắn\"; lần ngắt ghi từ màn xem trực tiếp cũng tính là rớt. \"Treo\" = port vẫn nhận kết nối nhưng cam không trả lời. "
+                        "hỏng 1 lượt rồi lên = \"chập chờn ngắn\"; lần ngắt ghi từ màn xem trực tiếp cũng tính là rớt. "
+                        "Khả năng lỗi (%) = mức nền kinh nghiệm × bằng chứng đo được (nhật ký cam, IP, cam khác cùng điểm, điểm khác cùng lúc), không phải khẳng định; "
+                        "sau khi xử lý bấm \"Nguyên nhân thật là…\" trong app để app chính xác dần. \"Treo\" = port vẫn nhận kết nối nhưng cam không trả lời. "
                         "Nguyên nhân suy ra từ cam khác cùng điểm, IP công cộng của modem và thời gian rớt; \"khởi động lại\" là suy luận "
                         "từ rớt ngắn 0,5–3 phút khi cam khác vẫn lên.", NHO))
     doc.build(el)

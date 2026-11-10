@@ -221,7 +221,7 @@ class TheoDoiService : Service() {
                         val x = bao.getJSONObject(i)
                         val gio = java.text.SimpleDateFormat("HH:mm").format(java.util.Date((x.optDouble("bd") * 1000).toLong()))
                         val (tieu, noi) = if (x.optString("kieu") == "rot")
-                            "⚠ ${x.optString("ten")} RỚT từ $gio" to "Đã rớt hơn 5 phút. Nghi: ${x.optString("nguyen_nhan")}. Đã báo lên ghim LiteMark (nếu dự án đã nối)."
+                            "⚠ ${x.optString("ten")} RỚT từ $gio" to "Đã rớt hơn 5 phút. ${x.optString("nguyen_nhan")} (không khẳng định — mở app xem bằng chứng). Đã báo lên ghim LiteMark (nếu dự án đã nối)."
                         else "✓ ${x.optString("ten")} đã lên lại" to "Rớt từ $gio, kéo dài ${(x.optDouble("dur") / 60).toInt()} phút. ${x.optString("nguyen_nhan")}"
                         val b = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, KENH_BAO) else @Suppress("DEPRECATION") Notification.Builder(this)
                         nm.notify(("bao" + x.optString("id")).hashCode(), b.setSmallIcon(android.R.drawable.stat_notify_error).setContentTitle(tieu).setContentText(noi)

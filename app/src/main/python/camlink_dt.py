@@ -181,6 +181,16 @@ class Onvif:
     def profile_dau(self, url_media):
         return self.ds_profile(url_media)[0]
 
+    def nhat_ky(self):
+        """Nhật ký hệ thống của cam (ONVIF GetSystemLog) — để biết cam có khởi động lại không. Cam không hỗ trợ → lỗi."""
+        t = self.goi('<tds:GetSystemLog><tds:LogType>System</tds:LogType></tds:GetSystemLog>', cho=10)
+        m = re.search(r"<(?:\w+:)?String>(.*?)</(?:\w+:)?String>", t, re.S)
+        if m:
+            import html
+            return html.unescape(m.group(1))
+        m = re.search(r"<(?:\w+:)?Include[^>]*>|<(?:\w+:)?Binary>(.*?)</", t, re.S)
+        raise RuntimeError("cam không trả nhật ký dạng chữ")
+
     def ds_profile(self, url_media):
         """Mọi profile video (profile 1 = luồng chính, profile 2 thường = luồng phụ). Lưu lại để lấy luồng phụ không phải hỏi cam lần nữa."""
         t = self.goi("<trt:GetProfiles/>", url=url_media)
