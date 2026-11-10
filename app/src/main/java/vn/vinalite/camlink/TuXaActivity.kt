@@ -658,7 +658,7 @@ class TuXaActivity : Activity() {
             khung.setBackgroundColor(Color.parseColor(if (muc == "xanh") "#172029" else "#5A1E1E"))
             val tt = chu("", 11f, true, mauVien[muc] ?: "#17202B")
             val anh = c.optString("anh")
-            val live = c.optString("live")
+            val live = c.optString("live_phu").ifEmpty { c.optString("live") }   // lưới: xem luồng phụ cho nhẹ (có thì dùng)
             if (muc == "xanh" && anh.isNotEmpty() && File(anh).exists()) {
                 val iv = ImageView(this)
                 iv.scaleType = ImageView.ScaleType.CENTER_CROP
@@ -679,7 +679,7 @@ class TuXaActivity : Activity() {
             oCam.addView(tt)
             oCam.addView(Button(this).apply {
                 text = "📈 Theo dõi"; isAllCaps = false; textSize = 12f
-                setOnClickListener { TheoDoi.bam(this@TuXaActivity, ma, p, c, tenDuAn) }
+                setOnClickListener { TheoDoi.diem(this@TuXaActivity, ma, p, tenDuAn) }
             }, LinearLayout.LayoutParams(-2, -2))
             o.addView(oCam, android.widget.GridLayout.LayoutParams(android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f),
                 android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)).apply { width = 0; setMargins(dp(2), dp(2), dp(2), dp(2)) })

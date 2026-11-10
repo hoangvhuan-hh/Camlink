@@ -179,11 +179,16 @@ class Onvif:
         return f"http://{self.ip}:{self.port}/onvif/media_service"
 
     def profile_dau(self, url_media):
+        return self.ds_profile(url_media)[0]
+
+    def ds_profile(self, url_media):
+        """Mọi profile video (profile 1 = luồng chính, profile 2 thường = luồng phụ). Lưu lại để lấy luồng phụ không phải hỏi cam lần nữa."""
         t = self.goi("<trt:GetProfiles/>", url=url_media)
-        m = re.search(r'Profiles[^>]*token="([^"]+)"', t)
-        if not m:
+        ds = re.findall(r'Profiles[^>]*token="([^"]+)"', t)
+        if not ds:
             raise RuntimeError("cam không có profile video")
-        return m.group(1)
+        self.profiles = ds
+        return ds
 
     def anh_chup(self, url_media, token):
         t = self.goi(f"<trt:GetSnapshotUri><trt:ProfileToken>{token}</trt:ProfileToken></trt:GetSnapshotUri>", url=url_media)

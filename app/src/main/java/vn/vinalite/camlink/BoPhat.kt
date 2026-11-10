@@ -26,14 +26,20 @@ class BoPhat(private val act: Activity) {
     private val ngatLuc = HashMap<String, Long>()
     private val baoXemLuc = HashMap<String, Long>()        // url → lúc luồng bắt đầu rớt (giữ tới khi có hình lại)
     private val canh = HashMap<String, Runnable>()       // url → vòng gõ cửa / canh hình đứng
+    private val oKhung = HashMap<FrameLayout, String>()
+    private val ghiChuUrl = HashMap<String, String>()  // khung đang gắn url nào (đổi luồng phụ ↔ HD thì huỷ vòng của url cũ)
     @Volatile private var dungHan = false
     @Volatile private var tamNghi = 0L                   // >0 = app đang tạm nghỉ (hộp xin quyền, chuyển app) — không được coi là cam rớt
     private val gio = java.text.SimpleDateFormat("HH:mm:ss")
     private fun dp(v: Int) = (v * act.resources.displayMetrics.density).toInt()
 
     /** Phát url vào khung; trangThai nhận dòng trạng thái. Lỗi → hiện lý do + nút mở VLC ngoài. */
-    fun phat(khung: FrameLayout, url: String, trangThai: TextView, chieuCao: Int = 200, khiLoi: (() -> Unit)? = null) {
+    fun phat(khung: FrameLayout, url: String, trangThai: TextView, chieuCao: Int = 200, khiLoi: (() -> Unit)? = null, ghiChu: String = "") {
         dungHan = false
+        oKhung[khung]?.let { cu -> if (cu != url) { canh.remove(cu)?.let { ui.removeCallbacks(it) }; dung(cu) } }
+        oKhung[khung] = url
+        if (ghiChu.isNotEmpty()) ghiChuUrl[url] = ghiChu
+        val ghiChu = ghiChuUrl[url] ?: ""
         canh.remove(url)?.let { ui.removeCallbacks(it) }
         dung(url)
         khung.removeAllViews()
@@ -58,7 +64,7 @@ class BoPhat(private val act: Activity) {
                     coHinhLuc[url] = System.currentTimeMillis()
                     val nl = ngatLuc.remove(url)
                     val them = if (nl != null) " · lên lại sau rớt ${(System.currentTimeMillis() - nl) / 1000}s" else ""
-                    trangThai.text = "🔴 TRỰC TIẾP · ${gio.format(java.util.Date())}$them"
+                    trangThai.text = "🔴 TRỰC TIẾP · ${gio.format(java.util.Date())}$them$ghiChu"
                     trangThai.setTextColor(Color.parseColor("#1D7A46"))
                     khung.setBackgroundColor(Color.TRANSPARENT)
                     if (nl != null) ghiLoi(url, nl, System.currentTimeMillis())
@@ -121,7 +127,15 @@ class BoPhat(private val act: Activity) {
             lan++
             baoXem(url, "ngat")
             Thread {
-                val mo = try { java.net.Socket().use { it.connect(java.net.InetSocketAddress(host, port), 4000) }; true } catch (_: Exception) { false }
+                // Hỏi "RTSP OPTIONS" (không đăng nhập, ~200 byte): cam phải TRẢ LỜI mới tính là lên — cam treo (nhận kết nối mà câm) không bị phát lại vô ích
+                val mo = try {
+                    java.net.Socket().use { sk ->
+                        sk.connect(java.net.InetSocketAddress(host, port), 4000); sk.soTimeout = 3000
+                        sk.getOutputStream().write("OPTIONS rtsp://$host:$port/ RTSP/1.0\r\nCSeq: 1\r\n\r\n".toByteArray())
+                        val b = ByteArray(8); val n = sk.getInputStream().read(b)
+                        n > 4 && String(b, 0, n).startsWith("RTSP")
+                    }
+                } catch (_: Exception) { false }
                 ui.post {
                     if (dungHan || !khung.isAttachedToWindow || canh[url] !== this) return@post
                     if (mo) { trangThai.text = "⏳ Cam đã trả lời (rớt từ $luc) — đang lấy hình…"; phat(khung, url, trangThai, chieuCao) }

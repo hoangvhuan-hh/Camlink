@@ -182,7 +182,7 @@ class GiamSatActivity : Activity() {
                 val lichSu = c.optString("tu_lich_su")
                 if (lichSu.isNotEmpty()) oCam.addView(chu("↺ lấy từ lần kiểm $lichSu — live lên = còn tốt; không lên thì bấm Chi tiết / sửa → kiểm lại", 10f, false, "#9AA8B5"), 1)
                 // Không tự quét lại cả điểm khi hình rớt (dồn việc lên cam đúng lúc cam yếu) — bộ phát tự gõ cửa nhẹ tới khi cam lên
-                boPhat.phat(khung, c.optString("live"), tt, cao)
+                phatO(khung, c, tt, cao)
             } else {
                 khung.setBackgroundColor(Color.parseColor("#5A1F1A"))
                 val ly = c.optString("nguyen_nhan").take(140)
@@ -223,15 +223,24 @@ class GiamSatActivity : Activity() {
         duoi.addView(h1); duoi.addView(h2)
     }
 
-    /** Theo dõi: 1 cam thì vào thẳng; nhiều cam thì tick chọn một hay nhiều cam. */
-    private fun chonCamTheoDoi(p: JSONObject) {
-        val cs = p.optJSONArray("cam") ?: JSONArray()
-        if (cs.length() == 0) return
-        if (cs.length() == 1) TheoDoi.bam(this, ma, p, cs.getJSONObject(0), kq.optString("du_an"))
-        else TheoDoi.chonNhieu(this, ma, p, kq.optString("du_an"))
-    }
+    /** Theo dõi CẢ ĐIỂM: mọi cam đo chung một lượt, chung một báo cáo. */
+    private fun chonCamTheoDoi(p: JSONObject) = TheoDoi.diem(this, ma, p, kq.optString("du_an"))
 
     private val daXacMinh = HashSet<String>()
+    private val xemHd = HashSet<String>()     // cam người dùng chọn xem HD (luồng chính)
+
+    /** Mặc định xem LUỒNG PHỤ (nhẹ 6–8 lần, không tranh băng thông với IOC); chạm khung để đổi HD ↔ luồng phụ. */
+    private fun phatO(khung: FrameLayout, c: JSONObject, tt: TextView, cao: Int) {
+        val chinh = c.optString("live"); val phu = c.optString("live_phu")
+        val khoa = chinh
+        fun chay() {
+            val hd = phu.isEmpty() || xemHd.contains(khoa)
+            boPhat.phat(khung, if (hd) chinh else phu, tt, cao,
+                ghiChu = if (phu.isEmpty()) "" else if (hd) " · HD (chạm để xem nhẹ)" else " · luồng phụ (chạm để xem HD)")
+        }
+        if (phu.isNotEmpty()) khung.setOnClickListener { if (!xemHd.add(khoa)) xemHd.remove(khoa); chay() }
+        chay()
+    }
 
     /** Đọc trạng thái bộ phát (chạy trên luồng giao diện) từ luồng nền. */
     private fun runOnUiThreadKq(f: () -> Boolean): Boolean {

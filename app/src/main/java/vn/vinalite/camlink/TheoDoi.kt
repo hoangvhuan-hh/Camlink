@@ -26,73 +26,36 @@ import org.json.JSONObject
 import java.io.File
 import kotlin.concurrent.thread
 
-/** THEO DÕI ỔN ĐỊNH MỘT CAM — giao diện dùng chung (màn Kiểm tra từ xa + màn giám sát). */
+/** THEO DÕI ỔN ĐỊNH THEO ĐIỂM — giao diện dùng chung (màn Kiểm tra từ xa + màn giám sát). */
 object TheoDoi {
     private fun core() = Python.getInstance().getModule("camlink_core")
 
     fun ds(): JSONArray = try { JSONArray(core().callAttr("theodoi_ds").toString()) } catch (_: Exception) { JSONArray() }
 
-    private fun dangTheoDoi(domain: String, http: Int): JSONObject? {
+    private fun dangTheoDoiDiem(domain: String): JSONObject? {
         val d = ds()
         for (i in 0 until d.length()) {
             val m = d.getJSONObject(i)
-            if (m.optString("trang_thai") == "dang" && m.optString("domain") == domain && m.optInt("http") == http) return m
+            if (m.optString("trang_thai") == "dang" && m.optString("domain") == domain) return m
         }
         return null
     }
 
-    /** Nút "📈 Theo dõi" trên ô cam: chưa theo dõi → chọn thời gian; đang theo dõi → xem / dừng lấy báo cáo. */
-    fun bam(act: Activity, ma: String, p: JSONObject, c: JSONObject, tenDuAn: String) {
-        val dang = dangTheoDoi(p.optString("domain"), c.optInt("http"))
+    /** Nút "📈 Theo dõi": theo dõi CẢ ĐIỂM (mọi cam, chung một lượt đo, chung một báo cáo). Đang theo dõi → xem / dừng lấy báo cáo. */
+    fun diem(act: Activity, ma: String, p: JSONObject, tenDuAn: String) {
+        val dang = dangTheoDoiDiem(p.optString("domain"))
         if (dang != null) {
-            AlertDialog.Builder(act).setTitle("Đang theo dõi điểm ${p.optString("stt")} · cam ${c.optInt("so")}")
-                .setMessage("Rớt ${dang.optInt("so_rot")} lần, tổng ${dang.optDouble("phut_rot")} phút" +
-                    (if (dang.optBoolean("dang_rot")) " (ĐANG RỚT)" else "") + "\nCòn ${dang.optInt("con_phut")} phút thì tự ra báo cáo PDF.")
+            val ct = dang.optJSONArray("chi_tiet") ?: JSONArray()
+            val tung = (0 until ct.length()).joinToString("\n") { i -> val x = ct.getJSONObject(i)
+                "• Cam ${x.optInt("so")}: rớt ${x.optInt("so_rot")} lần" + if (x.optBoolean("dang_rot")) " — ĐANG RỚT" else "" }
+            AlertDialog.Builder(act).setTitle("Đang theo dõi điểm ${p.optString("stt")}")
+                .setMessage("$tung\n\nTổng rớt ${dang.optDouble("phut_rot")} phút. Còn ${dang.optInt("con_phut")} phút thì tự ra báo cáo PDF.")
                 .setPositiveButton("Dừng & lấy báo cáo") { _, _ -> dung(act, dang.optString("id")) }
                 .setNegativeButton("Đóng", null).show()
             return
         }
-        val chon = arrayOf("2 giờ", "6 giờ", "24 giờ", "Tuỳ chọn (nhập số giờ)")
-        AlertDialog.Builder(act).setTitle("Theo dõi ổn định: điểm ${p.optString("stt")} · cam ${c.optInt("so")} (${p.optString("domain")}:${c.optInt("http")})")
-            .setItems(chon) { _, i ->
-                when (i) {
-                    0 -> bat(act, ma, p, c, 120.0, tenDuAn)
-                    1 -> bat(act, ma, p, c, 360.0, tenDuAn)
-                    2 -> bat(act, ma, p, c, 1440.0, tenDuAn)
-                    else -> {
-                        val o = EditText(act); o.hint = "Số giờ, vd 12"; o.inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
-                        AlertDialog.Builder(act).setTitle("Theo dõi bao nhiêu giờ?").setView(o)
-                            .setPositiveButton("Bắt đầu") { _, _ -> o.text.toString().replace(",", ".").toDoubleOrNull()?.let { if (it > 0) bat(act, ma, p, c, it * 60, tenDuAn) } }
-                            .setNegativeButton("Huỷ", null).show()
-                    }
-                }
-            }.setNegativeButton("Huỷ", null).show()
-    }
-
-    /** Màn mở một điểm: tick chọn MỘT hay NHIỀU cam cùng lúc. Cam đang theo dõi đã tick sẵn — bỏ tick là dừng & lấy báo cáo. */
-    fun chonNhieu(act: Activity, ma: String, p: JSONObject, tenDuAn: String) {
-        val cs = p.optJSONArray("cam") ?: JSONArray()
-        if (cs.length() == 0) return
-        val cams = (0 until cs.length()).map { cs.getJSONObject(it) }
-        val dang = cams.map { dangTheoDoi(p.optString("domain"), it.optInt("http")) }
-        val nhan = cams.mapIndexed { i, c ->
-            "Cam ${c.optInt("so")} · port ${c.optInt("http")}" + (dang[i]?.let { "  — đang theo dõi, rớt ${it.optInt("so_rot")} lần, còn ${it.optInt("con_phut")} phút" } ?: "")
-        }.toTypedArray()
-        val tick = BooleanArray(cams.size) { dang[it] != null }
-        AlertDialog.Builder(act).setTitle("Theo dõi cam nào? (chọn được nhiều)")
-            .setMultiChoiceItems(nhan, tick) { _, i, b -> tick[i] = b }
-            .setPositiveButton("Tiếp") { _, _ ->
-                val batMoi = cams.indices.filter { tick[it] && dang[it] == null }.map { cams[it] }
-                val dungDi = cams.indices.filter { !tick[it] && dang[it] != null }
-                if (dungDi.isNotEmpty())
-                    AlertDialog.Builder(act).setTitle("Dừng theo dõi " + dungDi.joinToString(", ") { "cam ${cams[it].optInt("so")}" } + "?")
-                        .setMessage("App dừng và làm báo cáo PDF cho cam đã bỏ chọn.")
-                        .setPositiveButton("Dừng & lấy báo cáo") { _, _ -> dungDi.forEach { dung(act, dang[it]!!.optString("id")) } }
-                        .setNegativeButton("Không", null).show()
-                if (batMoi.isNotEmpty()) chonThoiGian(act, "Theo dõi " + batMoi.joinToString(", ") { "cam ${it.optInt("so")}" } + " · điểm ${p.optString("stt")}") { phut ->
-                    batNhieu(act, ma, p, batMoi, phut, tenDuAn)
-                }
-            }.setNegativeButton("Huỷ", null).show()
+        val so = (p.optJSONArray("cam") ?: JSONArray()).length()
+        chonThoiGian(act, "Theo dõi điểm ${p.optString("stt")} · cả $so cam (${p.optString("domain")})") { phut -> batDiem(act, ma, p, phut, tenDuAn) }
     }
 
     private fun chonThoiGian(act: Activity, tieuDe: String, xong: (Double) -> Unit) {
@@ -110,31 +73,29 @@ object TheoDoi {
         }.setNegativeButton("Huỷ", null).show()
     }
 
-    private fun batNhieu(act: Activity, ma: String, p: JSONObject, cams: List<JSONObject>, phut: Double, tenDuAn: String) {
-        if (Build.VERSION.SDK_INT >= 33 && act.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
-            act.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 77)
-        val ok = ArrayList<Int>(); var loi = ""
-        for (c in cams) try { core().callAttr("theodoi_bat", ma, p.toString(), c.optInt("so"), phut, tenDuAn); ok.add(c.optInt("so")) }
-            catch (e: Exception) { loi = e.message?.substringAfterLast("Error: ")?.take(100) ?: "" }
-        if (ok.isNotEmpty()) {
+    private fun batDiem(act: Activity, ma: String, p: JSONObject, phut: Double, tenDuAn: String) {
+        try {
+            core().callAttr("theodoi_bat_diem", ma, p.toString(), phut, tenDuAn)
             val i = Intent(act, TheoDoiService::class.java)
             if (Build.VERSION.SDK_INT >= 26) act.startForegroundService(i) else act.startService(i)
+            val gio = (phut / 60).let { if (it % 1.0 == 0.0) it.toInt().toString() else "%.1f".format(it) }
+            Toast.makeText(act, "Đã bật theo dõi điểm ${p.optString("stt")} (mọi cam) trong $gio giờ. Rớt quá 5 phút app báo ngay. Để điện thoại có mạng, nên cắm sạc.", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            Toast.makeText(act, "Không bật được: ${e.message?.substringAfterLast("Error: ")?.take(120)}", Toast.LENGTH_LONG).show(); return
         }
-        val gio = (phut / 60).let { if (it % 1.0 == 0.0) it.toInt().toString() else "%.1f".format(it) }
-        Toast.makeText(act, (if (ok.isNotEmpty()) "Đã bật theo dõi cam ${ok.joinToString(", ")} điểm ${p.optString("stt")} trong $gio giờ — mỗi cam một báo cáo PDF. Để điện thoại có mạng, nên cắm sạc." else "") +
-            (if (loi.isNotEmpty()) "\nKhông bật được: $loi" else ""), Toast.LENGTH_LONG).show()
+        xinChayNen(act)
     }
 
-    private fun bat(act: Activity, ma: String, p: JSONObject, c: JSONObject, phut: Double, tenDuAn: String) {
+    /** Xin quyền thông báo + cho CamLink chạy nền KHÔNG bị tối ưu pin (Samsung hay dừng app nền → báo cáo bị thủng). */
+    private fun xinChayNen(act: Activity) {
         if (Build.VERSION.SDK_INT >= 33 && act.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             act.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 77)
-        try {
-            core().callAttr("theodoi_bat", ma, p.toString(), c.optInt("so"), phut, tenDuAn)
-            val i = Intent(act, TheoDoiService::class.java)
-            if (Build.VERSION.SDK_INT >= 26) act.startForegroundService(i) else act.startService(i)
-            Toast.makeText(act, "Đã bật theo dõi cam ${c.optInt("so")} điểm ${p.optString("stt")} trong ${(phut / 60).let { if (it % 1.0 == 0.0) it.toInt().toString() else "%.1f".format(it) }} giờ. Để điện thoại có mạng, nên cắm sạc.", Toast.LENGTH_LONG).show()
-        } catch (e: Exception) {
-            Toast.makeText(act, "Không bật được: ${e.message?.substringAfterLast("Error: ")?.take(120)}", Toast.LENGTH_LONG).show()
+        if (Build.VERSION.SDK_INT >= 23) {
+            val pm = act.getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (!pm.isIgnoringBatteryOptimizations(act.packageName)) try {
+                @Suppress("BatteryLife")
+                act.startActivity(Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${act.packageName}")))
+            } catch (_: Exception) {}
         }
     }
 
@@ -168,7 +129,7 @@ object TheoDoi {
         val d = ds()
         if (d.length() == 0) {
             AlertDialog.Builder(act).setTitle("Theo dõi ổn định")
-                .setMessage("Chưa theo dõi cam nào.\n\nMở một điểm → bấm \"📈 Theo dõi\" (dưới ô cam ở màn này, hoặc thanh nút dưới đáy màn giám sát) → chọn cam, chọn thời gian. Hết giờ app tự ra báo cáo PDF.")
+                .setMessage("Chưa theo dõi điểm nào.\n\nMở một điểm → bấm \"📈 Theo dõi\" → chọn thời gian. App theo dõi mọi cam của điểm, rớt quá 5 phút báo ngay, hết giờ ra báo cáo PDF.")
                 .setPositiveButton("OK", null).show(); return
         }
         val nhan = (0 until d.length()).map { i ->
@@ -191,6 +152,19 @@ class TheoDoiService : Service() {
     @Volatile private var chay = false
     private var khoa: PowerManager.WakeLock? = null
     private val KENH = "theodoi"
+    private val KENH_BAO = "theodoi_bao"
+
+    /** Loại mạng điện thoại lúc đo — ghi vào báo cáo để biết lần rớt nào trùng lúc điện thoại đổi mạng. */
+    private fun loaiMang(): String = try {
+        val cm = getSystemService(android.net.ConnectivityManager::class.java)
+        val nc = cm.getNetworkCapabilities(cm.activeNetwork)
+        when {
+            nc == null -> "khong"
+            nc.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+            nc.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) -> "di_dong"
+            else -> "khac"
+        }
+    } catch (_: Exception) { "" }
 
     override fun onBind(i: Intent?): IBinder? = null
 
@@ -198,6 +172,8 @@ class TheoDoiService : Service() {
         val nm = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(KENH) == null)
             nm.createNotificationChannel(NotificationChannel(KENH, "Theo dõi camera", NotificationManager.IMPORTANCE_LOW))
+        if (Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(KENH_BAO) == null)
+            nm.createNotificationChannel(NotificationChannel(KENH_BAO, "Cảnh báo cam rớt", NotificationManager.IMPORTANCE_HIGH))
         val mo = PendingIntent.getActivity(this, 0, Intent(this, TuXaActivity::class.java).putExtra("mo_theo_doi", true), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val b = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, KENH) else @Suppress("DEPRECATION") Notification.Builder(this)
         return b.setSmallIcon(android.R.drawable.ic_menu_camera).setContentTitle("CamLink đang theo dõi camera").setContentText(chu)
@@ -219,7 +195,19 @@ class TheoDoiService : Service() {
             val nm = getSystemService(NotificationManager::class.java)
             while (chay) {
                 try {
-                    val r = JSONObject(core.callAttr("theodoi_vong").toString())
+                    val r = JSONObject(core.callAttr("theodoi_vong", loaiMang()).toString())
+                    val bao = r.optJSONArray("bao") ?: JSONArray()
+                    for (i in 0 until bao.length()) {
+                        val x = bao.getJSONObject(i)
+                        val gio = java.text.SimpleDateFormat("HH:mm").format(java.util.Date((x.optDouble("bd") * 1000).toLong()))
+                        val (tieu, noi) = if (x.optString("kieu") == "rot")
+                            "⚠ ${x.optString("ten")} RỚT từ $gio" to "Đã rớt hơn 5 phút. Nghi: ${x.optString("nguyen_nhan")}. Đã báo lên ghim LiteMark (nếu dự án đã nối)."
+                        else "✓ ${x.optString("ten")} đã lên lại" to "Rớt từ $gio, kéo dài ${(x.optDouble("dur") / 60).toInt()} phút. ${x.optString("nguyen_nhan")}"
+                        val b = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, KENH_BAO) else @Suppress("DEPRECATION") Notification.Builder(this)
+                        nm.notify(("bao" + x.optString("id")).hashCode(), b.setSmallIcon(android.R.drawable.stat_notify_error).setContentTitle(tieu).setContentText(noi)
+                            .setStyle(Notification.BigTextStyle().bigText(noi)).setAutoCancel(true)
+                            .setContentIntent(PendingIntent.getActivity(this, 1, Intent(this, TuXaActivity::class.java).putExtra("mo_theo_doi", true), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)).build())
+                    }
                     val dang = r.optJSONArray("dang") ?: JSONArray()
                     val pdf = r.optJSONArray("pdf_moi") ?: JSONArray()
                     for (i in 0 until pdf.length()) {

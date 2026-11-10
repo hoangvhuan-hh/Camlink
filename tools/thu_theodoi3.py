@@ -44,10 +44,10 @@ print("✓ 1.9.2 theo dõi lấy video làm chuẩn")
 import camlink_tuxa
 goi = []
 camlink_tuxa.rtsp_describe = lambda *a, **k: (goi.append(1), (200, ""))[1]
-T._cham = lambda h, p: ("mo", 150)
+T._hoi_web = lambda h, p, cho=4: ("mo", 150)
 T._mang_ok = lambda: True
 T._ip = lambda d: "113.166.223.36"
-m2 = {"domain": "phuly-chuaphapbao.ddns.net", "http": 8080, "rtsp": 554, "rtsp_path": "/", "user": "a", "pass": "b", "ban": [], "lan_do": 0, "ip_dau": ""}
+m2 = {"id": "x", "domain": "phuly-chuaphapbao.ddns.net", "http": 8080, "rtsp": 554, "rtsp_path": "/", "user": "a", "pass": "b", "ban": [], "lan_do": 0, "ip_dau": ""}
 for i in range(8):
     T.do_mot_lan(m2); m2["lan_do"] += 1
 assert len(goi) == 2, goi                     # 8 nhịp (4 phút) → hỏi 2 lần

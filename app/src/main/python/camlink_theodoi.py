@@ -1,9 +1,9 @@
-"""THEO DÕI ỔN ĐỊNH MỘT CAM (Huan chốt 10/11/2026).
+"""THEO DÕI ỔN ĐỊNH CAMERA THEO ĐIỂM (Huan chốt 10/11/2026; 1.9.6: theo dõi cả điểm, hỏi web thay gõ cửa TCP, báo ngay khi rớt).
 
-Bật cam nào thì theo dõi cam đó trong thời gian t. Mỗi 30 giây đo:
+Bật theo dõi một điểm = theo dõi mọi cam của điểm trong thời gian t, đo CHUNG một lượt (không hỏi cam 2 lần). Mỗi 30 giây đo:
   1. mạng điện thoại (1.1.1.1 / 8.8.8.8)   → điện thoại mất mạng thì KHÔNG tính là cam rớt
   2. tên miền đang trỏ IP nào               → IP đổi = modem mất kết nối rồi lên lại
-  3. port web của cam                       → lên / im lặng / bị từ chối, thời gian phản hồi
+  3. port web của cam: HỎI 1 trang web (không đăng nhập, ~0,5 KB) → lên / TREO (nhận kết nối nhưng không trả lời) / im lặng / từ chối
   4. port các cam khác cùng điểm            → cam khác vẫn lên = lỗi riêng cam này; cùng im = lỗi cả điểm
   5. luồng video RTSP (mỗi 2 phút khi port lên) → web lên mà video không ra = cam treo / băng thông yếu
 Chỉ chụp ảnh ngay trước và ngay sau mỗi lần rớt (giữ 1 ảnh "mới nhất" ghi đè) → ~1 MB/ngày.
@@ -14,6 +14,9 @@ import json, os, socket, threading, time
 NHIP = 30            # giây giữa 2 lần đo
 RTSP_MOI = 4         # hỏi luồng video mỗi 4 nhịp = 2 phút (Huan 10/11: nhẹ cho cam); đang hỏng video thì hỏi mỗi nhịp tới khi lên
 ANH_MOI = 3600       # làm mới ảnh "trước khi rớt" mỗi 1 giờ (chụp bắt cam nén JPEG — hạn chế)
+BAO_SAU = 300        # rớt liên tục 5 phút → báo ngay lên điện thoại + đẩy cảnh báo lên ghim LiteMark
+KHI_BAO = None       # lõi gắn hàm đẩy LiteMark vào đây: KHI_BAO(m, "rot"/"len", thông tin)
+_MANG = ""           # loại mạng điện thoại lúc đo (wifi / di_dong / khong) — dịch vụ chạy nền báo vào
 ROT_SAU = 2          # cần 2 lần đo liên tiếp không vào được mới tính là rớt (tránh rớt 1 gói lẻ)
 GIU_NGAY = 7         # dữ liệu một lần theo dõi tự xoá sau 7 ngày (PDF đã xuất giữ ở ketqua/)
 
@@ -60,7 +63,23 @@ def _thoi_luong(s):
 
 
 # ------------------------------------------------------------------ bật / dừng / danh sách
-def bat(ma, p, so, phut, cd):
+def bat_diem(ma, p, phut, cd):
+    """Theo dõi CẢ ĐIỂM: mọi cam của điểm, chung một lượt đo, chung một báo cáo. Trả mã nhóm."""
+    for m in ds():
+        if m["trang_thai"] == "dang" and m["domain"] == p["domain"]:
+            return m.get("nhom") or m["id"]      # điểm này đang được theo dõi rồi
+    nhom = "N" + time.strftime("%Y%m%d_%H%M%S") + f"_{p.get('stt')}"
+    so_cam = 0
+    for c in p.get("cam", []):
+        if c.get("http"):
+            bat(ma, p, c.get("so"), phut, cd, nhom)
+            so_cam += 1
+    if not so_cam:
+        raise RuntimeError(f"Điểm {p.get('stt')} không có cam nào để theo dõi")
+    return nhom
+
+
+def bat(ma, p, so, phut, cd, nhom=""):
     """p = điểm trong kết quả kiểm tra từ xa (có domain, cam[]); so = số cam cần theo dõi; phut = thời gian t."""
     cams = p.get("cam", [])
     c = next((x for x in cams if int(x.get("so", 0)) == int(so)), None)
@@ -83,7 +102,7 @@ def bat(ma, p, so, phut, cd):
             "ban": [int(x["http"]) for x in cams if x is not c and x.get("http")],
             "user": c.get("user") or cd.get("cam_user", "admin"), "pass": c.get("pass") or cd.get("cam_pw", ""),
             "bat_dau": time.time(), "het": time.time() + float(phut) * 60, "phut": float(phut), "nhip": NHIP,
-            "trang_thai": "dang", "lan_do": 0, "lan_toi": 0, "dang_rot": None, "lien_tiep_hong": 0, "ip_dau": "", "pdf": ""}
+            "trang_thai": "dang", "lan_do": 0, "lan_toi": 0, "dang_rot": None, "lien_tiep_hong": 0, "ip_dau": "", "pdf": "", "nhom": nhom}
     _ghi(_thu_muc(tid, "meta.json"), meta)
     _ghi(_thu_muc(tid, "su_kien.json"), [])
     return tid
@@ -101,16 +120,42 @@ def ds():
     return out
 
 
+def _cung_nhom(nhom):
+    return sorted([m for m in ds() if m.get("nhom") == nhom], key=lambda m: m["so"])
+
+
 def dung(tid):
-    """Dừng sớm → ra báo cáo luôn."""
+    """Dừng sớm → ra báo cáo luôn. tid là mã nhóm (cả điểm) hoặc mã một cam (dừng luôn cả điểm của nó)."""
     with _KHOA:
-        m = _doc(_thu_muc(tid, "meta.json"))
-        if not m:
+        m = None if tid.startswith("N") else _doc(_thu_muc(tid, "meta.json"))
+        nhom = tid if tid.startswith("N") else (m or {}).get("nhom", "")
+        ms = _cung_nhom(nhom) if nhom else ([m] if m else [])
+        if not ms:
             raise RuntimeError("Không thấy lần theo dõi này")
-        if m["trang_thai"] == "dang":
-            m["het"] = time.time()
-            _ket_thuc(m)
-        return m.get("pdf", "")
+        for x in ms:
+            if x["trang_thai"] == "dang":
+                x["het"] = time.time()
+                _ket_thuc(x)
+        return _pdf_nhom(nhom) if nhom else (_doc(_thu_muc(ms[0]["id"], "meta.json")) or {}).get("pdf", "")
+
+
+def _pdf_nhom(nhom):
+    """Cả nhóm đã xong → 1 báo cáo chung cho cả điểm (ghi đường dẫn vào mọi cam của nhóm)."""
+    ms = _cung_nhom(nhom)
+    if not ms or any(x["trang_thai"] != "xong" for x in ms):
+        return ""
+    if ms[0].get("pdf"):
+        return ms[0]["pdf"]
+    try:
+        f = bao_cao_pdf(ms[0]["id"])
+    except Exception as e:
+        f = ""
+        for x in ms:
+            x["loi_pdf"] = str(e)[:200]
+    for x in ms:
+        x["pdf"] = f
+        _ghi(_thu_muc(x["id"], "meta.json"), x)
+    return f
 
 
 def don_cu():
@@ -134,6 +179,31 @@ def _cham(host, port, cho=4):
     except OSError as e:
         import errno
         return ("tu_choi" if getattr(e, "errno", None) == errno.ECONNREFUSED else "im_lang"), 0
+    finally:
+        s.close()
+
+
+def _hoi_web(host, port, cho=4):
+    """Hỏi 1 trang web của cam (không đăng nhập, đọc 16 byte rồi đóng). Phân biệt được CAM TREO:
+    port vẫn nhận kết nối (modem/cam còn sống phần mạng) nhưng phần mềm cam không trả lời."""
+    import errno
+    t0 = time.time()
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(cho)
+    try:
+        try:
+            s.connect((host, port))
+        except ConnectionRefusedError:
+            return "tu_choi", 0
+        except OSError as e:
+            return ("tu_choi" if getattr(e, "errno", None) == errno.ECONNREFUSED else "im_lang"), 0
+        try:
+            s.settimeout(3)
+            s.sendall(f"GET / HTTP/1.0\r\nHost: {host}:{port}\r\nConnection: close\r\n\r\n".encode())
+            b = s.recv(16)
+        except OSError:
+            b = b""
+        return ("mo" if b else "treo"), int((time.time() - t0) * 1000)
     finally:
         s.close()
 
@@ -170,7 +240,12 @@ def _chup(m, ten):
 
 
 def do_mot_lan(m):
-    """Một lần đo (song song). Trả về bản ghi mẫu."""
+    return do_nhom([m])[m["id"]]
+
+
+def do_nhom(ms):
+    """MỘT lượt đo chung cho mọi cam đang theo dõi của một điểm: mỗi port chỉ hỏi 1 lần. Trả {id: mẫu}."""
+    m0 = ms[0]
     kq = {"t": time.time()}
     th = []
 
@@ -184,65 +259,130 @@ def do_mot_lan(m):
         x.start()
         th.append(x)
     chay("net", _mang_ok)
-    chay("ip", _ip, m["domain"])
+    chay("ip", _ip, m0["domain"])
     for x in th:
         x.join(12)
     th.clear()
     ip = kq.get("ip") or ""
-    dich = ip or m["domain"]
-    chay("cam", _cham, dich, m["http"])
-    for b in m["ban"]:
-        chay(f"b{b}", _cham, dich, b)
+    dich = ip or m0["domain"]
+    cong = sorted({int(m["http"]) for m in ms} | {int(b) for m in ms for b in m["ban"]})
+    for pt in cong:
+        chay(f"p{pt}", _hoi_web, dich, pt)
     for x in th:
         x.join(12)
-    cam = kq.get("cam") or ("im_lang", 0)
-    mau = {"t": round(kq["t"], 1), "net": bool(kq.get("net")), "ip": ip, "cam": cam[0], "ms": cam[1],
-           "ban": {str(b): (kq.get(f"b{b}") or ("im_lang", 0))[0] for b in m["ban"]}}
-    xem = dang_xem(m, ip)
-    if cam[0] == "mo" and xem is not None:
-        # Huan đang mở xem đúng cam này → lấy chính màn xem làm số đo, KHÔNG hỏi cam thêm
-        mau["rtsp"] = "loi_xem" if xem == "ngat" else "ok_xem"
-    elif cam[0] == "mo" and m.get("rtsp") and (m["lan_do"] % RTSP_MOI == 0 or str(m.get("rtsp_cuoi", "")).startswith("loi")):
-        try:
-            from camlink_tuxa import rtsp_describe
-            ma_rtsp = rtsp_describe(dich, m["rtsp"], m.get("rtsp_path", "/"), m["user"], m["pass"])[0]
-            # 401/403/404 = sai user/pass hoặc sai đường dẫn → không phải cam chập chờn, không tính rớt (ghi riêng)
-            mau["rtsp"] = "ok" if ma_rtsp == 200 else ("xac_thuc" if ma_rtsp in (401, 403, 404) else f"loi_{ma_rtsp}")
-        except Exception:
-            mau["rtsp"] = "loi"
-    return mau
+    st = {pt: (kq.get(f"p{pt}") or ("im_lang", 0)) for pt in cong}
+    ra = {}
+    for m in ms:
+        cam = st[int(m["http"])]
+        mau = {"t": round(kq["t"], 1), "net": bool(kq.get("net")), "ip": ip, "cam": cam[0], "ms": cam[1],
+               "ban": {str(b): st[int(b)][0] for b in m["ban"]}}
+        if _MANG:
+            mau["mang"] = _MANG
+        xem = dang_xem(m, ip)
+        if cam[0] == "mo" and xem is not None:
+            # Huan đang mở xem đúng cam này → lấy chính màn xem làm số đo, KHÔNG hỏi cam thêm
+            mau["rtsp"] = "loi_xem" if xem == "ngat" else "ok_xem"
+        elif cam[0] == "mo" and m.get("rtsp") and (m["lan_do"] % RTSP_MOI == 0 or str(m.get("rtsp_cuoi", "")).startswith("loi")):
+            try:
+                from camlink_tuxa import rtsp_describe
+                ma_rtsp = rtsp_describe(dich, m["rtsp"], m.get("rtsp_path", "/"), m["user"], m["pass"])[0]
+                # 401/403/404 = sai user/pass hoặc sai đường dẫn → không phải cam chập chờn, không tính rớt (ghi riêng)
+                mau["rtsp"] = "ok" if ma_rtsp == 200 else ("xac_thuc" if ma_rtsp in (401, 403, 404) else f"loi_{ma_rtsp}")
+            except Exception:
+                mau["rtsp"] = "loi"
+        ra[m["id"]] = mau
+    return ra
 
 
 # ------------------------------------------------------------------ vòng chạy (gọi mỗi 30 giây từ dịch vụ chạy nền)
-def vong():
-    """Đo mọi lần theo dõi đang chạy tới hạn. Trả danh sách tóm tắt + lần nào vừa xong (để báo thông báo)."""
-    xong_moi = []
+def _ten(m):
+    return f"Điểm {m['stt']} · cam {m['so']}"
+
+
+def _su_tam(m, r, t):
+    """Lần rớt đang diễn ra → đoán nguyên nhân tạm (để báo ngay)."""
+    su = {"ip_truoc": r["ip_truoc"], "ip_sau": r.get("ip_moi", ""), "ban_co": bool(m["ban"]), "dur": t - r["bd"], "chua_len": True,
+          "ti_le_ban_len": (r["ban_len"] / r["ban_do"]) if r["ban_do"] else None, "tu_choi": r["tu_choi"] / max(1, r["mau"]),
+          "video": r.get("video", 0) / max(1, r["mau"]), "treo": r.get("treo", 0) / max(1, r["mau"])}
+    return phan_loai(su)
+
+
+def vong(loai_mang=""):
+    """Đo mọi lần theo dõi tới hạn — cam cùng điểm đo CHUNG một lượt. Trả tóm tắt + báo cáo mới + tin báo ngay."""
+    global _MANG
+    _MANG = loai_mang or ""
+    xong_moi, bao = [], []
     with _KHOA:
-        dang = [m for m in ds() if m["trang_thai"] == "dang"]
+        dang = [m for m in ds() if m["trang_thai"] == "dang" and time.time() >= m.get("toi", 0)]
+    nhom_do = {}
     for m in dang:
-        if time.time() < m.get("toi", 0):
-            continue
+        nhom_do.setdefault(m.get("nhom") or m["id"], []).append(m)
+    for _, ms in nhom_do.items():
         try:
-            mau = do_mot_lan(m)
+            maus = do_nhom(ms)
         except Exception as e:
-            mau = {"t": time.time(), "net": False, "ip": "", "cam": "loi_do", "ms": 0, "ban": {}, "loi": str(e)[:80]}
-        with _KHOA:
-            m2 = _doc(_thu_muc(m["id"], "meta.json")) or m
-            if m2["trang_thai"] != "dang":
-                continue
-            _xu_ly_mau(m2, mau)
-            m2["toi"] = mau["t"] + m2["nhip"]
-            if time.time() >= m2["het"]:
-                _ket_thuc(m2)
-                xong_moi.append(m2["id"])
-            else:
-                _ghi(_thu_muc(m2["id"], "meta.json"), m2)
+            maus = {m["id"]: {"t": time.time(), "net": False, "ip": "", "cam": "loi_do", "ms": 0, "ban": {}, "loi": str(e)[:80]} for m in ms}
+        for m in ms:
+            mau = maus[m["id"]]
+            with _KHOA:
+                m2 = _doc(_thu_muc(m["id"], "meta.json")) or m
+                if m2["trang_thai"] != "dang":
+                    continue
+                r0 = m2.get("dang_rot") or {}
+                _xu_ly_mau(m2, mau)
+                r = m2.get("dang_rot")
+                if r and not r.get("da_bao") and mau["t"] - r["bd"] >= BAO_SAU:
+                    r["da_bao"] = True
+                    bao.append({"kieu": "rot", "id": m2["id"], "ten": _ten(m2), "bd": r["bd"], "ma": m2["ma"], "stt": m2["stt"], "so": m2["so"],
+                                "http": m2["http"], **_su_tam(m2, r, mau["t"])})
+                elif r0.get("da_bao") and not r:
+                    sk = _doc(_thu_muc(m2["id"], "su_kien.json"), [])
+                    x = sk[-1] if sk else {}
+                    bao.append({"kieu": "len", "id": m2["id"], "ten": _ten(m2), "bd": x.get("bd", 0), "dur": x.get("dur", 0), "ma": m2["ma"],
+                                "stt": m2["stt"], "so": m2["so"], "http": m2["http"], "loai": x.get("loai", ""), "nguyen_nhan": x.get("nguyen_nhan", "")})
+                m2["toi"] = mau["t"] + m2["nhip"]
+                if time.time() >= m2["het"]:
+                    _ket_thuc(m2)
+                    xong_moi.append(m2)
+                else:
+                    _ghi(_thu_muc(m2["id"], "meta.json"), m2)
+    for b in bao:
+        if KHI_BAO:
+            try:
+                KHI_BAO(b)
+            except Exception:
+                pass
+    pdf_moi = []
+    with _KHOA:
+        for m in xong_moi:
+            f = _pdf_nhom(m["nhom"]) if m.get("nhom") else (_doc(_thu_muc(m["id"], "meta.json")) or {}).get("pdf", "")
+            if f and f not in pdf_moi:
+                pdf_moi.append(f)
     try:
         don_cu()
     except Exception:
         pass
-    return {"dang": [tom_tat(m) for m in ds() if m["trang_thai"] == "dang"], "xong_moi": xong_moi,
-            "pdf_moi": [(_doc(_thu_muc(i, "meta.json")) or {}).get("pdf", "") for i in xong_moi]}
+    return {"dang": [x for x in ds_hien() if x["trang_thai"] == "dang"], "xong_moi": [m["id"] for m in xong_moi], "pdf_moi": pdf_moi, "bao": bao}
+
+
+def ds_hien():
+    """Danh sách cho màn hình: mỗi ĐIỂM đang/đã theo dõi một dòng (cam lẻ đời cũ vẫn hiện riêng)."""
+    out, da = [], set()
+    for m in ds():
+        k = m.get("nhom") or m["id"]
+        if k in da:
+            continue
+        da.add(k)
+        ms = _cung_nhom(k) if m.get("nhom") else [m]
+        tt = [tom_tat(x) for x in ms]
+        out.append({"id": k, "ten": f"Điểm {m['stt']}. {m.get('ten_diem', '')} · {len(ms)} cam ({m['domain']})",
+                    "trang_thai": "dang" if any(x["trang_thai"] == "dang" for x in ms) else "xong",
+                    "so_rot": sum(x["so_rot"] for x in tt), "phut_rot": round(sum(x["phut_rot"] for x in tt), 1),
+                    "con_phut": max(x["con_phut"] for x in tt), "dang_rot": any(x["dang_rot"] for x in tt),
+                    "pdf": next((x["pdf"] for x in tt if x["pdf"]), ""), "domain": m["domain"], "stt": m["stt"],
+                    "cams": [x["http"] for x in tt], "http": m["http"],
+                    "chi_tiet": [{"so": x["so"], "so_rot": x["so_rot"], "dang_rot": x["dang_rot"]} for x in tt]})
+    return out
 
 
 def tom_tat(m):
@@ -297,13 +437,14 @@ def _xu_ly_mau(m, mau):
         m["ip_cuoi_len"] = mau["ip"] or m.get("ip_cuoi_len", "")
         return
     m["lien_tiep_hong"] = m.get("lien_tiep_hong", 0) + 1
-    kieu = "video" if vid_hong else "mat"
+    kieu = "video" if vid_hong else ("treo" if mau["cam"] == "treo" else "mat")
     if m["lien_tiep_hong"] == 1:
         m["hong_dau"] = {"t": mau["t"], "kieu": kieu, "ban_len": any(v == "mo" for v in mau["ban"].values())}
     if m.get("dang_rot"):
         r = m["dang_rot"]
         r["mau"] += 1
         r["video"] += 1 if vid_hong else 0
+        r["treo"] = r.get("treo", 0) + (1 if mau["cam"] == "treo" else 0)
         r["ban_len"] += sum(1 for v in mau["ban"].values() if v == "mo")
         r["ban_do"] += len(mau["ban"])
         r["tu_choi"] += 1 if mau["cam"] == "tu_choi" else 0
@@ -316,6 +457,7 @@ def _xu_ly_mau(m, mau):
         dau_video = (m.get("hong_dau") or {}).get("kieu") == "video"
         m["dang_rot"] = {"bd": bd, "ip_truoc": m.get("ip_cuoi_len") or m["ip_dau"], "ip_moi": "", "mau": ROT_SAU,
                          "video": (1 if vid_hong else 0) + (1 if dau_video else 0),
+                         "treo": (1 if mau["cam"] == "treo" else 0) + (1 if (m.get("hong_dau") or {}).get("kieu") == "treo" else 0),
                          "ban_len": sum(1 for v in mau["ban"].values() if v == "mo") + (1 if (m.get("hong_dau") or {}).get("ban_len") else 0),
                          "ban_do": len(mau["ban"]) * ROT_SAU,
                          "tu_choi": 1 if mau["cam"] == "tu_choi" else 0, "dns_loi": 0 if mau["ip"] else 1, "n": 0}
@@ -369,7 +511,7 @@ def _dong_su_kien(m, mau, ket_thuc_theo_doi=False):
           "ip_truoc": r["ip_truoc"], "ip_sau": (mau or {}).get("ip") or r.get("ip_moi", ""),
           "ban_co": bool(m["ban"]), "ti_le_ban_len": (r["ban_len"] / r["ban_do"]) if r["ban_do"] else None,
           "tu_choi": r["tu_choi"] / max(1, r["mau"]), "dns_loi": r["dns_loi"], "anh_truoc": r.get("anh_truoc", ""),
-          "video": r.get("video", 0) / max(1, r["mau"])}
+          "video": r.get("video", 0) / max(1, r["mau"]), "treo": r.get("treo", 0) / max(1, r["mau"]), "da_bao": bool(r.get("da_bao"))}
     if mau and not ket_thuc_theo_doi:
         su["anh_sau"] = _chup(m, f"sau_{r['n']}.jpg")
     su.update(phan_loai(su))
@@ -397,6 +539,10 @@ NGUYEN_NHAN = {
     "mot_cam_khong_phan_biet": ("Cam không vào được (điểm chỉ có 1 cam nên không phân biệt được lỗi cam hay lỗi cả điểm)",
                                 ["Kiểm tra nguồn và dây mạng của cam, đồng thời nguồn modem tại điểm.",
                                  "Theo dõi thêm lần sau khi điểm có thêm thiết bị để so sánh."]),
+    "cam_treo": ("Cam treo: port vẫn nhận kết nối nhưng cam không trả lời (phần mềm cam bị đơ)",
+                 ["Khởi động lại cam: rút nguồn/PoE 10 giây rồi cắm lại (cam treo không nhận lệnh khởi động lại qua mạng).",
+                  "Treo lặp lại: kiểm tra nguồn (adaptor yếu, PoE quá tải), nhiệt độ hộp cam; cập nhật firmware.",
+                  "Điểm hay treo: gắn ổ cắm/rơ-le điều khiển từ xa (~200–300 nghìn đồng) để tự cắt nguồn cam từ xa."]),
     "video_ngat": ("Web cam vẫn lên nhưng luồng video bị ngắt",
                    ["Kiểm tra số người xem cùng lúc: IOC/đầu ghi, app CamLink, điện thoại… — cam Oryza giới hạn số luồng, vượt thì ngắt bớt. Tắt bớt nơi xem trùng.",
                     "Đầu ghi/IOC nên kéo luồng PHỤ cho xem nhiều nơi; giảm độ phân giải/bitrate luồng chính nếu đường truyền upload yếu.",
@@ -408,7 +554,9 @@ NGUYEN_NHAN = {
 
 
 def phan_loai(su):
-    if su.get("video", 0) >= 0.5:
+    if su.get("treo", 0) >= 0.5:
+        k = "cam_treo"
+    elif su.get("video", 0) >= 0.5:
         k = "video_ngat"
     elif su.get("tu_choi", 0) >= 0.5:
         k = "mat_mo_port"
@@ -430,6 +578,8 @@ def _ket_thuc(m):
         _dong_su_kien(m, None, ket_thuc_theo_doi=True)
     m["trang_thai"] = "xong"
     _ghi(_thu_muc(m["id"], "meta.json"), m)
+    if m.get("nhom"):          # theo dõi cả điểm: báo cáo chung làm khi cả nhóm xong (_pdf_nhom)
+        return
     try:
         m["pdf"] = bao_cao_pdf(m["id"])
     except Exception as e:
@@ -447,7 +597,18 @@ def phan_tich(tid):
     except OSError:
         pass
     tong_tg = max(1, m["het"] - m["bat_dau"])
-    khong_do = sum(1 for x in mau if not x["net"]) * m["nhip"]
+    mat_mang = sum(1 for x in mau if not x["net"]) * m["nhip"]
+    # khoảng trống: điện thoại dừng app (tiết kiệm pin/ngủ sâu) → không có số đo, không được tính là cam lên
+    moc = [m["bat_dau"]] + [x["t"] for x in mau] + [m["het"]]
+    trong = [(moc[i], moc[i + 1]) for i in range(len(moc) - 1) if moc[i + 1] - moc[i] > 3 * m["nhip"]]
+    ngu = sum(b - a - m["nhip"] for a, b in trong)
+    khong_do = mat_mang + ngu
+    doi_mang, mg = [], ""
+    for x in mau:
+        if x.get("mang") and x["mang"] != mg:
+            if mg:
+                doi_mang.append((x["t"], mg, x["mang"]))
+            mg = x["mang"]
     rot = sum(x["dur"] for x in sk)
     tg_do = max(1, tong_tg - khong_do)
     nhom = {}
@@ -475,7 +636,7 @@ def phan_tich(tid):
             "len_pt": round(100 * max(0, tg_do - rot) / tg_do, 2), "dai_nhat": max([x["dur"] for x in sk], default=0),
             "gio": gio, "ms_tb": ms_tb, "ms_max": m.get("ms_max", 0), "video_loi": m.get("video_loi", 0),
             "so_mau": len(mau), "ket_luan": ket, "mau": mau, "chap_chon": cc, "live": lv,
-            "rtsp_xac_thuc": m.get("rtsp_xac_thuc", 0)}
+            "rtsp_xac_thuc": m.get("rtsp_xac_thuc", 0), "trong": trong, "ngu": ngu, "mat_mang": mat_mang, "doi_mang": doi_mang}
 
 
 def _font():
@@ -507,92 +668,135 @@ def _font():
 
 
 def bao_cao_pdf(tid):
+    """Báo cáo 1–3 trang A4. Theo dõi cả điểm → MỘT báo cáo cho mọi cam của điểm (bảng so sánh, dải thời gian từng cam)."""
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.units import mm
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, KeepTogether
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.graphics.shapes import Drawing, Rect, String, Line
+    from reportlab.graphics.shapes import Drawing, Rect, String
 
-    a = phan_tich(tid)
-    m = a["m"]
+    m0 = _doc(_thu_muc(tid, "meta.json"))
+    ids = [x["id"] for x in _cung_nhom(m0["nhom"])] if m0.get("nhom") else [tid]
+    A = [phan_tich(i) for i in ids]
+    m = A[0]["m"]
+    nhieu = len(A) > 1
     F, FB = _font()
     s = lambda **k: ParagraphStyle("x", fontName=k.pop("f", F), fontSize=k.pop("c", 9.5), leading=k.pop("l", 12.5), **k)
     H1, H2, P, NHO = s(f=FB, c=15, l=19, spaceAfter=2), s(f=FB, c=11.5, l=15, spaceBefore=7, spaceAfter=3, textColor=colors.HexColor("#0F5D8C")), s(), s(c=8, l=10, textColor=colors.HexColor("#5B6776"))
-    XANH, DO, VANG, XAM = colors.HexColor("#1D7A46"), colors.HexColor("#C0392B"), colors.HexColor("#C88A00"), colors.HexColor("#D7DEE5")
-    ten_file = f"TheoDoi_diem{m['stt']}_cam{m['so']}_{time.strftime('%Y%m%d_%H%M', time.localtime(m['bat_dau']))}.pdf"
+    XANH, DO, VANG, XAM, TIM = colors.HexColor("#1D7A46"), colors.HexColor("#C0392B"), colors.HexColor("#C88A00"), colors.HexColor("#D7DEE5"), colors.HexColor("#7D3C98")
+    ngay = time.strftime('%Y%m%d_%H%M', time.localtime(m['bat_dau']))
+    ten_file = f"TheoDoi_diem{m['stt']}_{len(A)}cam_{ngay}.pdf" if nhieu else f"TheoDoi_diem{m['stt']}_cam{m['so']}_{ngay}.pdf"
     f = os.path.join(GOC, "ketqua", ten_file)
     doc = SimpleDocTemplate(f, pagesize=A4, leftMargin=14 * mm, rightMargin=14 * mm, topMargin=12 * mm, bottomMargin=12 * mm,
-                            title=f"Theo dõi ổn định camera — điểm {m['stt']} cam {m['so']}", author="CamLink")
+                            title=f"Theo dõi ổn định camera — điểm {m['stt']}", author="CamLink")
     W = A4[0] - 28 * mm
     el = []
+    cam_txt = ", ".join(f"cam {a['m']['so']} (:{a['m']['http']})" for a in A)
     el.append(Paragraph("BÁO CÁO THEO DÕI ỔN ĐỊNH CAMERA", H1))
-    el.append(Paragraph(f"{m.get('du_an') or ''} · Điểm {m['stt']}. {m['ten_diem']} · Cam {m['so']} · "
-                        f"<b>{m['domain']}:{m['http']}</b>", P))
-    el.append(Paragraph(f"Theo dõi từ {_gio(m['bat_dau'])} đến {_gio(m['het'])} ({_thoi_luong(a['tong_tg'])}), đo {a['so_mau']} lần, "
-                        f"mỗi {m['nhip']} giây · CamLink", NHO))
+    el.append(Paragraph(f"{m.get('du_an') or ''} · Điểm {m['stt']}. {m['ten_diem']} · <b>{m['domain']}</b> · {cam_txt}", P))
+    tong_tg = A[0]["tong_tg"]
+    el.append(Paragraph(f"Theo dõi từ {_gio(m['bat_dau'])} đến {_gio(m['het'])} ({_thoi_luong(tong_tg)}), đo {A[0]['so_mau']} lượt, "
+                        f"mỗi {m['nhip']} giây (hỏi trang web từng cam, luồng video 2 phút/lần) · CamLink", NHO))
     el.append(Spacer(1, 5))
-    # ---- 1. tóm tắt
-    mau_kl = XANH if not a["su_kien"] else (DO if a["len_pt"] < 97 else VANG)
-    tt = [["Thời gian cam lên", f"{a['len_pt']} %", "Số lần rớt", str(len(a["su_kien"]))],
-          ["Tổng thời gian rớt", _thoi_luong(a["rot"]), "Lần rớt dài nhất", _thoi_luong(a["dai_nhat"]) if a["su_kien"] else "—"],
-          ["Phản hồi trung bình", f"{a['ms_tb']} ms (chậm nhất {a['ms_max']} ms)", "Lần đo video ngắt (web vẫn lên)", f"{a['video_loi']} lần"]]
-    if a["khong_do"]:
-        tt.append(["Điện thoại mất mạng (không tính)", _thoi_luong(a["khong_do"]), "", ""])
-    tb = Table([[Paragraph(str(x), P if i % 2 == 0 else s(f=FB)) for i, x in enumerate(r)] for r in tt], colWidths=[W * .27, W * .23, W * .27, W * .23])
-    tb.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), .4, XAM), ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F2F5F8")),
-                            ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#F2F5F8")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+    # ---- 1. bảng tóm tắt từng cam
+    rows = [["Cam", "Thời gian lên", "Số lần rớt", "Tổng rớt", "Dài nhất", "Chập chờn", "Phản hồi"]]
+    for a in A:
+        rows.append([f"Cam {a['m']['so']} (:{a['m']['http']})", f"{a['len_pt']} %", str(len(a["su_kien"])), _thoi_luong(a["rot"]) if a["rot"] else "0",
+                     _thoi_luong(a["dai_nhat"]) if a["su_kien"] else "—", str(len(a["chap_chon"])), f"{a['ms_tb']} ms"])
+    tb = Table(rows, colWidths=[W * .2, W * .14, W * .11, W * .14, W * .13, W * .14, W * .14])
+    stl = [("FONT", (0, 0), (-1, -1), F, 9), ("FONT", (0, 0), (-1, 0), FB, 8.5), ("GRID", (0, 0), (-1, -1), .4, XAM),
+           ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E6EEF5")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE")]
+    for i, a in enumerate(A, 1):
+        stl.append(("TEXTCOLOR", (1, i), (1, i), XANH if not a["su_kien"] else (DO if a["len_pt"] < 97 else VANG)))
+        stl.append(("FONT", (1, i), (1, i), FB, 9))
+    tb.setStyle(TableStyle(stl))
     el.append(tb)
-    el.append(Spacer(1, 4))
-    el.append(Paragraph(f"<b>Kết luận:</b> {a['ket_luan']}", s(f=F, c=10.5, l=14, textColor=mau_kl)))
-    # ---- dải thời gian lên/rớt
-    d = Drawing(W, 34)
-    d.add(Rect(0, 12, W, 12, fillColor=colors.HexColor("#CFE8D8"), strokeColor=None))
+    kd = A[0]
+    if kd["khong_do"]:
+        ly = []
+        if kd["mat_mang"]:
+            ly.append(f"điện thoại mất mạng {_thoi_luong(kd['mat_mang'])}")
+        if kd["ngu"]:
+            ly.append(f"điện thoại dừng app {len(kd['trong'])} lần, {_thoi_luong(kd['ngu'])}")
+        el.append(Paragraph(f"Không đo được (không tính vào kết quả): {_thoi_luong(kd['khong_do'])} — " + "; ".join(ly) + ".", NHO))
+    if kd["doi_mang"]:
+        el.append(Paragraph(f"Điện thoại đổi mạng {len(kd['doi_mang'])} lần (" + ", ".join(
+            f"{time.strftime('%H:%M', time.localtime(t))} {a.replace('di_dong', '4G')}→{b.replace('di_dong', '4G')}" for t, a, b in kd["doi_mang"][:6])
+            + ") — lần rớt trùng giờ đổi mạng nên xem lại.", NHO))
+    el.append(Spacer(1, 3))
+    # kết luận
+    ca_diem = sum(1 for a in A for x in a["su_kien"] if x["loai"] in ("ca_diem", "modem_doi_ip"))
+    for a in A:
+        kl = a["ket_luan"].replace("Cam ổn định", "Ổn định")
+        el.append(Paragraph(f"<b>{'Cam ' + str(a['m']['so']) + ': ' if nhieu else 'Kết luận: '}</b>{kl}",
+                            s(c=10, l=13.5, textColor=XANH if not a["su_kien"] else (DO if a["len_pt"] < 97 else VANG))))
+    if nhieu and ca_diem:
+        el.append(Paragraph(f"<b>Cả điểm:</b> {ca_diem} lần mọi cam cùng mất → lỗi ở điện / modem / đường truyền, không phải lỗi từng cam.", s(c=10, l=13.5, textColor=DO)))
+    # ---- dải thời gian từng cam
+    nhan_w = 42 if nhieu else 0
+    BW = W - nhan_w
+    d = Drawing(W, 16 + 16 * len(A))
     t0, t1 = m["bat_dau"], max(m["het"], m["bat_dau"] + 1)
-    for x in a["mau"]:
-        if not x["net"]:
-            d.add(Rect(W * (x["t"] - t0) / (t1 - t0), 12, max(1, W * m["nhip"] / (t1 - t0)), 12, fillColor=XAM, strokeColor=None))
-    for x in a["su_kien"]:
-        d.add(Rect(W * (x["bd"] - t0) / (t1 - t0), 12, max(1.5, W * x["dur"] / (t1 - t0)), 12, fillColor=DO, strokeColor=None))
+    X = lambda t: nhan_w + BW * (t - t0) / (t1 - t0)
+    for i, a in enumerate(A):
+        y = 12 + 16 * (len(A) - 1 - i)
+        if nhieu:
+            d.add(String(0, y + 3, f"Cam {a['m']['so']}", fontName=FB, fontSize=8))
+        d.add(Rect(nhan_w, y, BW, 11, fillColor=colors.HexColor("#CFE8D8"), strokeColor=None))
+        for x in a["mau"]:
+            if not x["net"]:
+                d.add(Rect(X(x["t"]), y, max(1, BW * m["nhip"] / (t1 - t0)), 11, fillColor=XAM, strokeColor=None))
+        for g0, g1 in a["trong"]:
+            d.add(Rect(X(g0), y, max(1, X(g1) - X(g0)), 11, fillColor=XAM, strokeColor=None))
+        for x in a["chap_chon"]:
+            d.add(Rect(X(x["t"]), y, 1, 11, fillColor=VANG, strokeColor=None))
+        for x in a["su_kien"]:
+            d.add(Rect(X(x["bd"]), y, max(1.5, BW * x["dur"] / (t1 - t0)), 11, fillColor=TIM if x["loai"] == "cam_treo" else DO, strokeColor=None))
     for i in range(5):
         tx = t0 + (t1 - t0) * i / 4
-        d.add(String(W * i / 4 - (0 if i == 0 else (24 if i == 4 else 12)), 2, time.strftime("%H:%M", time.localtime(tx)), fontName=F, fontSize=7))
-    d.add(String(0, 27, "Dải thời gian: xanh = cam lên · đỏ = rớt · xám = điện thoại mất mạng", fontName=F, fontSize=7, fillColor=colors.HexColor("#5B6776")))
+        d.add(String(nhan_w + BW * i / 4 - (0 if i == 0 else (24 if i == 4 else 12)), 2, time.strftime("%H:%M", time.localtime(tx)), fontName=F, fontSize=7))
+    el.append(Paragraph("Dải thời gian: xanh = lên · đỏ = rớt · tím = cam treo · vàng = chập chờn ngắn · xám = không đo được", NHO))
     el.append(d)
     # ---- 2. nguyên nhân
     el.append(Paragraph("1. Nguyên nhân các lần rớt", H2))
-    if not a["nhom"]:
-        el.append(Paragraph("Không có lần rớt nào trong thời gian theo dõi.", P))
-    for g in a["nhom"]:
-        el.append(Paragraph(f"• <b>{g['ten']}</b>: {g['so']} lần, tổng {_thoi_luong(g['giay'])} "
-                            f"({round(100 * g['giay'] / max(1, a['rot']))}% thời gian rớt)", P))
-    if a["gio"] and len(a["su_kien"]) >= 3:
-        h, n = max(a["gio"].items(), key=lambda x: x[1])
-        if n >= 2:
-            el.append(Paragraph(f"• Rớt dồn nhiều nhất khung giờ {h:02d}:00–{(h + 1) % 24:02d}:00 ({n} lần)"
-                                + (" — giờ cao điểm điện tối, nghi nguồn điện yếu." if 17 <= h <= 21 else "."), P))
-    if a["chap_chon"]:
-        cc = a["chap_chon"]
-        nv = sum(1 for x in cc if x["kieu"] == "video")
-        el.append(Paragraph(f"• <b>Chập chờn ngắn (&lt; 1 phút)</b>: {len(cc)} lần"
-                            + (f" — {nv} lần web còn nhưng video ngắt, {len(cc) - nv} lần mất hẳn" if nv else "")
-                            + ". Giờ: " + ", ".join(time.strftime("%H:%M", time.localtime(x["t"])) for x in cc[:20])
-                            + (" …" if len(cc) > 20 else ""), P))
-    if a["live"]:
-        lv = a["live"]
-        el.append(Paragraph(f"• <b>Màn xem trực tiếp bị ngắt</b> (ghi từ chính màn xem trên điện thoại): {len(lv)} lần — "
-                            + ", ".join(time.strftime("%H:%M:%S", time.localtime(x["ngat"])) + (f" (lên lại sau {_thoi_luong(x['len'] - x['ngat'])})" if x.get("len") else "")
-                                        for x in lv[:12]) + (" …" if len(lv) > 12 else ""), P))
-    if a["rtsp_xac_thuc"]:
-        el.append(Paragraph(f"• Luồng video từ chối user/pass {a['rtsp_xac_thuc']} lần — không tính là rớt; kiểm tra user/pass cam lưu trong CamLink.", NHO))
-    # ---- 3. danh sách
-    sk = a["su_kien"]
-    if sk:
+    co_rot = False
+    for a in A:
+        tien = f"Cam {a['m']['so']} — " if nhieu else ""
+        for g in a["nhom"]:
+            co_rot = True
+            el.append(Paragraph(f"• {tien}<b>{g['ten']}</b>: {g['so']} lần, tổng {_thoi_luong(g['giay'])} "
+                                f"({round(100 * g['giay'] / max(1, a['rot']))}% thời gian rớt)", P))
+        if a["gio"] and len(a["su_kien"]) >= 3:
+            h, n = max(a["gio"].items(), key=lambda x: x[1])
+            if n >= 2:
+                el.append(Paragraph(f"• {tien}Rớt dồn nhiều nhất khung giờ {h:02d}:00–{(h + 1) % 24:02d}:00 ({n} lần)"
+                                    + (" — giờ cao điểm điện tối, nghi nguồn điện yếu." if 17 <= h <= 21 else "."), P))
+        if a["chap_chon"]:
+            cc = a["chap_chon"]
+            loai = {"video": "web còn nhưng video ngắt", "treo": "treo", "mat": "mất hẳn"}
+            dem = {}
+            for x in cc:
+                dem[x["kieu"]] = dem.get(x["kieu"], 0) + 1
+            el.append(Paragraph(f"• {tien}<b>Chập chờn ngắn (&lt; 1 phút)</b>: {len(cc)} lần ("
+                                + ", ".join(f"{n} lần {loai.get(k, k)}" for k, n in dem.items()) + "). Giờ: "
+                                + ", ".join(time.strftime("%H:%M", time.localtime(x["t"])) for x in cc[:16]) + (" …" if len(cc) > 16 else ""), P))
+        if a["live"]:
+            lv = a["live"]
+            el.append(Paragraph(f"• {tien}<b>Màn xem trực tiếp bị ngắt</b> (ghi từ chính màn xem): {len(lv)} lần — "
+                                + ", ".join(time.strftime("%H:%M:%S", time.localtime(x["ngat"])) + (f" (lên lại sau {_thoi_luong(x['len'] - x['ngat'])})" if x.get("len") else "")
+                                            for x in lv[:10]) + (" …" if len(lv) > 10 else ""), P))
+        if a["rtsp_xac_thuc"]:
+            el.append(Paragraph(f"• {tien}Luồng video từ chối user/pass {a['rtsp_xac_thuc']} lần — không tính là rớt; kiểm tra user/pass cam lưu trong CamLink.", NHO))
+    if not co_rot:
+        el.append(Paragraph("Không có lần rớt kéo dài nào trong thời gian theo dõi.", P))
+    # ---- 3. danh sách (gộp mọi cam, tối đa 18 lần dài nhất)
+    tat = [(a["m"]["so"], x) for a in A for x in a["su_kien"]]
+    if tat:
         el.append(Paragraph("2. Danh sách các lần rớt", H2))
-        hien = sorted(sk, key=lambda x: -x["dur"])[:15] if len(sk) > 15 else sk
-        hien = sorted(hien, key=lambda x: x["bd"])
-        rows = [["#", "Bắt đầu", "Lên lại", "Kéo dài", "Nguyên nhân · dấu hiệu"]]
-        for x in hien:
+        hien = sorted(sorted(tat, key=lambda y: -y[1]["dur"])[:18], key=lambda y: y[1]["bd"])
+        rows = [(["Cam"] if nhieu else []) + ["Bắt đầu", "Lên lại", "Kéo dài", "Nguyên nhân · dấu hiệu"]]
+        for so, x in hien:
             dh = []
             if x.get("ti_le_ban_len") is not None:
                 dh.append(f"cam khác cùng điểm lên {round(100 * x['ti_le_ban_len'])}%")
@@ -600,49 +804,57 @@ def bao_cao_pdf(tid):
                 dh.append(f"IP {x['ip_truoc']} → {x['ip_sau']}")
             if x.get("dns_loi"):
                 dh.append("tên miền không phân giải")
-            rows.append([str(x["n"]), _gio(x["bd"])[:8], (Paragraph("chưa lên<br/>(hết giờ theo dõi)", s(c=8, l=10)) if x.get("chua_len") else _gio(x["kt"])[:8]),
-                         _thoi_luong(x["dur"]), Paragraph(f"{x['nguyen_nhan'].split('(')[0].strip()}" + (f" · <font color='#5B6776'>{'; '.join(dh)}</font>" if dh else ""), s(c=8.5, l=11))])
-        t = Table(rows, colWidths=[W * .05, W * .13, W * .17, W * .14, W * .51], repeatRows=1)
+            rows.append(([str(so)] if nhieu else []) + [_gio(x["bd"])[:8], (Paragraph("chưa lên<br/>(hết giờ theo dõi)", s(c=8, l=10)) if x.get("chua_len") else _gio(x["kt"])[:8]),
+                        _thoi_luong(x["dur"]), Paragraph(f"{x['nguyen_nhan'].split('(')[0].split(':')[0].strip()}" + (f" · <font color='#5B6776'>{'; '.join(dh)}</font>" if dh else ""), s(c=8.5, l=11))])
+        cw = ([W * .06] if nhieu else []) + [W * .13, W * .16, W * .14] + [W * (.51 - (.06 if nhieu else 0) + .06 * (0 if nhieu else 0))]
+        cw[-1] = W - sum(cw[:-1])
+        t = Table(rows, colWidths=cw, repeatRows=1)
         t.setStyle(TableStyle([("FONT", (0, 0), (-1, -1), F, 8.5), ("FONT", (0, 0), (-1, 0), FB, 8.5), ("GRID", (0, 0), (-1, -1), .3, XAM),
                                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E6EEF5")), ("VALIGN", (0, 0), (-1, -1), "TOP")]))
         el.append(t)
-        if len(sk) > len(hien):
-            con = [x for x in sk if x not in hien]
+        if len(tat) > len(hien):
+            con = [x for y in tat if y not in hien for x in [y[1]]]
             el.append(Paragraph(f"Còn {len(con)} lần rớt ngắn khác, tổng {_thoi_luong(sum(x['dur'] for x in con))} (không liệt kê).", NHO))
-    # ---- 4. đề xuất
+    # ---- 4. đề xuất (gộp mọi cam, nhóm nhiều lần nhất lên trước, không lặp)
     el.append(Paragraph("3. Đề xuất khắc phục", H2))
-    if not a["nhom"]:
+    gom = {}
+    for a in A:
+        for g in a["nhom"]:
+            x = gom.setdefault(g["loai"], {"ten": g["ten"], "so": 0, "cam": []})
+            x["so"] += g["so"]
+            x["cam"].append(str(a["m"]["so"]))
+    if not gom:
         el.append(Paragraph("Không cần xử lý. Nếu trước đây cam từng chập chờn, nên theo dõi thêm một lần vào khung giờ hay rớt.", P))
     da = set()
-    for i, g in enumerate(a["nhom"], 1):
-        el.append(Paragraph(f"<b>{i}. Cho nhóm \"{g['ten'].split('(')[0].strip()}\" ({g['so']} lần):</b>", P))
-        for v in NGUYEN_NHAN[g["loai"]][1]:
-            if v in da:
-                continue
-            da.add(v)
-            el.append(Paragraph(f"   – {v}", P))
-    if (a["chap_chon"] or a["live"]) and "video_ngat" not in {g["loai"] for g in a["nhom"]} and (sum(1 for x in a["chap_chon"] if x["kieu"] == "video") or a["live"]):
+    for i, (k, g) in enumerate(sorted(gom.items(), key=lambda y: -y[1]["so"]), 1):
+        el.append(Paragraph(f"<b>{i}. {g['ten'].split('(')[0].split(':')[0].strip()}</b> ({g['so']} lần" + (f", cam {', '.join(g['cam'])}" if nhieu else "") + "):", P))
+        for v in NGUYEN_NHAN[k][1]:
+            if v not in da:
+                da.add(v)
+                el.append(Paragraph(f"   – {v}", P))
+    ngan_video = any(x["kieu"] == "video" for a in A for x in a["chap_chon"]) or any(a["live"] for a in A)
+    if ngan_video and "video_ngat" not in gom:
         el.append(Paragraph("<b>Cho các lần video ngắt ngắn:</b>", P))
         for v in NGUYEN_NHAN["video_ngat"][1]:
             el.append(Paragraph(f"   – {v}", P))
-    if a["khong_do"] > 0.2 * a["tong_tg"]:
-        el.append(Paragraph("<b>Lưu ý:</b> điện thoại theo dõi mất mạng hơn 20% thời gian — nên theo dõi lại bằng máy cắm sạc, sóng ổn định.", P))
-    # ---- 5. ảnh tiêu biểu
-    cap = [(x.get("anh_truoc"), x.get("anh_sau"), x) for x in sorted(sk, key=lambda x: -x["dur"]) if x.get("anh_truoc") or x.get("anh_sau")][:2]
+    if kd["khong_do"] > 0.2 * tong_tg:
+        el.append(Paragraph("<b>Lưu ý:</b> hơn 20% thời gian không đo được — để điện thoại cắm sạc, sóng ổn định, và cho CamLink chạy nền không tối ưu pin.", P))
+    # ---- 5. ảnh tiêu biểu (2 lần dài nhất có ảnh)
+    cap = [(so, x) for so, x in sorted(tat, key=lambda y: -y[1]["dur"]) if x.get("anh_truoc") or x.get("anh_sau")][:2]
     if cap:
         el.append(Paragraph("4. Ảnh trước / sau lần rớt tiêu biểu", H2))
-        for tr, sa, x in cap:
+        for so, x in cap:
             o = []
-            for f_anh, nhan in ((tr, "Trước khi rớt"), (sa, "Sau khi lên lại")):
+            for f_anh, nhan in ((x.get("anh_truoc"), "Trước khi rớt"), (x.get("anh_sau"), "Sau khi lên lại")):
                 if f_anh and os.path.exists(f_anh):
                     o.append([Image(f_anh, width=W * .40, height=W * .40 * 9 / 16), Paragraph(nhan, NHO)])
                 else:
                     o.append([Paragraph("(không có ảnh)", NHO), Paragraph(nhan, NHO)])
             tbl = Table([[o[0][0], o[1][0]], [o[0][1], o[1][1]]], colWidths=[W * .5, W * .5])
-            el.append(KeepTogether([Paragraph(f"Lần {x['n']} lúc {_gio(x['bd'])}, kéo dài {_thoi_luong(x['dur'])}", P), tbl]))
+            el.append(KeepTogether([Paragraph((f"Cam {so} · " if nhieu else "") + f"lần {x['n']} lúc {_gio(x['bd'])}, kéo dài {_thoi_luong(x['dur'])}", P), tbl]))
     el.append(Spacer(1, 6))
-    el.append(Paragraph("Cách đọc: \"rớt\" = 2 lần đo liên tiếp (≥ 1 phút) không vào được port cam HOẶC luồng video lỗi, trong khi điện thoại vẫn có mạng; "
-                        "hỏng 1 lần đo rồi lên = \"chập chờn ngắn\". "
+    el.append(Paragraph("Cách đọc: \"rớt\" = 2 lượt đo liên tiếp (≥ 1 phút) cam không trả lời trang web, bị treo, hoặc luồng video lỗi, trong khi điện thoại vẫn có mạng; "
+                        "hỏng 1 lượt rồi lên = \"chập chờn ngắn\". \"Treo\" = port vẫn nhận kết nối nhưng cam không trả lời. "
                         "Nguyên nhân suy ra từ cam khác cùng điểm, IP công cộng của modem và thời gian rớt; \"khởi động lại\" là suy luận "
                         "từ rớt ngắn 0,5–3 phút khi cam khác vẫn lên.", NHO))
     doc.build(el)

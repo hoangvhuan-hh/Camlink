@@ -31,6 +31,7 @@ def khoi_tao(thu_muc):
     L.khoi_tao(thu_muc)
     import camlink_theodoi as TD
     TD.khoi_tao(thu_muc)
+    TD.KHI_BAO = _theodoi_bao_lm
     global GOC
     GOC = thu_muc
     os.makedirs(os.path.join(GOC, "ketqua"), exist_ok=True)
@@ -935,15 +936,61 @@ def theodoi_bat(ma, json_p, so, phut, ten_du_an=""):
     return TD.bat(ma, p, int(so), float(phut), C.doc_cai_dat())
 
 
-def theodoi_vong():
-    """Gọi mỗi 30 giây từ dịch vụ chạy nền. JSON {dang:[…], xong_moi:[id], pdf_moi:[đường dẫn]}."""
+def theodoi_bat_diem(ma, json_p, phut, ten_du_an=""):
+    """Theo dõi CẢ ĐIỂM (mọi cam, chung một lượt đo, chung một báo cáo). Trả mã nhóm."""
     import camlink_theodoi as TD
-    return json.dumps(TD.vong(), ensure_ascii=False)
+    p = json.loads(json_p)
+    if ten_du_an:
+        p["du_an"] = ten_du_an
+    return TD.bat_diem(ma, p, float(phut), C.doc_cai_dat())
+
+
+def theodoi_vong(loai_mang=""):
+    """Gọi mỗi 10 giây từ dịch vụ chạy nền. JSON {dang:[…], xong_moi:[id], pdf_moi:[đường dẫn], bao:[tin báo ngay]}."""
+    import camlink_theodoi as TD
+    return json.dumps(TD.vong(loai_mang or ""), ensure_ascii=False)
 
 
 def theodoi_ds():
     import camlink_theodoi as TD
-    return json.dumps([TD.tom_tat(m) for m in TD.ds()], ensure_ascii=False)
+    return json.dumps(TD.ds_hien(), ensure_ascii=False)
+
+
+def _theodoi_bao_lm(b):
+    """Theo dõi: cam rớt ≥ 5 phút / lên lại → sửa đúng cam đó trong kết quả kiểm gần nhất rồi đẩy lên ghim LiteMark
+    (gửi cả ảnh chụp toàn dự án như mọi lần kiểm, nên điểm khác không bị mất cảnh báo). Chưa nối LiteMark thì thôi."""
+    import camlink_tuxa as T
+    import camlink_litemark as L
+    ma = b.get("ma", "")
+    if not ma or not L.lien_ket(ma).get("id"):
+        return False
+    f = T._f_lich_su(GOC, ma)
+    try:
+        with open(f, encoding="utf-8") as fh:
+            kq = json.load(fh)
+    except (OSError, ValueError):
+        return False
+    p = next((x for x in kq.get("diem", []) if str(x.get("stt")) == str(b.get("stt"))), None)
+    if not p:
+        return False
+    c = next((x for x in p.get("cam", []) if int(x.get("http") or 0) == int(b.get("http") or 0)), None)
+    if not c:
+        return False
+    if b["kieu"] == "rot":
+        c.update({"muc": "do", "nhan": f"Rớt từ {time.strftime('%H:%M', time.localtime(b['bd']))} (theo dõi)",
+                  "nguyen_nhan": b.get("nguyen_nhan", ""), "theo_doi_rot": b["bd"]})
+    elif c.get("theo_doi_rot"):
+        c.update({"muc": "xanh", "nhan": "Đạt", "nguyen_nhan": f"Đã lên lại sau {round(b.get('dur', 0) / 60)} phút rớt (theo dõi)"})
+        c.pop("theo_doi_rot", None)
+    else:
+        return False
+    dat = sum(1 for x in p["cam"] if x.get("muc") == "xanh")
+    p["muc"] = "xanh" if dat == len(p["cam"]) else "do"
+    p["tong"] = "ĐẠT" if p["muc"] == "xanh" else f"{dat}/{len(p['cam'])} cam đạt"
+    kq["dat"] = sum(1 for x in kq["diem"] for y in x.get("cam", []) if y.get("muc") == "xanh")
+    with open(f, "w", encoding="utf-8") as fh:      # lần kiểm nhanh sau sẽ quét lại đúng cam đang rớt
+        json.dump(kq, fh, ensure_ascii=False)
+    return L.goi_canh_bao(ma, kq, PHIEN_BAN_LOI, lambda *_: None, _doc_du_an(ma))
 
 
 def theodoi_dung(tid):

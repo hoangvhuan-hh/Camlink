@@ -243,6 +243,13 @@ def kiem_diem(stt, d, cd, anh_dir, ma, ho_so=None):
             c["live"] = ov.luong_video(um, tk, c["rtsp"])
         except Exception:
             c["live"] = f"rtsp://{cu}:{cp}@{dom}:{c['rtsp']}/"
+        # luồng PHỤ cho điện thoại xem (nhẹ hơn 6–8 lần, không tranh băng thông với IOC); không có thì xem luồng chính
+        c["live_phu"] = ""
+        if len(getattr(ov, "profiles", [])) > 1:
+            try:
+                c["live_phu"] = ov.luong_video(um, ov.profiles[1], c["rtsp"])
+            except Exception:
+                pass
         c["t_rtsp"], c["ms_rtsp"] = ket[c["rtsp"]] if c["rtsp"] in ket else cham_tg(dom, c["rtsp"])
         if c["t_rtsp"] == "mo" and c.get("live"):
             try:
