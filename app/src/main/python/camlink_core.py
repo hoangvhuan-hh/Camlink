@@ -949,3 +949,9 @@ def theodoi_ds():
 def theodoi_dung(tid):
     import camlink_theodoi as TD
     return TD.dung(tid)
+
+
+def theodoi_ghi_live(domain, port_rtsp, luc_ngat, luc_len):
+    """Màn xem trực tiếp báo ngắt/lên lại (luc_len=0 là ngắt)."""
+    import camlink_theodoi as TD
+    return TD.ghi_live(domain, int(port_rtsp), float(luc_ngat), float(luc_len))

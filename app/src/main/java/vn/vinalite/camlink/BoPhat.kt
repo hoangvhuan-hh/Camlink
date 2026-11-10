@@ -22,15 +22,16 @@ class BoPhat(private val act: Activity) {
         LibVLC(act, arrayListOf("--rtsp-tcp", "--network-caching=600", "--no-drop-late-frames", "--no-skip-frames", "--no-audio"))
     }
     private val dang = HashMap<String, MediaPlayer>()
-    private val lanThu = HashMap<String, Int>()          // url → số lần tự thử lại liên tiếp
-    private val hen = HashMap<String, Runnable>()        // url → lần tự thử lại đã hẹn
+    private val ngatLuc = HashMap<String, Long>()        // url → lúc luồng bắt đầu rớt (giữ tới khi có hình lại)
+    private val canh = HashMap<String, Runnable>()       // url → vòng gõ cửa / canh hình đứng
     @Volatile private var dungHan = false
+    private val gio = java.text.SimpleDateFormat("HH:mm:ss")
     private fun dp(v: Int) = (v * act.resources.displayMetrics.density).toInt()
 
     /** Phát url vào khung; trangThai nhận dòng trạng thái. Lỗi → hiện lý do + nút mở VLC ngoài. */
     fun phat(khung: FrameLayout, url: String, trangThai: TextView, chieuCao: Int = 200, khiLoi: (() -> Unit)? = null) {
         dungHan = false
-        hen.remove(url)?.let { ui.removeCallbacks(it) }
+        canh.remove(url)?.let { ui.removeCallbacks(it) }
         dung(url)
         khung.removeAllViews()
         if (url.isEmpty()) { trangThai.text = "Không có luồng video"; return }
@@ -50,10 +51,14 @@ class BoPhat(private val act: Activity) {
         mp.setEventListener { ev ->
             when (ev.type) {
                 MediaPlayer.Event.Buffering -> if (ev.buffering < 100f) trangThai.text = "⏳ Đang tải ${ev.buffering.toInt()}%"
-                MediaPlayer.Event.Vout -> {
-                    lanThu.remove(url)
-                    trangThai.text = "🔴 TRỰC TIẾP · ${java.text.SimpleDateFormat("HH:mm:ss").format(java.util.Date())} · ${(System.currentTimeMillis() - t0) / 1000}s"
+                MediaPlayer.Event.Vout -> if (ev.voutCount > 0) {
+                    val nl = ngatLuc.remove(url)
+                    val them = if (nl != null) " · lên lại sau rớt ${(System.currentTimeMillis() - nl) / 1000}s" else ""
+                    trangThai.text = "🔴 TRỰC TIẾP · ${gio.format(java.util.Date())}$them"
                     trangThai.setTextColor(Color.parseColor("#1D7A46"))
+                    khung.setBackgroundColor(Color.TRANSPARENT)
+                    if (nl != null) ghiLoi(url, nl, System.currentTimeMillis())
+                    canhHinhDung(khung, url, trangThai, chieuCao, mp, khiLoi)
                 }
                 MediaPlayer.Event.EncounteredError -> ui.post { loi(khung, url, trangThai, "libVLC báo lỗi luồng (sau ${(System.currentTimeMillis() - t0) / 1000}s)", chieuCao); khiLoi?.invoke() }
                 MediaPlayer.Event.EndReached -> ui.post { loi(khung, url, trangThai, "Luồng kết thúc sớm — cam ngắt kết nối", chieuCao); khiLoi?.invoke() }
@@ -68,43 +73,80 @@ class BoPhat(private val act: Activity) {
         dang[url] = mp
     }
 
-    /** Lỗi → hiện lý do + nút, và TỰ THỬ LẠI (20 s, 40 s, rồi mỗi 60 s) khi ô còn trên màn hình — cam lên lại là hình tự về. */
+    /** Đang có hình mà khung hình đứng im > 15 s (cam ngắt luồng nhưng không báo lỗi) → coi là rớt, đúng như mắt thấy. */
+    private fun canhHinhDung(khung: FrameLayout, url: String, trangThai: TextView, chieuCao: Int, mp: MediaPlayer, khiLoi: (() -> Unit)?) {
+        canh.remove(url)?.let { ui.removeCallbacks(it) }
+        var tCu = -1L; var dungTu = 0L
+        val r = object : Runnable { override fun run() {
+            if (dungHan || dang[url] !== mp || !khung.isAttachedToWindow) return
+            val t = try { mp.time } catch (_: Exception) { -1L }
+            val now = System.currentTimeMillis()
+            if (t != tCu || !mp.isPlaying && t < 0) { tCu = t; dungTu = now }
+            else if (now - dungTu > 15000) { loi(khung, url, trangThai, "Hình đứng im — cam ngắt luồng video", chieuCao); khiLoi?.invoke(); return }
+            ui.postDelayed(this, 5000)
+        } }
+        canh[url] = r
+        ui.postDelayed(r, 5000)
+    }
+
+    /** Rớt → báo GIỜ RỚT, rồi gõ cửa cam 10 giây/lần (1 kết nối TCP, không kéo video). Cam trả lời là tự phát lại — không cần bấm. */
     private fun loi(khung: FrameLayout, url: String, trangThai: TextView, ly: String, chieuCao: Int = 200) {
         dung(url)
         khung.removeAllViews()
-        val an = url.replace(Regex("//[^@/]*@"), "//")
-        val n = (lanThu[url] ?: 0) + 1
-        lanThu[url] = n
-        val giay = when (n) { 1 -> 20; 2 -> 40; else -> 60 }
-        trangThai.text = "✖ $ly · ${java.text.SimpleDateFormat("HH:mm:ss").format(java.util.Date())}\nTự thử lại sau $giay giây (lần $n)\n$an"
-        if (!dungHan) {
-            val r = Runnable { if (!dungHan && khung.isAttachedToWindow) phat(khung, url, trangThai, chieuCao) }
-            hen[url] = r
-            ui.postDelayed(r, giay * 1000L)
-        }
+        val dau = ngatLuc[url] == null
+        if (dau) { ngatLuc[url] = System.currentTimeMillis(); ghiLoi(url, ngatLuc[url]!!, 0L) }
+        val luc = gio.format(java.util.Date(ngatLuc[url]!!))
+        trangThai.text = "✖ Cam rớt lúc $luc — đang chờ cam lên (kiểm 10 giây/lần)\n$ly"
         trangThai.setTextColor(Color.parseColor("#B42318"))
-        val b = Button(act)
-        b.text = "Thử lại"
-        b.isAllCaps = false
-        b.setOnClickListener { lanThu.remove(url); phat(khung, url, trangThai, chieuCao) }
+        khung.setBackgroundColor(Color.parseColor("#FDECEA"))
         val b2 = Button(act)
         b2.text = "Mở VLC"
         b2.isAllCaps = false
         b2.setOnClickListener {
             try { act.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(url), "video/*")) } catch (_: Exception) {}
         }
-        val hang = android.widget.LinearLayout(act)
-        hang.orientation = android.widget.LinearLayout.HORIZONTAL
-        hang.addView(b); hang.addView(b2)
-        khung.setBackgroundColor(Color.parseColor("#FDECEA"))
-        khung.addView(hang, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        khung.addView(b2, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        val u = try { Uri.parse(url) } catch (_: Exception) { null }
+        val host = u?.host ?: return
+        val port = if ((u.port) > 0) u.port else 554
+        var lan = 0
+        val r = object : Runnable { override fun run() {
+            if (dungHan || !khung.isAttachedToWindow) return
+            lan++
+            Thread {
+                val mo = try { java.net.Socket().use { it.connect(java.net.InetSocketAddress(host, port), 4000) }; true } catch (_: Exception) { false }
+                ui.post {
+                    if (dungHan || !khung.isAttachedToWindow || canh[url] !== this) return@post
+                    if (mo) { trangThai.text = "⏳ Cam đã trả lời (rớt từ $luc) — đang lấy hình…"; phat(khung, url, trangThai, chieuCao) }
+                    else {
+                        trangThai.text = "✖ Cam rớt lúc $luc — vẫn chưa lên (đã kiểm $lan lần, lần cuối ${gio.format(java.util.Date())})\n$ly"
+                        ui.postDelayed(this, 10000)
+                    }
+                }
+            }.start()
+        } }
+        canh[url] = r
+        ui.postDelayed(r, 10000)
+    }
+
+    /** Ghi lần ngắt/lên lại sang lõi — nếu cam này đang được Theo dõi thì báo cáo có luôn (hai màn khớp nhau). */
+    private fun ghiLoi(url: String, ngat: Long, len: Long) {
+        val u = try { Uri.parse(url) } catch (_: Exception) { return }
+        val host = u.host ?: return
+        val port = if (u.port > 0) u.port else 554
+        Thread {
+            try {
+                com.chaquo.python.Python.getInstance().getModule("camlink_core")
+                    .callAttr("theodoi_ghi_live", host, port, ngat / 1000.0, len / 1000.0)
+            } catch (_: Exception) {}
+        }.start()
     }
 
     fun dung(url: String) {
         dang.remove(url)?.let { try { it.stop(); it.detachViews(); it.release() } catch (_: Exception) {} }
     }
 
-    fun dungHet() { dungHan = true; hen.values.forEach { ui.removeCallbacks(it) }; hen.clear(); ArrayList(dang.keys).forEach { dung(it) } }
+    fun dungHet() { dungHan = true; canh.values.forEach { ui.removeCallbacks(it) }; canh.clear(); ArrayList(dang.keys).forEach { dung(it) } }
     fun tamDung() { dang.values.forEach { try { it.pause() } catch (_: Exception) {} } }
     fun tiepTuc() { dang.values.forEach { try { it.play() } catch (_: Exception) {} } }
 }
