@@ -82,24 +82,11 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (!Python.isStarted()) Python.start(AndroidPlatform(this))
-        // Lõi Python cập nhật đè: nếu có thư mục capnhat (đã kiểm sha256) thì ưu tiên nạp từ đó
-        run {
-            val py = Python.getInstance()
-            val th = File(filesDir, "capnhat")
-            val mf = File(th, "manifest.json")
-            if (mf.exists()) {
-                // Chỉ dùng lõi cập nhật đè khi nó MỚI HƠN lõi trong APK; APK mới hơn thì bỏ thư mục capnhat cũ
-                val pbApk = try { py.getModule("camlink_phien_ban")["PHIEN_BAN"].toString() } catch (_: Exception) { "0" }
-                val pbCapNhat = try { org.json.JSONObject(mf.readText()).optString("phien_ban", "0") } catch (_: Exception) { "0" }
-                if (soSanhPhienBan(pbCapNhat, pbApk) > 0) py.getModule("sys")["path"]!!.callAttr("insert", 0, th.absolutePath)
-                else th.deleteRecursively()
-            }
-        }
+        Loi.khoiDong(this)
         core = Python.getInstance().getModule("camlink_core")
-        core.callAttr("khoi_tao", filesDir.absolutePath)
         dungGiaoDien()
         capNhatTieuDe()
+        Loi.baoLoiCu(this)
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()

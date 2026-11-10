@@ -112,7 +112,7 @@ object TheoDoi {
         val d = ds()
         if (d.length() == 0) {
             AlertDialog.Builder(act).setTitle("Theo dõi ổn định")
-                .setMessage("Chưa theo dõi cam nào.\n\nBấm nút \"📈 Theo dõi\" dưới ô cam muốn theo dõi (màn này hoặc màn giám sát) → chọn thời gian. Hết giờ app tự ra báo cáo PDF.")
+                .setMessage("Chưa theo dõi cam nào.\n\nMở một điểm → bấm \"📈 Theo dõi\" (dưới ô cam ở màn này, hoặc thanh nút dưới đáy màn giám sát) → chọn cam, chọn thời gian. Hết giờ app tự ra báo cáo PDF.")
                 .setPositiveButton("OK", null).show(); return
         }
         val nhan = (0 until d.length()).map { i ->
@@ -149,15 +149,17 @@ class TheoDoiService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val n = thongBao("Đang bắt đầu…")
-        if (Build.VERSION.SDK_INT >= 29) startForeground(9, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC) else startForeground(9, n)
+        // Android tự khởi động lại dịch vụ khi app nằm nền có thể không cho chạy foreground → không được làm đổ app, chỉ dừng dịch vụ
+        try {
+            val n = thongBao("Đang bắt đầu…")
+            if (Build.VERSION.SDK_INT >= 29) startForeground(9, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC) else startForeground(9, n)
+        } catch (_: Exception) { stopSelf(); return START_NOT_STICKY }
         if (chay) return START_STICKY
         chay = true
         khoa = (getSystemService(Context.POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "camlink:theodoi").apply { acquire(26 * 3600 * 1000L) }
-        thread {
-            if (!Python.isStarted()) Python.start(AndroidPlatform(this))
+        thread { try {
+            Loi.khoiDong(this)
             val core = Python.getInstance().getModule("camlink_core")
-            try { core.callAttr("khoi_tao", filesDir.absolutePath) } catch (_: Exception) {}
             val nm = getSystemService(NotificationManager::class.java)
             while (chay) {
                 try {
@@ -182,11 +184,11 @@ class TheoDoiService : Service() {
                 } catch (_: Exception) {}
                 Thread.sleep(10_000)
             }
+        } catch (_: Throwable) {} finally {
             chay = false
             try { khoa?.release() } catch (_: Exception) {}
-            stopForeground(true)
-            stopSelf()
-        }
+            try { stopForeground(true); stopSelf() } catch (_: Exception) {}
+        } }
         return START_STICKY
     }
 

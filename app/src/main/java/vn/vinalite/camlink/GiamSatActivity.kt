@@ -31,6 +31,7 @@ class GiamSatActivity : Activity() {
     private lateinit var kq: JSONObject
     private var ma = ""
     private lateinit var goc: LinearLayout
+    private lateinit var duoi: LinearLayout          // thanh nút cố định dưới đáy (chỉ khi mở một điểm)
     private val boPhat by lazy { BoPhat(this) }
     private var dangMo: String? = null
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -50,7 +51,16 @@ class GiamSatActivity : Activity() {
         goc.orientation = LinearLayout.VERTICAL
         goc.setBackgroundColor(Color.parseColor("#0F161C"))
         goc.setPadding(dp(8), dp(12), dp(8), dp(16))
-        setContentView(ScrollView(this).apply { addView(goc) })
+        duoi = LinearLayout(this)
+        duoi.orientation = LinearLayout.VERTICAL
+        duoi.setBackgroundColor(Color.parseColor("#172029"))
+        duoi.setPadding(dp(6), dp(6), dp(6), dp(6))
+        val nen = LinearLayout(this)
+        nen.orientation = LinearLayout.VERTICAL
+        nen.setBackgroundColor(Color.parseColor("#0F161C"))
+        nen.addView(ScrollView(this).apply { isFillViewport = true; setBackgroundColor(Color.parseColor("#0F161C")); addView(goc) }, LinearLayout.LayoutParams(-1, 0, 1f))
+        nen.addView(duoi, LinearLayout.LayoutParams(-1, -2))
+        setContentView(nen)
         veLuoi()
     }
 
@@ -68,6 +78,7 @@ class GiamSatActivity : Activity() {
     private fun veLuoi() {
         boPhat.dungHet(); dangMo = null
         goc.removeAllViews()
+        duoi.removeAllViews(); duoi.visibility = View.GONE
         val (dat, tong) = diemList().fold(0 to 0) { a, p -> val (l, t) = camLen(p); (a.first + l) to (a.second + t) }
         goc.addView(chu("${kq.optString("du_an")} · $dat/$tong cam lên · ${kq.optString("luc")}", 15f, true, "#E7EDF2").apply { setPadding(dp(4), 0, dp(4), dp(8)) })
         val luoi = GridLayout(this)
@@ -145,8 +156,14 @@ class GiamSatActivity : Activity() {
         }
         val cs = p.optJSONArray("cam") ?: JSONArray()
         val o = GridLayout(this)
-        o.columnCount = if (cs.length() <= 1) 1 else 2
-        val cao = if (cs.length() <= 1) 240 else if (cs.length() <= 2) 150 else 130
+        // 1–2 cam: mỗi cam một hàng, khung rộng hết màn (16:9); 3 cam trở lên: 2 cột. Chiều cao chia theo phần màn còn trống.
+        val cot = if (cs.length() <= 2) 1 else 2
+        val hangSo = (cs.length() + cot - 1) / cot
+        o.columnCount = cot
+        val dm = resources.displayMetrics
+        val rongDp = (dm.widthPixels / dm.density).toInt() - 16 - cot * 14
+        val caoTrong = (dm.heightPixels / dm.density).toInt() - 300 - (if (lmStt.isNotEmpty()) 60 else 0)
+        val cao = minOf(rongDp / cot * 9 / 16, maxOf(120, caoTrong / maxOf(1, hangSo) - 48)).coerceAtLeast(110)
         var soPhat = 0
         for (i in 0 until cs.length()) {
             val c = cs.getJSONObject(i)
@@ -181,21 +198,42 @@ class GiamSatActivity : Activity() {
                     })
                 }
             }
-            oCam.addView(Button(this).apply {
-                text = "📈 Theo dõi"; isAllCaps = false; textSize = 12f
-                setOnClickListener { TheoDoi.bam(this@GiamSatActivity, ma, p, c, kq.optString("du_an")) }
-            }, LinearLayout.LayoutParams(-2, -2))
             o.addView(oCam, GridLayout.LayoutParams(GridLayout.spec(GridLayout.UNDEFINED, 1f), GridLayout.spec(GridLayout.UNDEFINED, 1f)).apply { width = 0; setMargins(dp(3), dp(3), dp(3), dp(3)) })
         }
         goc.addView(o)
-        val hang = LinearLayout(this)
-        hang.orientation = LinearLayout.HORIZONTAL
+        // ---- thanh nút dưới đáy: luôn trong tầm ngón tay, không trôi theo nội dung
+        duoi.removeAllViews(); duoi.visibility = View.VISIBLE
+        fun nutDuoi(t: String, chinh: Boolean = false, bam: () -> Unit) = Button(this).apply {
+            text = t; isAllCaps = false; textSize = 14f; minHeight = dp(48); setPadding(dp(4), 0, dp(4), 0)
+            background = GradientDrawable().apply { setColor(Color.parseColor(if (chinh) "#1D7A46" else "#2A3642")); cornerRadius = dp(8).toFloat() }
+            setTextColor(Color.WHITE)
+            setOnClickListener { bam() }
+        }
+        fun lp() = LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) }
+        val h1 = LinearLayout(this); h1.orientation = LinearLayout.HORIZONTAL
+        val h2 = LinearLayout(this); h2.orientation = LinearLayout.HORIZONTAL
+        h1.addView(nutDuoi("📈 Theo dõi", true) { chonCamTheoDoi(p) }, lp())
         val mapUrl = p.optString("map")
         val lmLink = p.optString("lm_link")
-        if (lmLink.isNotEmpty()) hang.addView(Button(this).apply { text = "🔗 LiteMark"; isAllCaps = false; setOnClickListener { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(lmLink))) } }, LinearLayout.LayoutParams(0, -2, 1f))
-        if (mapUrl.isNotEmpty()) hang.addView(Button(this).apply { text = "📍 Dẫn đường"; isAllCaps = false; setOnClickListener { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(mapUrl))) } }, LinearLayout.LayoutParams(0, -2, 1f))
-        hang.addView(Button(this).apply { text = "📋 Chi tiết / sửa"; isAllCaps = false; setOnClickListener { setResult(RESULT_OK, Intent().putExtra("stt", p.optString("stt"))); finish() } }, LinearLayout.LayoutParams(0, -2, 1f))
-        goc.addView(hang)
+        if (mapUrl.isNotEmpty()) h1.addView(nutDuoi("📍 Dẫn đường") { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(mapUrl))) }, lp())
+        if (lmLink.isNotEmpty()) h1.addView(nutDuoi("🔗 LiteMark") { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(lmLink))) }, lp())
+        h2.addView(nutDuoi("📋 Chi tiết / sửa") { setResult(RESULT_OK, Intent().putExtra("stt", p.optString("stt"))); finish() }, lp())
+        h2.addView(nutDuoi("✕ Đóng") { veLuoi() }, lp())
+        duoi.addView(h1); duoi.addView(h2)
+    }
+
+    /** Theo dõi: 1 cam thì vào thẳng; nhiều cam thì chọn cam (ghi rõ cam nào đang được theo dõi). */
+    private fun chonCamTheoDoi(p: JSONObject) {
+        val cs = p.optJSONArray("cam") ?: JSONArray()
+        if (cs.length() == 0) return
+        if (cs.length() == 1) { TheoDoi.bam(this, ma, p, cs.getJSONObject(0), kq.optString("du_an")); return }
+        val dang = TheoDoi.ds().let { a -> (0 until a.length()).map { a.getJSONObject(it) }
+            .filter { it.optString("trang_thai") == "dang" && it.optString("domain") == p.optString("domain") }.map { it.optInt("http") }.toSet() }
+        val nhan = (0 until cs.length()).map { i -> val c = cs.getJSONObject(i)
+            "Cam ${c.optInt("so")} · port ${c.optInt("http")} · ${c.optString("nhan")}" + if (c.optInt("http") in dang) "  — đang theo dõi" else "" }
+        AlertDialog.Builder(this).setTitle("Theo dõi cam nào?")
+            .setItems(nhan.toTypedArray()) { _, i -> TheoDoi.bam(this, ma, p, cs.getJSONObject(i), kq.optString("du_an")) }
+            .setNegativeButton("Huỷ", null).show()
     }
 
     private val daXacMinh = HashSet<String>()
