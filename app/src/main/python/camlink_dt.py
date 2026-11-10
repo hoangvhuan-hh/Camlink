@@ -139,7 +139,7 @@ class Onvif:
 
     def co(self):
         try:
-            t = self.goi("<tds:GetSystemDateAndTime/>", xac_thuc=False, cho=4)
+            t = self.goi("<tds:GetSystemDateAndTime/>", xac_thuc=False, cho=8)   # cam Oryza đo thật có lúc trả lời 3 giây
         except Exception:
             return False
         if "DateTime" not in t:   # trả 200 nhưng không phải cam ONVIF (vd web modem)

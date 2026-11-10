@@ -17,6 +17,7 @@ ANH_MOI = 3600       # làm mới ảnh "trước khi rớt" mỗi 1 giờ (ch�
 BAO_SAU = 300        # rớt liên tục 5 phút → báo ngay lên điện thoại + đẩy cảnh báo lên ghim LiteMark
 KHI_BAO = None       # lõi gắn hàm đẩy LiteMark vào đây: KHI_BAO(m, "rot"/"len", thông tin)
 _MANG = ""           # loại mạng điện thoại lúc đo (wifi / di_dong / khong) — dịch vụ chạy nền báo vào
+TRA_LOI = 10         # chờ cam trả lời trang web tối đa 10 giây mới tính là TREO (cam Oryza đo thật có lúc 3 giây)
 ROT_SAU = 2          # cần 2 lần đo liên tiếp không vào được mới tính là rớt (tránh rớt 1 gói lẻ)
 GIU_NGAY = 7         # dữ liệu một lần theo dõi tự xoá sau 7 ngày (PDF đã xuất giữ ở ketqua/)
 
@@ -198,7 +199,7 @@ def _hoi_web(host, port, cho=4):
         except OSError as e:
             return ("tu_choi" if getattr(e, "errno", None) == errno.ECONNREFUSED else "im_lang"), 0
         try:
-            s.settimeout(3)
+            s.settimeout(TRA_LOI)    # đo thật cam Oryza Phú Lý 10/11: trang web trả lời 0,4–3 giây, có lần > 10 giây
             s.sendall(f"GET / HTTP/1.0\r\nHost: {host}:{port}\r\nConnection: close\r\n\r\n".encode())
             b = s.recv(16)
         except OSError:
@@ -269,7 +270,7 @@ def do_nhom(ms):
     for pt in cong:
         chay(f"p{pt}", _hoi_web, dich, pt)
     for x in th:
-        x.join(12)
+        x.join(16)
     st = {pt: (kq.get(f"p{pt}") or ("im_lang", 0)) for pt in cong}
     ra = {}
     for m in ms:

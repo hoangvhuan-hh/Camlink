@@ -130,7 +130,7 @@ class BoPhat(private val act: Activity) {
                 // Hỏi "RTSP OPTIONS" (không đăng nhập, ~200 byte): cam phải TRẢ LỜI mới tính là lên — cam treo (nhận kết nối mà câm) không bị phát lại vô ích
                 val mo = try {
                     java.net.Socket().use { sk ->
-                        sk.connect(java.net.InetSocketAddress(host, port), 4000); sk.soTimeout = 3000
+                        sk.connect(java.net.InetSocketAddress(host, port), 4000); sk.soTimeout = 8000
                         sk.getOutputStream().write("OPTIONS rtsp://$host:$port/ RTSP/1.0\r\nCSeq: 1\r\n\r\n".toByteArray())
                         val b = ByteArray(8); val n = sk.getInputStream().read(b)
                         n > 4 && String(b, 0, n).startsWith("RTSP")
