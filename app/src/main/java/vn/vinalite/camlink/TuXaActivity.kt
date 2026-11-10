@@ -678,7 +678,7 @@ class TuXaActivity : Activity() {
             oCam.addView(khung, LinearLayout.LayoutParams(-1, dp(cao)))
             oCam.addView(tt)
             oCam.addView(Button(this).apply {
-                text = "📈 Theo dõi"; isAllCaps = false; textSize = 11f; minHeight = 0; minimumHeight = 0; setPadding(dp(6), dp(2), dp(6), dp(2))
+                text = "📈 Theo dõi"; isAllCaps = false; textSize = 12f
                 setOnClickListener { TheoDoi.bam(this@TuXaActivity, ma, p, c, tenDuAn) }
             }, LinearLayout.LayoutParams(-2, -2))
             o.addView(oCam, android.widget.GridLayout.LayoutParams(android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f),
