@@ -87,6 +87,7 @@ class MainActivity : Activity() {
         dungGiaoDien()
         capNhatTieuDe()
         Loi.baoLoiCu(this)
+        TheoDoi.damBaoChay(this)
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()

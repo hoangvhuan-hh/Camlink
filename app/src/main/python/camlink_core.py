@@ -1036,3 +1036,8 @@ def truc_tiep_bao(ma, json_b):
     b = json.loads(json_b)
     b["ma"] = ma
     return bool(_theodoi_bao_lm(b))
+
+
+def theodoi_lam_lai(tid):
+    import camlink_theodoi as TD
+    return TD.lam_lai_pdf(tid)

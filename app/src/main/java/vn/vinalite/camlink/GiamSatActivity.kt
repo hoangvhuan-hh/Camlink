@@ -493,6 +493,7 @@ class GiamSatActivity : Activity() {
     override fun onBackPressed() { if (dangMo != null) veLuoi() else super.onBackPressed() }
     override fun onPause() { dangMoMan = false; ui.removeCallbacks(nhipDo); ui.removeCallbacks(dongHo); boPhat.tamDung(); super.onPause() }
     override fun onResume() {
+        TheoDoi.damBaoChay(this)
         super.onResume(); dangMoMan = true; boPhat.tiepTuc()
         ui.removeCallbacks(nhipDo); ui.post(nhipDo); ui.removeCallbacks(dongHo); ui.postDelayed(dongHo, 5_000)
     }

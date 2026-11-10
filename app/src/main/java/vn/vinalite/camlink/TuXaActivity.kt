@@ -166,7 +166,8 @@ class TuXaActivity : Activity() {
         super.onDestroy()
     }
     override fun onPause() { boPhat.tamDung(); dangPhat.values.forEach { it.pause() }; vlcPlayers.values.forEach { it.pause() }; super.onPause() }
-    override fun onResume() { boPhat.tiepTuc(); dangPhat.values.forEach { it.play() }; vlcPlayers.values.forEach { it.play() }; super.onResume() }
+    override fun onResume() {
+        TheoDoi.damBaoChay(this); boPhat.tiepTuc(); dangPhat.values.forEach { it.play() }; vlcPlayers.values.forEach { it.play() }; super.onResume() }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 

@@ -366,6 +366,19 @@ def vong(loai_mang=""):
     return {"dang": [x for x in ds_hien() if x["trang_thai"] == "dang"], "xong_moi": [m["id"] for m in xong_moi], "pdf_moi": pdf_moi, "bao": bao}
 
 
+def lam_lai_pdf(tid):
+    """Làm lại báo cáo từ dữ liệu đo đã lưu (khi cách phân tích được sửa) — không đo lại."""
+    with _KHOA:
+        m = None if tid.startswith("N") else _doc(_thu_muc(tid, "meta.json"))
+        nhom = tid if tid.startswith("N") else (m or {}).get("nhom", "")
+        ms = _cung_nhom(nhom) if nhom else [m]
+        f = bao_cao_pdf(ms[0]["id"])
+        for x in ms:
+            x["pdf"] = f
+            _ghi(_thu_muc(x["id"], "meta.json"), x)
+        return f
+
+
 def ds_hien():
     """Danh sách cho màn hình: mỗi ĐIỂM đang/đã theo dõi một dòng (cam lẻ đời cũ vẫn hiện riêng)."""
     out, da = [], set()
@@ -540,6 +553,10 @@ NGUYEN_NHAN = {
     "mot_cam_khong_phan_biet": ("Cam không vào được (điểm chỉ có 1 cam nên không phân biệt được lỗi cam hay lỗi cả điểm)",
                                 ["Kiểm tra nguồn và dây mạng của cam, đồng thời nguồn modem tại điểm.",
                                  "Theo dõi thêm lần sau khi điểm có thêm thiết bị để so sánh."]),
+    "man_xem_ngat": ("Luồng video bị ngắt (ghi từ chính màn xem trực tiếp)",
+                     ["Kiểm tra số người xem cùng lúc: IOC/đầu ghi, app CamLink, điện thoại… — cam Oryza giới hạn số luồng, vượt thì ngắt bớt.",
+                      "Đầu ghi/IOC nên kéo luồng PHỤ; giảm độ phân giải/bitrate luồng chính nếu đường truyền upload của điểm yếu.",
+                      "Nếu vẫn ngắt khi chỉ còn 1 nơi xem: khởi động lại cam, kiểm tra nguồn/PoE và dây mạng."]),
     "cam_treo": ("Cam treo: port vẫn nhận kết nối nhưng cam không trả lời (phần mềm cam bị đơ)",
                  ["Khởi động lại cam: rút nguồn/PoE 10 giây rồi cắm lại (cam treo không nhận lệnh khởi động lại qua mạng).",
                   "Treo lặp lại: kiểm tra nguồn (adaptor yếu, PoE quá tải), nhiệt độ hộp cam; cập nhật firmware.",
@@ -610,8 +627,25 @@ def phan_tich(tid):
             if mg:
                 doi_mang.append((x["t"], mg, x["mang"]))
             mg = x["mang"]
+    # Lần ngắt ghi từ MÀN XEM là sự thật → tính vào số lần rớt (bỏ lần trùng với lần rớt đo được), kể cả khi dịch vụ đo bị dừng
+    lv = _doc(_thu_muc(tid, "live.json"), [])
+    them_do = 0
+    sk_do = list(sk)                 # chỉ bỏ lần ngắt TRÙNG với lần rớt đo được (không gộp các lần ngắt liền nhau của màn xem)
+    for i, x in enumerate(lv):
+        bd = x["ngat"]
+        if any(y["bd"] - 30 <= bd <= y.get("kt", y["bd"] + y["dur"]) + 30 for y in sk_do):
+            continue
+        dur = (x["len"] - bd) if x.get("len") else 0
+        sk.append({"n": 0, "bd": bd, "kt": x.get("len") or bd, "dur": dur, "loai": "man_xem_ngat", "nguyen_nhan": NGUYEN_NHAN["man_xem_ngat"][0],
+                   "ip_truoc": "", "ip_sau": "", "chua_ro_len": not x.get("len"), "tu_man_xem": True})
+        if any(a <= bd <= b for a, b in trong):
+            them_do += dur          # lúc đó app không đo nhưng màn xem đang chạy → đoạn này coi như có số đo
+    sk.sort(key=lambda y: y["bd"])
+    for i, y in enumerate(sk, 1):
+        y["n"] = i
     rot = sum(x["dur"] for x in sk)
-    tg_do = max(1, tong_tg - khong_do)
+    tg_do = max(1, tong_tg - khong_do + them_do)
+    phu = min(1.0, tg_do / tong_tg)
     nhom = {}
     for x in sk:
         g = nhom.setdefault(x["loai"], {"loai": x["loai"], "ten": NGUYEN_NHAN[x["loai"]][0], "so": 0, "giay": 0})
@@ -624,7 +658,6 @@ def phan_tich(tid):
         gio[h] = gio.get(h, 0) + 1
     ms_tb = round(m.get("ms_tong", 0) / max(1, m.get("lan_toi", 0)))
     cc = _doc(_thu_muc(tid, "chap_chon.json"), [])
-    lv = _doc(_thu_muc(tid, "live.json"), [])
     if not sk:
         cc0 = _doc(_thu_muc(tid, "chap_chon.json"), [])
         ket = ("Không có lần rớt kéo dài, nhưng có " + str(len(cc0)) + " lần chập chờn ngắn (< 1 phút)." if cc0
@@ -633,8 +666,16 @@ def phan_tich(tid):
         ket = f"Rớt {len(sk)} lần, nhiều lần nhất do: {nhom[0]['ten'].split('(')[0].strip().lower()} ({nhom[0]['so']} lần)"
         lau = max(nhom, key=lambda g: g["giay"])
         ket += (f"; mất nhiều thời gian nhất do: {lau['ten'].split('(')[0].strip().lower()} ({_thoi_luong(lau['giay'])})." if lau is not nhom[0] else ".")
+    thieu = phu < 0.5
+    if thieu:      # đo được quá ít → KHÔNG được kết luận ổn định (trước đây ghi "ổn định 100%" dù chỉ đo 3 lượt trong 3 giờ)
+        ket = (f"KHÔNG ĐỦ DỮ LIỆU để kết luận — chỉ đo được {round(100 * phu)}% thời gian ({_thoi_luong(tg_do)} / {_thoi_luong(tong_tg)}). "
+               + (f"Trong lúc đo được đã ghi {len(sk)} lần rớt/ngắt. " if sk else "")
+               + "Cần theo dõi lại.")
+    elif phu < 0.8:
+        ket += f" (Lưu ý: chỉ đo được {round(100 * phu)}% thời gian.)"
     return {"m": m, "su_kien": sk, "nhom": nhom, "tong_tg": tong_tg, "khong_do": khong_do, "rot": rot,
             "len_pt": round(100 * max(0, tg_do - rot) / tg_do, 2), "dai_nhat": max([x["dur"] for x in sk], default=0),
+            "phu": phu, "thieu": thieu, "tg_do": tg_do,
             "gio": gio, "ms_tb": ms_tb, "ms_max": m.get("ms_max", 0), "video_loi": m.get("video_loi", 0),
             "so_mau": len(mau), "ket_luan": ket, "mau": mau, "chap_chon": cc, "live": lv,
             "rtsp_xac_thuc": m.get("rtsp_xac_thuc", 0), "trong": trong, "ngu": ngu, "mat_mang": mat_mang, "doi_mang": doi_mang}
@@ -703,13 +744,13 @@ def bao_cao_pdf(tid):
     # ---- 1. bảng tóm tắt từng cam
     rows = [["Cam", "Thời gian lên", "Số lần rớt", "Tổng rớt", "Dài nhất", "Chập chờn", "Phản hồi"]]
     for a in A:
-        rows.append([f"Cam {a['m']['so']} (:{a['m']['http']})", f"{a['len_pt']} %", str(len(a["su_kien"])), _thoi_luong(a["rot"]) if a["rot"] else "0",
+        rows.append([f"Cam {a['m']['so']} (:{a['m']['http']})", (Paragraph(f"không đủ dữ liệu<br/>(đo được {round(100 * a['phu'])}%)", s(c=8, l=10)) if a["thieu"] else f"{a['len_pt']} %"), str(len(a["su_kien"])), _thoi_luong(a["rot"]) if a["rot"] else "0",
                      _thoi_luong(a["dai_nhat"]) if a["su_kien"] else "—", str(len(a["chap_chon"])), f"{a['ms_tb']} ms"])
     tb = Table(rows, colWidths=[W * .2, W * .14, W * .11, W * .14, W * .13, W * .14, W * .14])
     stl = [("FONT", (0, 0), (-1, -1), F, 9), ("FONT", (0, 0), (-1, 0), FB, 8.5), ("GRID", (0, 0), (-1, -1), .4, XAM),
            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E6EEF5")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE")]
     for i, a in enumerate(A, 1):
-        stl.append(("TEXTCOLOR", (1, i), (1, i), XANH if not a["su_kien"] else (DO if a["len_pt"] < 97 else VANG)))
+        stl.append(("TEXTCOLOR", (1, i), (1, i), colors.HexColor("#5B6776") if a["thieu"] else (XANH if not a["su_kien"] else (DO if a["len_pt"] < 97 else VANG))))
         stl.append(("FONT", (1, i), (1, i), FB, 9))
     tb.setStyle(TableStyle(stl))
     el.append(tb)
@@ -731,7 +772,7 @@ def bao_cao_pdf(tid):
     for a in A:
         kl = a["ket_luan"].replace("Cam ổn định", "Ổn định")
         el.append(Paragraph(f"<b>{'Cam ' + str(a['m']['so']) + ': ' if nhieu else 'Kết luận: '}</b>{kl}",
-                            s(c=10, l=13.5, textColor=XANH if not a["su_kien"] else (DO if a["len_pt"] < 97 else VANG))))
+                            s(c=10, l=13.5, textColor=VANG if a["thieu"] else (XANH if not a["su_kien"] else (DO if a["len_pt"] < 97 else VANG)))))
     if nhieu and ca_diem:
         el.append(Paragraph(f"<b>Cả điểm:</b> {ca_diem} lần mọi cam cùng mất → lỗi ở điện / modem / đường truyền, không phải lỗi từng cam.", s(c=10, l=13.5, textColor=DO)))
     # ---- dải thời gian từng cam
@@ -782,7 +823,7 @@ def bao_cao_pdf(tid):
             el.append(Paragraph(f"• {tien}<b>Chập chờn ngắn (&lt; 1 phút)</b>: {len(cc)} lần ("
                                 + ", ".join(f"{n} lần {loai.get(k, k)}" for k, n in dem.items()) + "). Giờ: "
                                 + ", ".join(time.strftime("%H:%M", time.localtime(x["t"])) for x in cc[:16]) + (" …" if len(cc) > 16 else ""), P))
-        if a["live"]:
+        if a["live"] and False:
             lv = a["live"]
             el.append(Paragraph(f"• {tien}<b>Màn xem trực tiếp bị ngắt</b> (ghi từ chính màn xem): {len(lv)} lần — "
                                 + ", ".join(time.strftime("%H:%M:%S", time.localtime(x["ngat"])) + (f" (lên lại sau {_thoi_luong(x['len'] - x['ngat'])})" if x.get("len") else "")
@@ -790,7 +831,7 @@ def bao_cao_pdf(tid):
         if a["rtsp_xac_thuc"]:
             el.append(Paragraph(f"• {tien}Luồng video từ chối user/pass {a['rtsp_xac_thuc']} lần — không tính là rớt; kiểm tra user/pass cam lưu trong CamLink.", NHO))
     if not co_rot:
-        el.append(Paragraph("Không có lần rớt kéo dài nào trong thời gian theo dõi.", P))
+        el.append(Paragraph("Không đủ dữ liệu để biết có rớt hay không." if any(a["thieu"] for a in A) else "Không có lần rớt kéo dài nào trong thời gian theo dõi.", P))
     # ---- 3. danh sách (gộp mọi cam, tối đa 18 lần dài nhất)
     tat = [(a["m"]["so"], x) for a in A for x in a["su_kien"]]
     if tat:
@@ -805,7 +846,8 @@ def bao_cao_pdf(tid):
                 dh.append(f"IP {x['ip_truoc']} → {x['ip_sau']}")
             if x.get("dns_loi"):
                 dh.append("tên miền không phân giải")
-            rows.append(([str(so)] if nhieu else []) + [_gio(x["bd"])[:8], (Paragraph("chưa lên<br/>(hết giờ theo dõi)", s(c=8, l=10)) if x.get("chua_len") else _gio(x["kt"])[:8]),
+            rows.append(([str(so)] if nhieu else []) + [_gio(x["bd"])[:8], (Paragraph("chưa lên<br/>(hết giờ theo dõi)", s(c=8, l=10)) if x.get("chua_len")
+                        else Paragraph("không ghi được<br/>(rời màn xem)", s(c=8, l=10)) if x.get("chua_ro_len") else _gio(x["kt"])[:8]),
                         _thoi_luong(x["dur"]), Paragraph(f"{x['nguyen_nhan'].split('(')[0].split(':')[0].strip()}" + (f" · <font color='#5B6776'>{'; '.join(dh)}</font>" if dh else ""), s(c=8.5, l=11))])
         cw = ([W * .06] if nhieu else []) + [W * .13, W * .16, W * .14] + [W * (.51 - (.06 if nhieu else 0) + .06 * (0 if nhieu else 0))]
         cw[-1] = W - sum(cw[:-1])
@@ -824,7 +866,10 @@ def bao_cao_pdf(tid):
             x = gom.setdefault(g["loai"], {"ten": g["ten"], "so": 0, "cam": []})
             x["so"] += g["so"]
             x["cam"].append(str(a["m"]["so"]))
-    if not gom:
+    if any(a["thieu"] for a in A):
+        el.append(Paragraph("<b>Theo dõi lại</b>: lần này điện thoại dừng CamLink nên gần như không đo được. Lần sau: cắm sạc, cho CamLink chạy nền "
+                            "không tối ưu pin (app tự hỏi khi bật theo dõi), không cài bản app mới giữa chừng.", P))
+    elif not gom:
         el.append(Paragraph("Không cần xử lý. Nếu trước đây cam từng chập chờn, nên theo dõi thêm một lần vào khung giờ hay rớt.", P))
     da = set()
     for i, (k, g) in enumerate(sorted(gom.items(), key=lambda y: -y[1]["so"]), 1):
@@ -834,7 +879,7 @@ def bao_cao_pdf(tid):
                 da.add(v)
                 el.append(Paragraph(f"   – {v}", P))
     ngan_video = any(x["kieu"] == "video" for a in A for x in a["chap_chon"]) or any(a["live"] for a in A)
-    if ngan_video and "video_ngat" not in gom:
+    if ngan_video and "video_ngat" not in gom and "man_xem_ngat" not in gom:
         el.append(Paragraph("<b>Cho các lần video ngắt ngắn:</b>", P))
         for v in NGUYEN_NHAN["video_ngat"][1]:
             el.append(Paragraph(f"   – {v}", P))
@@ -855,7 +900,7 @@ def bao_cao_pdf(tid):
             el.append(KeepTogether([Paragraph((f"Cam {so} · " if nhieu else "") + f"lần {x['n']} lúc {_gio(x['bd'])}, kéo dài {_thoi_luong(x['dur'])}", P), tbl]))
     el.append(Spacer(1, 6))
     el.append(Paragraph("Cách đọc: \"rớt\" = 2 lượt đo liên tiếp (≥ 1 phút) cam không trả lời trang web, bị treo, hoặc luồng video lỗi, trong khi điện thoại vẫn có mạng; "
-                        "hỏng 1 lượt rồi lên = \"chập chờn ngắn\". \"Treo\" = port vẫn nhận kết nối nhưng cam không trả lời. "
+                        "hỏng 1 lượt rồi lên = \"chập chờn ngắn\"; lần ngắt ghi từ màn xem trực tiếp cũng tính là rớt. \"Treo\" = port vẫn nhận kết nối nhưng cam không trả lời. "
                         "Nguyên nhân suy ra từ cam khác cùng điểm, IP công cộng của modem và thời gian rớt; \"khởi động lại\" là suy luận "
                         "từ rớt ngắn 0,5–3 phút khi cam khác vẫn lên.", NHO))
     doc.build(el)

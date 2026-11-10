@@ -125,6 +125,19 @@ object TheoDoi {
     }
 
     /** Danh sách mọi lần theo dõi (đang chạy / đã xong) — nút "📈 Theo dõi" ở màn Kiểm tra từ xa. */
+    /** Còn lần theo dõi đang dở mà dịch vụ đo không chạy (app vừa cài bản mới, máy khởi động lại, bị hệ thống dừng) → bật lại ngay. */
+    fun damBaoChay(ctx: Context) {
+        thread {
+            try {
+                val d = ds()
+                if ((0 until d.length()).any { d.getJSONObject(it).optString("trang_thai") == "dang" }) {
+                    val i = Intent(ctx, TheoDoiService::class.java)
+                    if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
     fun danhSach(act: Activity) {
         val d = ds()
         if (d.length() == 0) {
@@ -142,7 +155,14 @@ object TheoDoi {
             if (m.optString("trang_thai") == "dang")
                 AlertDialog.Builder(act).setTitle(m.optString("ten")).setMessage("Đang theo dõi, còn ${m.optInt("con_phut")} phút.")
                     .setPositiveButton("Dừng & lấy báo cáo") { _, _ -> dung(act, m.optString("id")) }.setNegativeButton("Đóng", null).show()
-            else if (m.optString("pdf").isNotEmpty()) moPdf(act, m.optString("pdf"))
+            else AlertDialog.Builder(act).setTitle(m.optString("ten"))
+                .setItems(arrayOf("Mở báo cáo", "Làm lại báo cáo (từ dữ liệu đã đo, cách tính mới)")) { _, j ->
+                    if (j == 0 && m.optString("pdf").isNotEmpty()) moPdf(act, m.optString("pdf"))
+                    else thread {
+                        val f = try { core().callAttr("theodoi_lam_lai", m.optString("id")).toString() } catch (e: Exception) { "" }
+                        act.runOnUiThread { if (f.isNotEmpty()) moPdf(act, f) else Toast.makeText(act, "Không làm lại được báo cáo", Toast.LENGTH_LONG).show() }
+                    }
+                }.setNegativeButton("Đóng", null).show()
         }.setNegativeButton("Đóng", null).show()
     }
 }
@@ -237,4 +257,12 @@ class TheoDoiService : Service() {
     }
 
     override fun onDestroy() { chay = false; try { khoa?.release() } catch (_: Exception) {}; super.onDestroy() }
+}
+
+
+/** Cài bản app mới / khởi động lại máy → tiếp tục theo dõi đang dở (trước đây dịch vụ đo dừng hẳn, báo cáo thủng 3 giờ). */
+class TheoDoiKhoiDong : android.content.BroadcastReceiver() {
+    override fun onReceive(ctx: Context, intent: Intent) {
+        try { Loi.khoiDong(ctx); TheoDoi.damBaoChay(ctx) } catch (_: Exception) {}
+    }
 }
