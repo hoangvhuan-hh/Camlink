@@ -105,6 +105,11 @@ NS = ('xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:tds="http://www.o
       'xmlns:tt="http://www.onvif.org/ver10/schema" xmlns:trt="http://www.onvif.org/ver10/media/wsdl"')
 
 
+def _x(v):
+    return (str(v).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            .replace('"', '&quot;').replace("'", '&apos;'))
+
+
 class Onvif:
     def __init__(self, ip, port, user, pw):
         self.ip, self.port, self.user, self.pw = ip, port, user, pw
@@ -152,10 +157,45 @@ class Onvif:
             pass
         return True
 
+
+    # ---- Quản lý tài khoản theo ONVIF CHUẨN (đa hãng) ----
+    def ds_user(self):
+        """GetUsers → [{ten, muc}] (muc: Administrator/Operator/User)."""
+        t = self.goi("<tds:GetUsers/>")
+        ra = []
+        for kh in re.findall(r"<[^>]*User>(.*?)</[^>]*User>", t, re.S):
+            ten = (re.search(r"<[^>]*Username>(.*?)<", kh) or [None, ""])[1]
+            muc = (re.search(r"<[^>]*UserLevel>(.*?)<", kh) or [None, ""])[1]
+            if ten:
+                ra.append({"ten": ten, "muc": muc})
+        return ra
+
+    def _than_user(self, lenh, ten, pw=None, muc=None):
+        u = f"<tt:Username>{_x(ten)}</tt:Username>"
+        if pw is not None:
+            u += f"<tt:Password>{_x(pw)}</tt:Password>"
+        if muc is not None:
+            u += f"<tt:UserLevel>{muc}</tt:UserLevel>"
+        return f"<tds:{lenh}><tds:User>{u}</tds:User></tds:{lenh}>"
+
+    def tao_user(self, ten, pw, muc="User"):
+        """CreateUsers — tài khoản Xem cho khách = muc 'User' (chỉ xem)."""
+        self.goi(self._than_user("CreateUsers", ten, pw, muc))
+        return True
+
+    def doi_mat_khau(self, ten, pw, muc="Administrator"):
+        """SetUser — đổi mật khẩu tài khoản đã có (xoay mật khẩu admin)."""
+        self.goi(self._than_user("SetUser", ten, pw, muc))
+        return True
+
+    def xoa_user(self, ten):
+        self.goi(f"<tds:DeleteUsers><tds:Username>{_x(ten)}</tds:Username></tds:DeleteUsers>")
+        return True
+
     def thong_tin(self):
         t = self.goi("<tds:GetDeviceInformation/>")
         g = lambda k: (re.search(rf"<[^>]*{k}>(.*?)<", t) or [None, ""])[1]
-        return {"hang": g("Manufacturer"), "model": g("Model"), "serial": g("SerialNumber")}
+        return {"hang": g("Manufacturer"), "model": g("Model"), "serial": g("SerialNumber"), "firmware": g("FirmwareVersion")}
 
     def token_mang(self):
         t = self.goi("<tds:GetNetworkInterfaces/>")

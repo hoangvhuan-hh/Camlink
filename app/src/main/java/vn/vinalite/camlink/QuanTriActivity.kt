@@ -125,6 +125,9 @@ class QuanTriActivity : Activity() {
             hoi("Tên miền cam", "vd phuly-chuaphapbao.ddns.net", false) { dom -> hoi("Port web cam", "vd 8080", false) { ht -> Thread {
                 val r = try { JSONObject(core.callAttr("qt_khoi_phuc_doc_ma", ma, stt, dom, ht.toIntOrNull() ?: 8080).toString()) } catch (e: Exception) { JSONObject().put("loi", loi(e)) }
                 runOnUiThread { bao(if (r.optBoolean("ok")) "Khôi phục điểm $stt:\n" + r.optString("ghi_chu") else "Chưa khôi phục được: " + r.optString("loi")) } }.start() } } } } }
+        nut("🔎 Nhận diện hãng cam (ONVIF)") { chonDuAn { ma -> chonDiem(ma) { stt -> Thread {
+            val r = try { JSONObject(core.callAttr("qt_nhan_dien_hang", ma, stt, pin).toString()) } catch (e: Exception) { JSONObject().put("loi", loi(e)) }
+            runOnUiThread { bao(if (r.optBoolean("ok")) "Điểm $stt:\nHãng: ${r.optString("hang")}\nModel: ${r.optString("model")}\nFirmware: ${r.optString("firmware")}\nSerial: ${r.optString("serial")}" else "Không đọc được: " + r.optString("loi")) } }.start() } } }
         nut("➕ Thêm máy tin cậy khác") { bao("Mở app trên máy kia → Quản trị → \"Thêm máy này làm máy chủ\" → nhập PIN.\nMã máy này: $mayThat") }
         nut("📜 Nhật ký") { nhatKy() }
         nut("🔑 Đổi PIN") { hoi("PIN cũ", "PIN cũ", true) { c -> hoi("PIN mới", "PIN mới", true) { m -> try {

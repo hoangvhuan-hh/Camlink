@@ -1148,6 +1148,35 @@ def _qt_dong_bo_litemark(ma, stt, cam_user, cam_pw):
     C.ghi_cai_dat(cd)
 
 
+
+def _qt_diem(ma, stt):
+    diem = _doc_du_an(ma).get("diem", {})
+    ds = list(diem.values()) if isinstance(diem, dict) else diem
+    p = next((x for x in ds if str(x.get("stt")) == str(stt)), None)
+    if not p:
+        raise RuntimeError(f"Không thấy điểm {stt}")
+    so = int(p.get("so") or 1)
+    cong = [(i + 1, C.HTTP[i]) for i in range(min(so, len(C.HTTP)))]
+    return p.get("domain", ""), cong
+
+
+def qt_nhan_dien_hang(ma, stt, pin):
+    """Nhận diện HÃNG/model qua ONVIF chuẩn (GetDeviceInformation) — để chọn trình cắm hãng khi cần. Đa hãng."""
+    import camlink_quantri as QT
+    dom, cong = _qt_diem(ma, stt)
+    d = QT.xem_mat_khau("_chu_noi_bo_", ma, stt, pin) if False else None  # không dùng; đọc creds nội bộ bên dưới
+    creds = QT._doc_ket(QT._lay_khoa_dl(pin=pin))["diem"].get(f"{ma}:{stt}", {})
+    u, pw = creds.get("cam_user", "admin"), creds.get("cam_pw", "")
+    for _so, ht in cong:
+        try:
+            ov = C.Onvif(dom, ht, u, pw)
+            ov.co()
+            return json.dumps({"ok": True, **ov.thong_tin(), "cong": ht}, ensure_ascii=False)
+        except Exception:
+            continue
+    return json.dumps({"ok": False, "loi": "Không đọc được thông tin cam (sai mật khẩu hoặc không tới được)."}, ensure_ascii=False)
+
+
 def qt_them_thiet_bi(pin, thiet_bi_id, ten_may):
     import camlink_quantri as QT
     return QT.them_thiet_bi(pin, thiet_bi_id, ten_may)
@@ -1159,38 +1188,69 @@ def qt_luu_mat_khau(pin, ma, stt, cam_user, cam_pw, modem_user="", modem_pw=""):
 
 
 def qt_xoay_mat_khau(pin, thiet_bi_id, ma, stt, mat_khau_moi, gom_modem=False):
-    """Đổi mật khẩu trong KÉT + đồng bộ LiteMark. Đổi TRÊN CAM: để lại, chờ kiểm lệnh trên cam thật (tránh khoá nhầm cam đang chạy).
-    Trả thông báo rõ phần nào đã làm."""
+    """Đổi mật khẩu admin TRÊN CAM bằng ONVIF chuẩn (SetUser) cho MỌI hãng, + cập nhật két + đồng bộ LiteMark.
+    Không đụng tài khoản Xem. Modem đổi riêng theo model (chưa qua ONVIF)."""
     import camlink_quantri as QT
+    dom, cong = _qt_diem(ma, stt)
+    kq_cam = []
+
+    def doi_tren_cam(creds_cu, loai, mk):
+        if loai != "cam":
+            kq_cam.append("Modem: đổi theo model modem (không qua ONVIF) — để lại.")
+            return
+        u, pw = creds_cu.get("cam_user", "admin"), creds_cu.get("cam_pw", "")
+        for so, ht in cong:
+            try:
+                ov = C.Onvif(dom, ht, u, pw)
+                ov.co()
+                ov.doi_mat_khau(u, mk, "Administrator")
+                kq_cam.append(f"Cam {so} (:{ht}): ✓ đã đổi")
+            except Exception as e:
+                kq_cam.append(f"Cam {so} (:{ht}): ✖ {str(e)[:60]}")
+
     gom = ("cam", "modem") if gom_modem else ("cam",)
-    cho_cam = []
-    QT.xoay_mat_khau(pin, thiet_bi_id, ma, stt, mat_khau_moi,
-                     doi_tren_cam=lambda creds_cu, loai, mk: cho_cam.append(loai),
-                     dong_bo_litemark=lambda st, u, p: _qt_dong_bo_litemark(ma, st, u, p), gom=gom)
-    return (f"Đã đổi trong két và đồng bộ sang đường kiểm/đẩy LiteMark ({'+'.join(gom)}). "
-            f"Đổi TRỰC TIẾP trên cam/modem: để lại chờ kiểm lệnh trên cam thật (tránh khoá nhầm thiết bị đang chạy).")
+    QT.xoay_mat_khau(pin, thiet_bi_id, ma, stt, mat_khau_moi, doi_tren_cam=doi_tren_cam,
+                     dong_bo_litemark=lambda st, uu, pp: _qt_dong_bo_litemark(ma, st, uu, pp), gom=gom)
+    return "Đổi mật khẩu admin (ONVIF, đa hãng):\n" + "\n".join(kq_cam) + \
+           "\n→ Đã cập nhật két và đồng bộ sang đường kiểm/đẩy LiteMark."
 
 
 def qt_tao_tai_khoan_xem(pin, thiet_bi_id, ma, stt, user, pw):
+    """Tạo tài khoản CHỈ XEM cho khách bằng ONVIF chuẩn (CreateUsers, mức 'User') trên mọi cam của điểm — đa hãng."""
     import camlink_quantri as QT
-    da = []
-    QT.tao_tai_khoan_xem(pin, thiet_bi_id, ma, stt, user, pw, lambda creds, u, p: da.append(u))
-    return "Đã lưu tài khoản Xem vào két. Tạo TRÊN CAM: chờ kiểm lệnh tạo user trên cam thật."
+    dom, cong = _qt_diem(ma, stt)
+    kq_cam = []
+
+    def tao_tren_cam(creds, u, p):
+        au, ap = creds.get("cam_user", "admin"), creds.get("cam_pw", "")
+        for so, ht in cong:
+            try:
+                ov = C.Onvif(dom, ht, au, ap)
+                ov.co()
+                ov.tao_user(u, p, "User")
+                kq_cam.append(f"Cam {so} (:{ht}): ✓")
+            except Exception as e:
+                kq_cam.append(f"Cam {so} (:{ht}): ✖ {str(e)[:60]}")
+
+    QT.tao_tai_khoan_xem(pin, thiet_bi_id, ma, stt, user, pw, tao_tren_cam)
+    return "Tạo tài khoản Xem (ONVIF mức User, chỉ xem) cho khách:\n" + "\n".join(kq_cam) + "\n→ Đã lưu vào két."
 
 
 def qt_khoi_phuc_doc_ma(ma, stt, domain, http):
-    """Đọc mã thử + serial của cam (qua mạng, trước đăng nhập) để khôi phục khi quên mật khẩu.
-    Trả JSON {ok, ma_thu, serial, loi}. Lệnh reset chính hãng: xác nhận trên cam Oryza thật."""
-    import camlink_oryza as O
+    """Khôi phục khi quên sạch mật khẩu — ĐA HÃNG. Bước 1: kiểm cam còn tới được (ONVIF, trước đăng nhập).
+    Reset-không-mật-khẩu KHÔNG có chuẩn chung → tuỳ hãng (mã thử–mã mở, nút vật lý). App chọn trình cắm theo hãng;
+    hãng chưa có trình cắm thì chỉ ra đúng đường của hãng đó. Trả JSON {ok, toi_duoc, ghi_chu}."""
+    toi = False
     try:
-        la = bool(O.la_oryza(domain, int(http), 6))
+        toi = C.Onvif(domain, int(http), "", "").co()      # co() không cần mật khẩu
     except Exception as e:
         return json.dumps({"ok": False, "loi": str(e)[:120]}, ensure_ascii=False)
-    if not la:
-        return json.dumps({"ok": False, "loi": "Không phải cam Oryza hoặc không vào được qua mạng."}, ensure_ascii=False)
-    return json.dumps({"ok": True, "oryza": True,
-                       "ghi_chu": "Cam Oryza còn tới được. Mã thử–mã mở reset chính hãng cần xác nhận lệnh trên cam thật "
-                                  "(hoặc đại lý cấp công thức); sau đó app đọc mã thử, lấy mã mở, đặt lại admin, nạp lại cấu hình."},
+    if not toi:
+        return json.dumps({"ok": False, "loi": "Cam không trả lời qua mạng (kiểm tên miền/cổng/đường truyền)."}, ensure_ascii=False)
+    return json.dumps({"ok": True, "toi_duoc": True,
+                       "ghi_chu": "Cam còn tới được qua mạng. Khôi phục khi quên mật khẩu tuỳ HÃNG: nếu hãng này đã có "
+                                  "trình cắm reset từ xa thì app chạy; chưa có thì lấy mã thử/serial gửi hãng–đại lý để lấy mã mở. "
+                                  "Sau khi mở, app đặt lại admin và nạp lại cấu hình từ hồ sơ điểm."},
                       ensure_ascii=False)
 
 
