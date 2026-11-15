@@ -23,7 +23,6 @@ HTTP = [8080, 8081, 8082, 8083, 8084, 8085]
 RTSP = [554, 5541, 5542, 5543, 5544, 5545]
 IP_TU = 200
 PORT_QUET = [80, 8080, 8081, 8082, 8083, 8084, 8085]
-MODEM_PASS_MOI = "Aa112233@"
 PORT_WEB_MODEM = 8098      # port ngoài dẫn vào trang quản trị modem (để sửa modem từ xa)
 PASS_MODEM_YEU = ("", "admin", "password", "user", "root", "1234", "12345", "123456", "1234567", "12345678", "123456789", "admin123", "vnpt", "megavnn")
 
@@ -542,7 +541,8 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
     else:
         log("   ⚠ Modem tắt UPnP → tạm mở port tay theo bảng dưới (Virtual Servers)")
         CAN_MAU.append("modem")
-    log(f"   ⚠ Đổi pass modem ({modem_user}/{modem_pw} → {MODEM_PASS_MOI}): app chưa có lệnh cho model modem này, làm tay")
+    if not igd and pass_modem_yeu(modem_user, modem_pw):      # không in mật khẩu ra nhật ký (nhật ký được gửi qua Zalo/Gmail)
+        log("   ⚠ Mật khẩu modem đang lưu trong app còn mặc định/yếu — nếu modem đã đặt mật khẩu riêng thì nhập đúng vào app.")
 
     log("-- Kiểm tra")
     if wan:
