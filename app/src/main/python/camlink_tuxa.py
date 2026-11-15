@@ -1148,6 +1148,21 @@ def sua(d, so, viec, cd, log=print, gw_dung=""):
         if viec == "nhap_lai_ddns":
             host = d.get("_host") or dom      # tên miền hỏng thì đi vào cam bằng IP dự phòng
             return nhap_ddns_qua(host, http, cd.get("cam_user", "admin"), cd.get("cam_pw", ""), dom, d.get("u", ""), d.get("p", ""))
+        if viec in ("them_nat", "khoi_dong_modem") and int((d.get("_hs") or {}).get("web_modem") or 0):
+            import camlink_modem      # điểm đã mở quản trị modem từ xa lúc cài → điều khiển modem qua port đó
+            hs = d["_hs"]
+            m = camlink_modem.Bcm(d.get("_host") or dom, cd.get("modem_user", "admin"), cd.get("modem_pw", ""), int(hs["web_modem"]))
+            if not m.vao_duoc():
+                return False, f"Không vào được trang quản trị modem qua port {hs['web_modem']} (modem đổi mật khẩu, mất luật mở port, hoặc khác kiểu) → ra điểm chạy lại CamLink."
+            if viec == "khoi_dong_modem":
+                return m.khoi_dong()
+            ip_cam = next((x.get("ip") for x in hs.get("luat", []) if int(x.get("port") or 0) in (rtsp, http)), "") or \
+                next((x.get("ip") for x in hs.get("cam", []) if int(x.get("so") or 0) == int(so)), "")
+            if not ip_cam:
+                return False, "Hồ sơ điểm không có IP trong của cam này → ra điểm chạy lại CamLink."
+            ok1, tb1 = m.them_nat(f"cam{so}", http, ip_cam)
+            ok2, tb2 = m.them_nat(f"cam{so}_rtsp", rtsp, ip_cam)
+            return ok1 and ok2, f"{tb1}; {tb2}"
         if viec in ("them_nat", "khoi_dong_modem"):
             return False, ("App chưa có lệnh điều khiển modem VNPT từ xa (đang chờ mẫu modem). Tạm thời: "
                            + ("ra điểm chạy lại CamLink để mở port." if viec == "them_nat"

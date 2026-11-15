@@ -770,7 +770,9 @@ def tuxa_gan_nhat(ma):
 def tuxa_sua(ma, stt, so, viec, log):
     import camlink_tuxa as T
     log = _cb(log)
-    d = dict(_doc_du_an(ma)["diem"][stt])
+    da_ = _doc_du_an(ma)
+    d = dict(da_["diem"][stt])
+    d["_hs"] = (da_.get("ho_so") or {}).get(stt) or {}      # hồ sơ lúc cài: port quản trị modem, IP trong của cam
     if viec == "nhap_lai_ddns":      # lần kiểm gần nhất thấy điểm sống qua IP dự phòng → vào cam bằng IP đó
         try:
             with open(T._f_lich_su(GOC, ma), encoding="utf-8") as fh:

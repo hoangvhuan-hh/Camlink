@@ -31,7 +31,7 @@ def _phan_tu(ten, o):
 
 def tao_xml(cmd, than, sid=""):
     s = f' SessionId="{sid}"' if sid else ""
-    n = "".join(_phan_tu(k, v) for k, v in than.items())
+    n = "".join(_phan_tu(k, v) for k, v in (than or {}).items())
     return (f'<?xml version="1.0" encoding="UTF-8"?><CommandHead Command="{cmd}"{s}>'
             f'<Parameters Version="1">{n}</Parameters></CommandHead>')
 
@@ -75,10 +75,13 @@ def ma_hoa_rsa(khoa, chu):
     k = (khoa or "").strip()
     if "BEGIN" not in k:
         k = "-----BEGIN PUBLIC KEY-----\n" + "\n".join(k[i:i + 64] for i in range(0, len(k), 64)) + "\n-----END PUBLIC KEY-----"
-    try:
-        pub = rsa.PublicKey.load_pkcs1_openssl_pem(k.encode())
-    except Exception:
-        pub = rsa.PublicKey.load_pkcs1(k.replace("PUBLIC KEY", "RSA PUBLIC KEY").encode())
+    if "BEGIN RSA PUBLIC KEY" in k:
+        pub = rsa.PublicKey.load_pkcs1(k.encode())
+    else:
+        try:
+            pub = rsa.PublicKey.load_pkcs1_openssl_pem(k.encode())
+        except Exception:
+            pub = rsa.PublicKey.load_pkcs1(k.replace("PUBLIC KEY", "RSA PUBLIC KEY").encode())
     return base64.b64encode(rsa.encrypt(chu.encode(), pub)).decode()
 
 
@@ -241,3 +244,145 @@ def doc_ddns_cam(ip, port, user, pw):
                 "tai_khoan": d.get("DDNSAccounts", ""), "nha_cung_cap": ncc.get(str(d.get("DDNSProviderId")), str(d.get("DDNSProviderId")))}
     finally:
         cam.dang_xuat()
+
+
+# ------------------------------------------------------------------ KHAI BÁO LẦN ĐẦU (cam mới chưa có mật khẩu)
+# Học từ chính giao diện web của cam (loginIndex + index.js, cam Phú Lý firmware v5.2.1629, 15/11/2026):
+#  - 30541 (không cần đăng nhập) → DeviceSummaryInfo.ActivateFlag: "true" = đã khai báo, "false" = cam mới → trang tạo mật khẩu
+#  - 11015 (không cần đăng nhập) → Result.Code -532: tự đặt tên user quản trị; còn lại: SNString.String = tên user bắt buộc
+#  - 11011 {WebAuthInfo:{OperatorType:1}} → Nonce, PublicKey
+#  - vt = 16 ký tự [a-f0-9]; Cnonce = base64(vt); khoá AES = utf8(sha256hex(Nonce + Cnonce)[:32]); iv = utf8(vt)
+#    L = base64(AES-256-CBC-PKCS7(mật khẩu)); Response = base64(RSA_PKCS1(L))
+#  - 11011 {WebAuthInfo:{OperatorType:3, User, Cnonce, Response}} → Result.Code 0 là xong; sau đó đăng nhập như thường
+_SB = None
+
+
+def _sbox():
+    global _SB
+    if _SB is None:
+        p = q = 1
+        sb = [0] * 256
+        while True:
+            p = p ^ ((p << 1) & 0xFF) ^ (0x1B if p & 0x80 else 0)
+            q ^= q << 1
+            q ^= q << 2
+            q ^= q << 4
+            q &= 0xFF
+            if q & 0x80:
+                q ^= 0x09
+            x = q ^ ((q << 1 | q >> 7) & 0xFF) ^ ((q << 2 | q >> 6) & 0xFF) ^ ((q << 3 | q >> 5) & 0xFF) ^ ((q << 4 | q >> 4) & 0xFF)
+            sb[p] = (x ^ 0x63) & 0xFF
+            if p == 1:
+                break
+        sb[0] = 0x63
+        _SB = sb
+    return _SB
+
+
+def _xt(a):
+    return ((a << 1) ^ 0x1B) & 0xFF if a & 0x80 else a << 1
+
+
+def _aes_khoa(khoa):
+    sb = _sbox()
+    nk = len(khoa) // 4
+    nr = nk + 6
+    w = [list(khoa[4 * i:4 * i + 4]) for i in range(nk)]
+    rc = 1
+    for i in range(nk, 4 * (nr + 1)):
+        t = list(w[i - 1])
+        if i % nk == 0:
+            t = [sb[t[1]] ^ rc, sb[t[2]], sb[t[3]], sb[t[0]]]
+            rc = _xt(rc)
+        elif nk > 6 and i % nk == 4:
+            t = [sb[x] for x in t]
+        w.append([w[i - nk][j] ^ t[j] for j in range(4)])
+    return [sum(w[4 * r:4 * r + 4], []) for r in range(nr + 1)], nr
+
+
+def _aes_khoi(b, ks, nr):
+    sb = _sbox()
+    st = [b[i] ^ ks[0][i] for i in range(16)]
+    for r in range(1, nr + 1):
+        st = [sb[x] for x in st]
+        st = [st[(i + 4 * (i % 4)) % 16] for i in range(16)]      # ShiftRows (trạng thái xếp theo cột)
+        if r != nr:
+            m = []
+            for c in range(4):
+                a = st[4 * c:4 * c + 4]
+                x = a[0] ^ a[1] ^ a[2] ^ a[3]
+                m += [a[i] ^ x ^ _xt(a[i] ^ a[(i + 1) % 4]) for i in range(4)]
+            st = m
+        st = [st[i] ^ ks[r][i] for i in range(16)]
+    return bytes(st)
+
+
+def aes_cbc(du_lieu, khoa, iv):
+    """AES-CBC + đệm PKCS7, thuần Python (APK không có thư viện AES). Khoá 16/24/32 byte."""
+    ks, nr = _aes_khoa(bytes(khoa))
+    n = 16 - len(du_lieu) % 16
+    du_lieu = bytes(du_lieu) + bytes([n]) * n
+    out, truoc = b"", bytes(iv)
+    for i in range(0, len(du_lieu), 16):
+        truoc = _aes_khoi(bytes(a ^ b for a, b in zip(du_lieu[i:i + 16], truoc)), ks, nr)
+        out += truoc
+    return out
+
+
+def _goi_tho(ip, port, cmd, than=None, cho=8):
+    r = requests.post(f"http://{ip}:{port}{DUONG}", data=tao_xml(cmd, than).encode(), timeout=cho, headers={"Content-Type": "application/xml"})
+    return doc_xml(r.text)
+
+
+def tom_tat(ip, port, cho=6):
+    """Thông tin cam KHÔNG cần đăng nhập (lệnh 30541): model, MAC, firmware, và đã khai báo lần đầu chưa. {} nếu không đọc được."""
+    try:
+        d = _goi_tho(ip, port, 30541, None, cho)
+        return (d.get("DeviceSummaryInfo") or {}) if ma_kq(d) == 0 else {}
+    except Exception:
+        return {}
+
+
+def da_khai_bao(ip, port):
+    """True = cam đã có mật khẩu; False = cam MỚI chưa khai báo lần đầu; None = không xác định được."""
+    f = str(tom_tat(ip, port).get("ActivateFlag", "")).lower()
+    return True if f == "true" else False if f == "false" else None
+
+
+def khai_bao_lan_dau(ip, port, user, pw):
+    """Khai báo lần đầu cho cam mới: tạo mật khẩu quản trị. Trả (ok, tên user thực tế, thông báo).
+    Chỉ chạy khi cam báo CHƯA khai báo — cam đã có mật khẩu thì không đụng."""
+    kb = da_khai_bao(ip, port)
+    if kb is True:
+        return False, user, "cam đã khai báo từ trước (đã có mật khẩu) — không khai báo lại"
+    if kb is None:
+        return False, user, "không đọc được trạng thái khai báo của cam"
+    if not re.fullmatch(r"[a-zA-Z0-9]{1,20}", user or ""):
+        return False, user, "tên user cam chỉ gồm chữ và số, tối đa 20 ký tự"
+    if not pw or re.search(r"\s", pw):
+        return False, user, "mật khẩu cam trống hoặc có khoảng trắng"
+    try:
+        d = _goi_tho(ip, port, 11015, None)      # cam có bắt buộc tên user quản trị không
+        sn = d.get("SNString") or {}
+        sn = sn[0] if isinstance(sn, list) and sn else sn
+        ten = str((sn or {}).get("String", "")) if ma_kq(d) == 0 else ""
+        if ten and re.fullmatch(r"[a-zA-Z0-9]{1,20}", ten):
+            user = ten
+    except Exception:
+        pass
+    try:
+        d = _goi_tho(ip, port, 11011, {"WebAuthInfo": {"OperatorType": 1}})
+        w = d.get("WebAuthInfo") or {}
+        if ma_kq(d) != 0 or not w.get("PublicKey"):
+            return False, user, f"cam không cấp khoá mã hoá (mã {ma_kq(d)})"
+        vt = "".join(random.choice("abcdef0123456789") for _ in range(16))
+        cn = base64.b64encode(vt.encode()).decode()
+        khoa = _h(str(w.get("Nonce", "")) + cn)[:32].encode()
+        ma = base64.b64encode(aes_cbc(pw.encode(), khoa, vt.encode())).decode()
+        d = _goi_tho(ip, port, 11011, {"WebAuthInfo": {"OperatorType": 3, "User": user, "Cnonce": cn, "Response": ma_hoa_rsa(w["PublicKey"], ma)}})
+        c = ma_kq(d)
+        if c != 0:
+            return False, user, f"cam từ chối tạo mật khẩu (mã {c}) — thường do mật khẩu chưa đủ mạnh theo yêu cầu của cam"
+        return True, user, f"đã khai báo lần đầu, user quản trị «{user}»"
+    except Exception as e:
+        return False, user, f"khai báo lần đầu lỗi: {str(e)[:100]}"

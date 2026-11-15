@@ -427,6 +427,15 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
         tim = quet(gw.rsplit(".", 1)[0] + ".0/24", {gw, may})
     cams = []
     for ip in sorted(tim, key=lambda x: int(x.split(".")[-1])):
+        if camlink_oryza.da_khai_bao(ip, tim[ip]) is False:      # cam MỚI chưa có mật khẩu → tự khai báo lần đầu bằng user/pass của hệ thống
+            log(f"  Cam {ip}:{tim[ip]} còn MỚI (chưa khai báo lần đầu) → tự tạo mật khẩu quản trị theo user/pass cam đã lưu …")
+            ok_kb, u_kb, tb_kb = camlink_oryza.khai_bao_lan_dau(ip, tim[ip], cam_user, cam_pw)
+            log(f"  {'✔' if ok_kb else '✖'} {ip}: {tb_kb}")
+            if ok_kb:
+                if u_kb != cam_user:
+                    log(f"  ⚠ Cam bắt buộc tên user quản trị là «{u_kb}» (khác «{cam_user}» đang lưu) → lần chạy này dùng «{u_kb}»; sửa User cam trong app cho khớp.")
+                    cam_user = u_kb
+                time.sleep(3)
         ov = Onvif(ip, tim[ip], cam_user, cam_pw)
         if ov.co():
             try:
@@ -503,6 +512,16 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
     log("-- Modem: mở port")
     wan = None
     web_modem = 0
+    mdm = None
+    try:      # modem mới còn mật khẩu xuất xưởng → đổi sang mật khẩu của hệ thống (chỉ khi nhận ra đúng kiểu modem)
+        import camlink_modem
+        mdm = camlink_modem.chuan_bi(gw, modem_user, modem_pw, log, pass_modem_yeu)
+        if mdm is None:
+            log("   · Chưa vào được trang quản trị modem (khác kiểu, hoặc mật khẩu trên tem modem khác mật khẩu đã lưu) → mở port bằng UPnP; "
+                "muốn app quản modem thì nhập đúng mật khẩu modem ở 'User/pass riêng điểm này'.")
+            CAN_MAU.append("modem")
+    except Exception as e:
+        log(f"   · Trang quản trị modem: {str(e)[:80]}")
     igd = upnp_tim()
     if igd:
         dem = co_san = 0
@@ -539,8 +558,20 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
             except Exception as e:
                 log(f"   ⚠ Mở quản trị modem từ xa lỗi: {str(e)[:80]}")
     else:
-        log("   ⚠ Modem tắt UPnP → tạm mở port tay theo bảng dưới (Virtual Servers)")
-        CAN_MAU.append("modem")
+        if mdm is not None:
+            dem = 0
+            for ten, p, ip in luat:
+                try:
+                    ok_n, tb_n = mdm.them_nat(ten, p, ip)
+                except Exception as e:
+                    ok_n, tb_n = False, str(e)[:80]
+                dem += 1 if ok_n else 0
+                if not ok_n:
+                    log(f"   ✖ {tb_n}")
+            log(f"   {'✔' if dem == len(luat) else '⚠'} Modem tắt UPnP → mở {dem}/{len(luat)} luật qua trang quản trị modem")
+        else:
+            log("   ⚠ Modem tắt UPnP → tạm mở port tay theo bảng dưới (Virtual Servers)")
+            CAN_MAU.append("modem")
     if not igd and pass_modem_yeu(modem_user, modem_pw):      # không in mật khẩu ra nhật ký (nhật ký được gửi qua Zalo/Gmail)
         log("   ⚠ Mật khẩu modem đang lưu trong app còn mặc định/yếu — nếu modem đã đặt mật khẩu riêng thì nhập đúng vào app.")
 
@@ -590,17 +621,25 @@ def thu(cam_user="", cam_pw=""):
     log(f"Quét mạng {gw} ...")
     tim = quet(gw.rsplit(".", 1)[0] + ".0/24", {may})
     zp = os.path.join(thu_muc_ra(), f"camlink_mau_{time.strftime('%Y%m%d_%H%M%S')}.zip")
+    _cd = doc_cai_dat()
+    tk_modem = (_cd.get("modem_user", "admin"), _cd.get("modem_pw", "admin"))
     with zipfile.ZipFile(zp, "w", zipfile.ZIP_DEFLATED) as z:
         for ip, port in tim.items():
             goc = f"http://{ip}:{port}"
             log(f"  {goc}")
+            trang_modem = (["/info.html", "/main.html", "/menu.html", "/scvrtsrv.html", "/password.html", "/resetrouter.html", "/scacccntr.html",
+                            "/upnpcfg.html", "/wancfg.html", "/login.html", "/login.asp", "/cgi-bin/login.asp", "/status.htm", "/index.asp",
+                            "/cgi-bin/luci", "/html/index.html", "/js/main.js", "/getpage.gch?pid=1002"] if ip == gw else [])
             for p in ["/", "/ISAPI/System/deviceInfo", "/cgi-bin/magicBox.cgi?action=getDeviceType",
-                      "/onvif/device_service", "/doc/page/login.asp", "/rootDesc.xml", "/igd.xml"]:
+                      "/onvif/device_service", "/doc/page/login.asp", "/rootDesc.xml", "/igd.xml"] + trang_modem:
                 try:
                     r = requests.get(goc + p, timeout=5, verify=False,
-                                     auth=HTTPDigestAuth(cam_user, cam_pw) if cam_user and ip != gw else None)
-                    z.writestr(f"{ip}_{port}/{ten_file(p)}.txt",
-                               f"{r.status_code}\n{dict(r.headers)}\n\n{r.text[:200000]}")
+                                     auth=HTTPDigestAuth(cam_user, cam_pw) if cam_user and ip != gw else (tk_modem if ip == gw and p in trang_modem else None))
+                    than = r.text[:200000]
+                    for bi_mat in (cam_pw, tk_modem[1]):      # file mẫu được gửi đi → che mật khẩu nếu trang có nhúng
+                        if bi_mat and len(bi_mat) >= 4:
+                            than = than.replace(bi_mat, "***")
+                    z.writestr(f"{ip}_{port}/{ten_file(p)}.txt", f"{r.status_code}\n{dict(r.headers)}\n\n{than}")
                     if p == "/":
                         for src in re.findall(r'(?:src|href)=["\']([^"\']+\.(?:js|asp|html?|htm))', r.text, re.I)[:40]:
                             try:
