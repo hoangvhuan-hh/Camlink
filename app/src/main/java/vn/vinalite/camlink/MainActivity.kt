@@ -44,6 +44,18 @@ class MainActivity : Activity() {
     private lateinit var cuon: ScrollView
     private lateinit var tieuDe: TextView
     private lateinit var trangThai: TextView
+    // 2.4 — giao diện đồ hoạ (tuỳ chọn): dựng song song, đổi qua lại, không đụng giao diện chữ
+    private lateinit var gocChu: LinearLayout
+    private lateinit var gocDH: LinearLayout
+    private lateinit var dhTrangThai: TextView
+    private lateinit var dhThe: LinearLayout
+    private lateinit var dhTrang: android.widget.FrameLayout
+    private lateinit var dhChu: ScrollView
+    private lateinit var dhThem: ScrollView
+    private lateinit var dhChamGS: android.view.View
+    private val dhTab = mutableListOf<TextView>()
+    private var doHoa = false
+    private val maGiamSatDH = 42
     private val cacNut = mutableListOf<Button>()
     private val ui = Handler(Looper.getMainLooper())
     private val maFile = 11
@@ -129,6 +141,14 @@ class MainActivity : Activity() {
         ten.setTypeface(null, Typeface.BOLD)
         goc.addView(ten)
 
+        val doi = TextView(this)      // 2.4: lối sang giao diện đồ hoạ — giao diện chữ này giữ nguyên
+        doi.text = "🎨 Đổi sang giao diện đồ hoạ ›"
+        doi.textSize = 14f
+        doi.setTextColor(Color.parseColor(LAM))
+        doi.setPadding(0, dp(4), 0, dp(4))
+        doi.setOnClickListener { datGiaoDien(true) }
+        goc.addView(doi)
+
         tieuDe = TextView(this)
         tieuDe.textSize = 14f
         tieuDe.setPadding(0, dp(2), 0, dp(8))
@@ -168,13 +188,20 @@ class MainActivity : Activity() {
         val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
         lp.topMargin = dp(10)
         goc.addView(cuon, lp)
-        setContentView(goc)
+        gocChu = goc
+        dungDoHoa()
+        datGiaoDien(getSharedPreferences("camlink", MODE_PRIVATE).getBoolean("do_hoa", true), luu = false)
         xuLyLink(intent)
     }
 
     private fun datTrangThai(chu: String, mau: String) {
         trangThai.text = chu
         trangThai.setBackgroundColor(Color.parseColor(mau))
+        if (::dhTrangThai.isInitialized) {
+            dhTrangThai.text = chu
+            dhTrangThai.background = bo(mau, 14)
+            dhTrangThai.visibility = if (chu == "Chưa chạy") android.view.View.GONE else android.view.View.VISIBLE
+        }
     }
 
     private fun capNhatTieuDe() {
@@ -185,6 +212,7 @@ class MainActivity : Activity() {
             !coPass -> "Bước 2: bấm \"User / pass cam và modem\" (nhập một lần)."
             else -> "Sẵn sàng · ${core.callAttr("so_du_an").toInt()} dự án. Tới điểm: vào WiFi modem rồi bấm CHẠY."
         }
+        lamMoiTrangChu()
     }
 
     private fun khoaNut(khoa: Boolean) = ui.post { cacNut.forEach { it.isEnabled = !khoa } }
@@ -240,6 +268,10 @@ class MainActivity : Activity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == maGiamSatDH) {      // từ màn trực tiếp bấm "Kiểm tra sâu" / "Chi tiết, sửa" → sang màn Kiểm tra từ xa
+            if (resultCode == RESULT_OK && data != null) moKiemTra()
+            return
+        }
         val uri: Uri = data?.data ?: return
         if (requestCode == maZip && resultCode == RESULT_OK) { napZip(uri); return }
         if (requestCode != maFile || resultCode != RESULT_OK) return
@@ -668,5 +700,312 @@ class MainActivity : Activity() {
         i.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         startActivity(Intent.createChooser(i, "Gửi kết quả CamLink"))
+    }
+
+    // ================================================================= 2.4: GIAO DIỆN ĐỒ HOẠ (tuỳ chọn)
+    // Trang chủ = thẻ trạng thái + 1 nút chính + 2 lối tắt; thanh tab dưới; việc ít dùng nằm ở tab "Thêm".
+    // Mọi nút gọi lại ĐÚNG các hàm của giao diện chữ nên logic cài điểm / kiểm tra / LiteMark không đổi.
+    private val M_NEN = "#F4F6F9"; private val M_THE = "#FFFFFF"; private val M_VIEN = "#E7ECF1"
+    private val M_CHU = "#121C26"; private val M_MO = "#6A7885"; private val M_MO2 = "#9AA7B3"
+    private val M_XANH = "#0D8F6F"; private val M_XANH_NEN = "#E5F4EF"; private val M_LAM = "#1667B8"; private val M_DO = "#D14343"
+
+    private fun bo(mau: String, r: Int, vien: String? = null): android.graphics.drawable.GradientDrawable {
+        val g = android.graphics.drawable.GradientDrawable()
+        g.setColor(Color.parseColor(mau))
+        g.cornerRadius = dp(r).toFloat()
+        if (vien != null) g.setStroke(dp(1), Color.parseColor(vien))
+        return g
+    }
+
+    private fun chu(s: CharSequence, co: Float, mau: String, dam: Boolean = false): TextView {
+        val t = TextView(this)
+        t.text = s
+        t.textSize = co
+        t.setTextColor(Color.parseColor(mau))
+        if (dam) t.setTypeface(null, Typeface.BOLD)
+        return t
+    }
+
+    private fun lpDoc(tren: Int = 0, duoi: Int = 0): LinearLayout.LayoutParams {
+        val lp = LinearLayout.LayoutParams(-1, -2)
+        lp.topMargin = dp(tren); lp.bottomMargin = dp(duoi)
+        return lp
+    }
+
+    /** Đang chạy cài điểm / nhập file thì không cho bấm việc khác (giao diện chữ khoá nút, ở đây báo nhẹ). */
+    private fun ban(): Boolean {
+        if (dangChay.isEmpty()) return false
+        android.widget.Toast.makeText(this, "Đang chạy: $dangChay — chờ xong đã", android.widget.Toast.LENGTH_SHORT).show()
+        return true
+    }
+
+    /** Một hàng lớn: ô biểu tượng + tên + mô tả + mũi tên. Trả về (hàng, chấm đỏ). */
+    private fun hang(bieu: String, ten: String, moTa: String, bam: () -> Unit): Pair<LinearLayout, android.view.View> {
+        val h = LinearLayout(this)
+        h.orientation = LinearLayout.HORIZONTAL
+        h.gravity = android.view.Gravity.CENTER_VERTICAL
+        h.background = bo(M_THE, 15, M_VIEN)
+        h.setPadding(dp(14), dp(13), dp(14), dp(13))
+        val ic = chu(bieu, 20f, M_CHU)
+        ic.gravity = android.view.Gravity.CENTER
+        ic.background = bo(M_XANH_NEN, 12)
+        h.addView(ic, LinearLayout.LayoutParams(dp(42), dp(42)))
+        val tx = LinearLayout(this)
+        tx.orientation = LinearLayout.VERTICAL
+        tx.addView(chu(ten, 15.5f, M_CHU, dam = true))
+        if (moTa.isNotEmpty()) tx.addView(chu(moTa, 12.5f, M_MO))
+        val lpTx = LinearLayout.LayoutParams(0, -2, 1f)
+        lpTx.leftMargin = dp(13)
+        h.addView(tx, lpTx)
+        val cham = android.view.View(this)
+        cham.background = bo(M_DO, 5)
+        cham.visibility = android.view.View.GONE
+        val lpC = LinearLayout.LayoutParams(dp(9), dp(9))
+        lpC.rightMargin = dp(8)
+        h.addView(cham, lpC)
+        h.addView(chu("›", 22f, M_MO2))
+        h.isClickable = true
+        h.setOnClickListener { bam() }
+        return Pair(h, cham)
+    }
+
+    private fun nhan(s: String): TextView {
+        val t = chu(s.uppercase(), 11.5f, M_MO2, dam = true)
+        t.letterSpacing = 0.06f
+        t.setPadding(dp(2), dp(20), 0, dp(9))
+        return t
+    }
+
+    private fun dauTrang(tieu: String, phu: String): LinearLayout {
+        val hd = LinearLayout(this)
+        hd.orientation = LinearLayout.HORIZONTAL
+        hd.gravity = android.view.Gravity.CENTER_VERTICAL
+        val mk = chu("📹", 19f, "#FFFFFF")
+        mk.gravity = android.view.Gravity.CENTER
+        val g = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+            intArrayOf(Color.parseColor(M_LAM), Color.parseColor(M_XANH)))
+        g.cornerRadius = dp(11).toFloat()
+        mk.background = g
+        hd.addView(mk, LinearLayout.LayoutParams(dp(40), dp(40)))
+        val c = LinearLayout(this)
+        c.orientation = LinearLayout.VERTICAL
+        c.addView(chu(tieu, 17f, M_CHU, dam = true))
+        c.addView(chu(phu, 11.5f, M_MO2))
+        val lp = LinearLayout.LayoutParams(0, -2, 1f)
+        lp.leftMargin = dp(11)
+        hd.addView(c, lp)
+        return hd
+    }
+
+    private fun dungDoHoa() {
+        val pb = packageManager.getPackageInfo(packageName, 0).versionName + " · lõi " + core.callAttr("phien_ban_loi").toString()
+        gocDH = LinearLayout(this)
+        gocDH.orientation = LinearLayout.VERTICAL
+        gocDH.setBackgroundColor(Color.parseColor(M_NEN))
+        dhTrang = android.widget.FrameLayout(this)
+        gocDH.addView(dhTrang, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        // ---------- Trang chủ
+        val c = LinearLayout(this)
+        c.orientation = LinearLayout.VERTICAL
+        c.setPadding(dp(18), dp(22), dp(18), dp(18))
+        c.addView(dauTrang("CamLink", pb), lpDoc(duoi = 18))
+        dhThe = LinearLayout(this)
+        dhThe.orientation = LinearLayout.VERTICAL
+        dhThe.background = bo(M_XANH_NEN, 18, M_VIEN)
+        dhThe.setPadding(dp(18), dp(16), dp(18), dp(16))
+        c.addView(dhThe, lpDoc(duoi = 14))
+        dhTrangThai = chu("", 14.5f, "#FFFFFF", dam = true)
+        dhTrangThai.setPadding(dp(14), dp(11), dp(14), dp(11))
+        dhTrangThai.visibility = android.view.View.GONE
+        dhTrangThai.setOnClickListener { xemNhatKy() }
+        c.addView(dhTrangThai, lpDoc(duoi = 14))
+        val chinh = chu("▶  Cài điểm này", 18f, "#FFFFFF", dam = true)
+        chinh.gravity = android.view.Gravity.CENTER
+        chinh.background = bo(M_LAM, 16)
+        chinh.setPadding(dp(12), dp(17), dp(12), dp(17))
+        chinh.elevation = dp(4).toFloat()
+        chinh.setOnClickListener { if (!ban()) batDauChay() }
+        c.addView(chinh, lpDoc())
+        c.addView(nhan("Việc thường dùng"))
+        c.addView(hang("🔍", "Kiểm tra từ xa", "Soát cả dự án · sửa từ xa") { moKiemTra() }.first, lpDoc(duoi = 10))
+        val gs = hang("🖥️", "Giám sát trực tiếp", "Xem hình mọi cam") { moGiamSatDH() }
+        dhChamGS = gs.second
+        c.addView(gs.first, lpDoc(duoi = 10))
+        dhChu = ScrollView(this)
+        dhChu.addView(c)
+        dhTrang.addView(dhChu)
+
+        // ---------- Trang "Thêm"
+        val t = LinearLayout(this)
+        t.orientation = LinearLayout.VERTICAL
+        t.setPadding(dp(18), dp(22), dp(18), dp(18))
+        t.addView(dauTrang("Thêm", "Việc ít dùng hơn"), lpDoc())
+        fun them(bieu: String, ten: String, moTa: String, khoaKhiChay: Boolean = true, bam: () -> Unit) =
+            t.addView(hang(bieu, ten, moTa) { if (!khoaKhiChay || !ban()) bam() }.first, lpDoc(duoi = 10))
+        t.addView(nhan("Theo dõi & kết quả"))
+        them("📈", "Theo dõi ổn định", "Cam rớt lúc nào, bao lâu", khoaKhiChay = false) { TheoDoi.danhSach(this) }
+        them("🧩", "Sơ đồ + ảnh lần gần nhất", "Kết quả lần cài điểm vừa rồi", khoaKhiChay = false) { moSoDoGanNhat() }
+        them("📤", "Gửi kết quả", "Zalo, Gmail…", khoaKhiChay = false) { guiKetQua() }
+        them("📜", "Nhật ký lần chạy", "Từng bước app đã làm", khoaKhiChay = false) { xemNhatKy() }
+        t.addView(nhan("Cài điểm"))
+        them("📍", "Chọn điểm bằng tay", "Khi GPS không nhận đúng điểm") { chonDiem(chiKiemTra = false) }
+        them("📡", "Thu mẫu thiết bị", "Gặp modem / cam lạ") { thuMau() }
+        t.addView(nhan("Dự án & cài đặt"))
+        them("📁", "Thêm / cập nhật dự án", "File khảo sát Excel") { moFile() }
+        them("🔑", "User / pass cam và modem", "Nhập một lần cho mọi dự án") { hopCaiDat() }
+        them("⬆️", "Cập nhật", "Lõi vài trăm KB; APK chỉ khi cần") { capNhat() }
+        them("📘", "Hướng dẫn sử dụng", "", khoaKhiChay = false) { startActivity(Intent(this, HuongDanActivity::class.java)) }
+        them("☰", "Đổi sang giao diện chữ", "Giao diện cũ, đủ mọi nút", khoaKhiChay = false) { datGiaoDien(false) }
+        dhThem = ScrollView(this)
+        dhThem.addView(t)
+        dhThem.visibility = android.view.View.GONE
+        dhTrang.addView(dhThem)
+
+        // ---------- Thanh tab dưới
+        val vach = android.view.View(this)
+        vach.setBackgroundColor(Color.parseColor(M_VIEN))
+        gocDH.addView(vach, LinearLayout.LayoutParams(-1, dp(1)))
+        val nav = LinearLayout(this)
+        nav.orientation = LinearLayout.HORIZONTAL
+        nav.setBackgroundColor(Color.parseColor(M_THE))
+        fun tab(bieu: String, ten: String, bam: () -> Unit) {
+            val b = chu("$bieu\n$ten", 11.5f, M_MO2, dam = true)
+            b.gravity = android.view.Gravity.CENTER
+            b.setLineSpacing(dp(3).toFloat(), 1f)
+            b.setPadding(dp(2), dp(9), dp(2), dp(11))
+            b.setOnClickListener { bam() }
+            dhTab.add(b)
+            nav.addView(b, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        tab("🏠", "Trang chủ") { chonTrang(0) }
+        tab("🔍", "Kiểm tra") { moKiemTra() }
+        tab("🖥️", "Giám sát") { moGiamSatDH() }
+        tab("🔐", "Quản trị") { startActivity(Intent(this, QuanTriActivity::class.java)) }
+        tab("⋯", "Thêm") { chonTrang(4) }
+        gocDH.addView(nav, LinearLayout.LayoutParams(-1, -2))
+        chonTrang(0)
+    }
+
+    private fun chonTrang(i: Int) {
+        dhChu.visibility = if (i == 0) android.view.View.VISIBLE else android.view.View.GONE
+        dhThem.visibility = if (i == 4) android.view.View.VISIBLE else android.view.View.GONE
+        dhTab.forEachIndexed { k, b -> b.setTextColor(Color.parseColor(if (k == i) M_XANH else M_MO2)) }
+        if (i == 0) lamMoiTrangChu()
+    }
+
+    private fun datGiaoDien(dh: Boolean, luu: Boolean = true) {
+        doHoa = dh
+        if (luu) getSharedPreferences("camlink", MODE_PRIVATE).edit().putBoolean("do_hoa", dh).apply()
+        if (dh) { chonTrang(0); setContentView(gocDH) } else setContentView(gocChu)
+    }
+
+    private fun moKiemTra() {
+        if (ban()) return
+        if (sanSang()) startActivity(Intent(this, TuXaActivity::class.java))
+    }
+
+    /** Thẻ trạng thái: đọc kết quả kiểm gần nhất đã lưu (không chạm mạng). Chưa có dữ liệu thì chỉ đúng bước cần làm. */
+    private fun lamMoiTrangChu() {
+        if (!::dhThe.isInitialized) return
+        dhThe.removeAllViews()
+        dhThe.setOnClickListener(null)
+        dhThe.isClickable = false
+        dhChamGS.visibility = android.view.View.GONE
+        val coFile = core.callAttr("co_du_lieu").toBoolean()
+        val coPass = core.callAttr("co_cai_dat").toBoolean()
+        fun buoc(so: String, ten: String, moTa: String, nhanNut: String, bam: () -> Unit) {
+            dhThe.addView(chu(so, 12f, M_XANH, dam = true))
+            dhThe.addView(chu(ten, 21f, M_CHU, dam = true))
+            dhThe.addView(chu(moTa, 13f, M_MO), lpDoc(tren = 2, duoi = 12))
+            val n = chu(nhanNut, 14.5f, "#FFFFFF", dam = true)
+            n.gravity = android.view.Gravity.CENTER
+            n.background = bo(M_XANH, 12)
+            n.setPadding(dp(12), dp(11), dp(12), dp(11))
+            n.setOnClickListener { if (!ban()) bam() }
+            dhThe.addView(n, lpDoc())
+        }
+        if (!coFile) { buoc("BƯỚC 1 / 2", "Thêm dự án", "Chọn file khảo sát Excel của dự án.", "📁  Chọn file Excel") { moFile() }; return }
+        if (!coPass) { buoc("BƯỚC 2 / 2", "Nhập user / pass", "Của cam và modem — nhập một lần, app nhớ.", "🔑  Nhập user / pass") { hopCaiDat() }; return }
+        val j = try { org.json.JSONObject(core.callAttr("tong_quan").toString()) } catch (e: Exception) { org.json.JSONObject() }
+        val soDa = j.optInt("du_an", core.callAttr("so_du_an").toInt())
+        val tong = j.optInt("tong_cam"); val dat = j.optInt("dat"); val loi = j.optInt("diem_loi")
+        if (tong == 0) {
+            dhThe.addView(chu("Sẵn sàng", 30f, M_XANH, dam = true))
+            dhThe.addView(chu("$soDa dự án đang quản lý · chưa kiểm từ xa lần nào", 13f, M_MO), lpDoc(tren = 2))
+            dhThe.addView(chu("Tới điểm: vào WiFi modem rồi bấm Cài điểm này.", 13f, M_MO), lpDoc(tren = 8))
+            return
+        }
+        val lon = android.text.SpannableString("$dat/$tong cam đang lên")
+        lon.setSpan(android.text.style.ForegroundColorSpan(Color.parseColor(if (dat == tong) M_XANH else M_DO)), 0, dat.toString().length, 0)
+        lon.setSpan(android.text.style.RelativeSizeSpan(0.62f), "$dat/$tong".length, lon.length, 0)
+        dhThe.addView(chu(lon, 34f, M_CHU, dam = true))
+        dhThe.addView(chu("$soDa dự án đang quản lý", 13f, M_MO), lpDoc(tren = 2))
+        val h = LinearLayout(this)
+        h.orientation = LinearLayout.HORIZONTAL
+        fun o(so: String, ten: String, mau: String, nang: Float) {
+            val v = LinearLayout(this)
+            v.orientation = LinearLayout.VERTICAL
+            val s = chu(so, 17f, mau, dam = true)
+            s.maxLines = 1; s.ellipsize = android.text.TextUtils.TruncateAt.END
+            v.addView(s)
+            v.addView(chu(ten, 12f, M_MO))
+            h.addView(v, LinearLayout.LayoutParams(0, -2, nang))
+        }
+        o(loi.toString(), "điểm lỗi", if (loi > 0) M_DO else M_CHU, 1f)
+        o(j.optString("gan_nhat").ifEmpty { "—" }, "lần kiểm gần nhất", M_CHU, 3f)
+        val dangTd = j.optInt("theo_doi")
+        if (dangTd > 0) o(dangTd.toString(), "đang theo dõi", M_CHU, 1.4f)
+        dhThe.addView(h, lpDoc(tren = 14))
+        dhThe.setOnClickListener { moKiemTra() }
+        if (loi > 0) dhChamGS.visibility = android.view.View.VISIBLE
+    }
+
+    /** Giám sát trực tiếp dùng kết quả kiểm gần nhất của dự án (đúng như nút trong màn Kiểm tra từ xa). */
+    private fun moGiamSatDH() {
+        if (ban() || !sanSang()) return
+        val ds = core.callAttr("ds_du_an").asList().map { r -> r.asList().map { it.toString() } }
+        val co = ds.map { Pair(it, core.callAttr("tuxa_gan_nhat", it[0]).toString()) }.filter { it.second.isNotEmpty() }
+        fun mo(ma: String, kq: String) {
+            val f = File(cacheDir, "giamsat.json")
+            f.writeText(kq)
+            startActivityForResult(Intent(this, GiamSatActivity::class.java).putExtra("file", f.absolutePath).putExtra("ma", ma), maGiamSatDH)
+        }
+        when {
+            co.isEmpty() -> AlertDialog.Builder(this)
+                .setTitle("Chưa có kết quả kiểm")
+                .setMessage("Giám sát trực tiếp cần danh sách cam từ một lần Kiểm tra từ xa. Kiểm một lần rồi vào lại.")
+                .setPositiveButton("Kiểm tra từ xa") { _, _ -> moKiemTra() }
+                .setNegativeButton("Đóng", null).show()
+            co.size == 1 -> mo(co[0].first[0], co[0].second)
+            else -> AlertDialog.Builder(this)
+                .setTitle("Giám sát dự án nào?")
+                .setItems(co.map { it.first[1] }.toTypedArray()) { _, i -> mo(co[i].first[0], co[i].second) }
+                .show()
+        }
+    }
+
+    private fun xemNhatKy() {
+        val tv = TextView(this)
+        tv.text = if (log.text.isEmpty()) "Chưa có gì — nhật ký hiện khi chạy cài điểm, nhập dự án, cập nhật…" else log.text
+        tv.typeface = Typeface.MONOSPACE
+        tv.textSize = 12f
+        tv.setTextIsSelectable(true)
+        tv.setPadding(dp(16), dp(12), dp(16), dp(12))
+        val sv = ScrollView(this)
+        sv.addView(tv)
+        AlertDialog.Builder(this).setTitle("Nhật ký").setView(sv).setPositiveButton("Đóng", null).show()
+        sv.post { sv.fullScroll(ScrollView.FOCUS_DOWN) }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::dhThe.isInitialized && doHoa) lamMoiTrangChu()
+    }
+
+    @Deprecated("")
+    override fun onBackPressed() {
+        if (doHoa && ::dhThem.isInitialized && dhThem.visibility == android.view.View.VISIBLE) { chonTrang(0); return }
+        @Suppress("DEPRECATION") super.onBackPressed()
     }
 }

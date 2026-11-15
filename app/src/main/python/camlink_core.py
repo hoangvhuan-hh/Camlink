@@ -1257,3 +1257,41 @@ def qt_khoi_phuc_doc_ma(ma, stt, domain, http):
 def qt_doi_pin(pin_cu, pin_moi):
     import camlink_quantri as QT
     return QT.doi_pin(pin_cu, pin_moi)
+
+
+# ------------------------------------------------------------------ 2.4: tổng quan cho màn hình chính đồ hoạ
+def tong_quan():
+    """Số liệu cho thẻ trạng thái ở trang chủ đồ hoạ — CHỈ đọc kết quả kiểm gần nhất đã lưu, không chạm mạng."""
+    import camlink_tuxa as T
+    out = {"du_an": 0, "tong_cam": 0, "dat": 0, "diem_loi": 0, "gan_nhat": "", "theo_doi": 0, "ds": []}
+    moi = 0
+    for r in ds_du_an():
+        ma, ten = str(r[0]), str(r[1])
+        out["du_an"] += 1
+        d = {"ma": ma, "ten": ten, "co_kq": False, "tong_cam": 0, "dat": 0, "diem_loi": 0, "luc": ""}
+        f = T._f_lich_su(GOC, ma)
+        try:
+            with open(f, encoding="utf-8") as fh:
+                kq = json.load(fh)
+            ds = kq.get("diem") or []
+            if ds:
+                d["co_kq"] = True
+                d["tong_cam"] = sum(len(p.get("cam") or []) for p in ds)
+                d["dat"] = sum(1 for p in ds for c in (p.get("cam") or []) if c.get("muc") == "xanh")
+                d["diem_loi"] = sum(1 for p in ds if p.get("muc") != "xanh")
+                d["luc"] = str(kq.get("luc", ""))
+                out["tong_cam"] += d["tong_cam"]
+                out["dat"] += d["dat"]
+                out["diem_loi"] += d["diem_loi"]
+                t = os.path.getmtime(f)
+                if t > moi:
+                    moi, out["gan_nhat"] = t, f"{ten} · {d['luc']}"
+        except (OSError, ValueError):
+            pass
+        out["ds"].append(d)
+    try:
+        import camlink_theodoi as TD
+        out["theo_doi"] = sum(1 for x in TD.ds_hien() if x.get("trang_thai") == "dang")
+    except Exception:
+        pass
+    return json.dumps(out, ensure_ascii=False)
