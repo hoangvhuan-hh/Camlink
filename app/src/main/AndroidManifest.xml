@@ -35,6 +35,7 @@
         </activity>
         <activity android:name=".SoDoActivity" android:exported="false" />
         <activity android:name=".HuongDanActivity" android:exported="false" />
+        <activity android:name=".QuanTriActivity" android:exported="false" />
         <activity android:name=".TuXaActivity" android:exported="false" />
         <activity android:name=".BanDoActivity" android:exported="false" />
         <activity android:name=".GiamSatActivity" android:exported="false" android:configChanges="orientation|screenSize" />
