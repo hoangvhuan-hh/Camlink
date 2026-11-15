@@ -48,6 +48,7 @@ class TuXaActivity : Activity() {
     private lateinit var rada: android.webkit.WebView
     private lateinit var cuonKq: ScrollView
     private lateinit var duoi: LinearLayout
+    private var toiDiem = ""      // điểm cần nhảy tới sau khi quét xong (bấm "Chi tiết / sửa" từ màn Giám sát)
     private var radaSan = false
     private val radaCho = mutableListOf<String>()
 
@@ -452,6 +453,12 @@ class TuXaActivity : Activity() {
         if (intent.getBooleanExtra("mo_theo_doi", false)) ui.postDelayed({ TheoDoi.danhSach(this) }, 400)
         val nhanCt = intent.getStringExtra("nhan_ct")
         if (nhanCt != null) nhanDuAn(nhanCt, intent.getStringExtra("nhan_ten") ?: "")
+        else if (intent.getStringExtra("ma") != null) {      // mở từ màn Giám sát (trang chủ) → vào thẳng dự án đó, quét xong nhảy tới đúng điểm
+            val m0 = intent.getStringExtra("ma") ?: ""
+            val ds = core.callAttr("ds_du_an").asList().map { r -> r.asList().map { it.toString() } }
+            val d = ds.firstOrNull { it[0] == m0 }
+            if (d != null) { ma = d[0]; tenDuAn = d[1]; toiDiem = intent.getStringExtra("toi_diem") ?: ""; batDau() } else chonDuAn()
+        }
         else { chonDuAn(); kiemChoNhan() }
     }
 
@@ -643,6 +650,7 @@ class TuXaActivity : Activity() {
                     cheDoQuet(false)
                     veBang(if (co4G) "Đã kiểm tra qua 4G (như IOC gọi từ ngoài)" else "⚠ Không bật được 4G — đã kiểm tra qua WiFi; nếu đang ở trong WiFi của chính điểm, kết quả có thể sai")
                     js("rada.xong('ĐÃ QUÉT XONG ${java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())}')")
+                    if (toiDiem.isNotEmpty()) { val s0 = toiDiem; toiDiem = ""; cuonKq.postDelayed({ cuonToi(s0) }, 300) }
                     val d1 = ketQua?.optInt("dat") ?: 0
                     if (d0 >= 0 && d1 != d0) Toast.makeText(this, "So với lần trước: $d0 → $d1 cam đạt", Toast.LENGTH_LONG).show()
                 }
@@ -719,6 +727,7 @@ class TuXaActivity : Activity() {
             tt.addView(nut("Xem báo cáo sửa (từng vấn đề)") { xemBaoCaoSua(bcs) })
         }
         if (tong - dat > 0 && bcs == null) tt.addView(nut("🔧 SỬA TẤT CẢ ${tong - dat} VẤN ĐỀ (rồi báo cáo)") { suaTatCa() })
+        if (tong - dat <= 0) tt.addView(chu("🔧 Sửa từ xa: không có lỗi nào cần sửa. Khi có cam lỗi, nút sửa hiện tại đây và ngay trong thẻ của cam đó.", 13f, mau = "#1D7A46"))
         val daSua = k.optInt("da_sua")
         if (daSua > 0) tt.addView(chu("🔧 App đã tự sửa $daSua cam có vấn đề → ${k.optInt("sua_xong")} cam đã chạy lại", 14f, true, "#0F5D8C"))
         tt.addView(chu("Cam đang chạy tốt: chỉ đọc, không thay đổi gì", 12f, mau = "#5B6776"))
@@ -753,10 +762,37 @@ class TuXaActivity : Activity() {
         t.addView(chu(p.optString("ghi_so"), 12f, mau = "#5B6776"))
         val cb = p.optJSONArray("canh_bao")
         if (cb != null) for (i in 0 until cb.length()) t.addView(chu("⚠ ${cb.getString(i)}", 13f, true, "#B42318"))
+        if (muc != "xanh") theChanDoan(p)?.let { t.addView(it) }
         val cams = p.optJSONArray("cam") ?: JSONArray()
         t.addView(luoiCam(p, cams))
         for (i in 0 until cams.length()) t.addView(dongCam(p, cams.getJSONObject(i)))
         return t
+    }
+
+    /** Thẻ "khả năng lỗi theo %" cho điểm đang lỗi (cùng cách tính với màn Giám sát): nguyên nhân nào bao nhiêu %, sửa từ xa được hay phải ra điểm. */
+    private fun theChanDoan(p: JSONObject): LinearLayout? {
+        val pd = try { JSONObject(core.callAttr("chandoan_diem", ma, p.toString()).toString()) } catch (_: Exception) { return null }
+        val kn = pd.optJSONArray("kha_nang") ?: return null
+        if (kn.length() == 0) return null
+        val h = the("#3A4756", "#F6F8FA")
+        h.addView(chu("🩺 Khả năng lỗi (ước tính, không khẳng định)", 14f, true, "#17202B"))
+        for (i in 0 until kn.length()) {
+            val k = kn.getJSONObject(i)
+            val tuXa = k.optBoolean("tu_xa")
+            val hang = LinearLayout(this); hang.orientation = LinearLayout.HORIZONTAL; hang.gravity = android.view.Gravity.CENTER_VERTICAL
+            hang.addView(chu("${k.optInt("pt")}%", 14f, true, if (tuXa) "#1D7A46" else "#B42318").apply { minWidth = dp(46) })
+            val thanh = View(this); thanh.setBackgroundColor(Color.parseColor(if (tuXa) "#1D7A46" else "#B42318"))
+            hang.addView(thanh, LinearLayout.LayoutParams(dp((k.optInt("pt") * 1.1).toInt().coerceAtLeast(4)), dp(8)).apply { rightMargin = dp(6) })
+            hang.addView(chu(k.optString("ten") + if (tuXa) " · sửa từ xa được" else " · tại hiện trường", 12f, mau = "#3B4654"), LinearLayout.LayoutParams(0, -2, 1f))
+            h.addView(hang)
+        }
+        val dau = kn.optJSONObject(0)
+        when (pd.optString("nut_sua")) {
+            "an" -> h.addView(chu("⚠ ${pd.optString("loi_nut")}\nViệc cần làm: ${dau?.optString("viec")}\nAi xử lý: ${dau?.optString("ai")}", 13f, true, "#B42318"))
+            "sang" -> h.addView(chu("✔ Khả năng sửa được từ xa ${pd.optInt("p_tu_xa")}% — dùng nút 🔧 Sửa từ xa ở cam lỗi bên dưới, hoặc nút SỬA TẤT CẢ ở đầu trang.", 13f, true, "#1D7A46"))
+            else -> h.addView(chu("Khả năng sửa được từ xa chỉ ${pd.optInt("p_tu_xa")}% — có thể thử nút sửa bên dưới, nhiều khả năng phải ra hiện trường.", 13f, mau = "#9A5B00"))
+        }
+        return h
     }
 
     /** Lưới ô hình: mỗi cam một ô. Ô cam lên: ảnh chụp, bấm là phát trực tiếp ngay tại ô. Ô cam lỗi: ghi lý do ngay trong ô. */
@@ -816,7 +852,8 @@ class TuXaActivity : Activity() {
         val ct = LinearLayout(this)
         ct.orientation = LinearLayout.VERTICAL
         ct.setPadding(dp(10), dp(4), 0, dp(4))
-        ct.visibility = View.GONE      // gọn: hình đã ở lưới ô phía trên; bấm "▸ chi tiết" để xem nguyên nhân, link, user/pass, sửa
+        // cam ĐẠT: gọn (bấm "▸ chi tiết" mới mở). Cam LỖI: mở sẵn để thấy ngay nguyên nhân + nút sửa từ xa
+        ct.visibility = if (muc == "xanh") View.GONE else View.VISIBLE
         dau.setOnClickListener { ct.visibility = if (ct.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
 
         ct.addView(chu("Nguyên nhân: ${c.optString("nguyen_nhan")}", 14f))

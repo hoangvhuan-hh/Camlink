@@ -1506,3 +1506,20 @@ def tuxa_rada(ma):
     except (OSError, ValueError):
         pass
     return T.rada_html(_doc_du_an(ma), ma, ls, GOC)
+
+
+# ------------------------------------------------------------------ 2.11: chẩn đoán theo % ngay trong thẻ điểm lỗi của Kiểm tra từ xa
+def chandoan_diem(ma, json_p):
+    """Kết quả quét một điểm → phiếu chẩn đoán theo % (gộp bằng chứng của các cam lỗi). Điểm không lỗi trả '{}'."""
+    import camlink_chandoan as CD
+    b = CD.tu_ket_qua_diem(json.loads(json_p))
+    gop = []
+    for ds in b.values():
+        for x in ds:
+            if x not in gop:
+                gop.append(x)
+    if not b:
+        return "{}"
+    pd = CD.tinh(gop, ma, "dang_mat")
+    pd["mot_dong"] = CD.dong_mot_dong(pd)
+    return json.dumps(pd, ensure_ascii=False)

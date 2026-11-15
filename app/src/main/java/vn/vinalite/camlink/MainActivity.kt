@@ -58,6 +58,7 @@ class MainActivity : Activity() {
     private val dhTab = mutableListOf<TextView>()
     private var doHoa = false
     private val maGiamSatDH = 42
+    private var maGiamSatDangMo = ""
     private val maViTriTuDong = 14
     private var daXinViTri = false
     private val cacNut = mutableListOf<Button>()
@@ -277,7 +278,11 @@ class MainActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == maGiamSatDH) {      // từ màn trực tiếp bấm "Kiểm tra sâu" / "Chi tiết, sửa" → sang màn Kiểm tra từ xa
-            if (resultCode == RESULT_OK && data != null) moKiemTra()
+            if (resultCode == RESULT_OK && data != null && !ban() && sanSang()) {
+                val i = Intent(this, TuXaActivity::class.java).putExtra("ma", maGiamSatDangMo)
+                data.getStringExtra("stt")?.let { i.putExtra("toi_diem", it) }      // "Chi tiết / sửa" ở một điểm → nhảy thẳng tới thẻ điểm đó
+                startActivity(i)
+            }
             return
         }
         val uri: Uri = data?.data ?: return
@@ -1397,6 +1402,7 @@ class MainActivity : Activity() {
         val ds = core.callAttr("ds_du_an").asList().map { r -> r.asList().map { it.toString() } }
         val co = ds.map { Pair(it, core.callAttr("tuxa_gan_nhat", it[0]).toString()) }.filter { it.second.isNotEmpty() }
         fun mo(ma: String, kq: String) {
+            maGiamSatDangMo = ma
             val f = File(cacheDir, "giamsat.json")
             f.writeText(kq)
             startActivityForResult(Intent(this, GiamSatActivity::class.java).putExtra("file", f.absolutePath).putExtra("ma", ma), maGiamSatDH)
