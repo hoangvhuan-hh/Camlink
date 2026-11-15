@@ -1,0 +1,207 @@
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>CamLink Prototype</title>
+<style>
+  /* Layout: khung điện thoại cố định, thanh tab dưới chuyển trang chính; chạm hàng mở trang chi tiết có nút quay lại. Tối giản, 1 accent. */
+  :root {
+    --nen:#f4f6f9; --the:#fff; --the2:#f7f9fb; --vien:#e7ecf1; --chu:#121c26; --mo:#687684; --mo2:#9aa7b3;
+    --xanh:#0d8f6f; --xanh-n:#e5f4ef; --lam:#1667b8; --lam-n:#e6f0fa; --do:#d14343; --do-n:#fae6e6;
+    --vang:#c88a00; --vang-n:#f8efda; --tim:#6d4aa3; --tim-n:#efe9f7;
+    --font:"Be Vietnam Pro",system-ui,sans-serif; --head:"Space Grotesk",var(--font);
+    --bong:0 1px 2px rgba(18,28,38,.04),0 6px 20px rgba(18,28,38,.05);
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --nen:#0d141b; --the:#151f29; --the2:#101922; --vien:#223040; --chu:#e9f0f6; --mo:#90a0ae; --mo2:#5f7080;
+    --xanh:#45d1aa; --xanh-n:#112a24; --lam:#58a8ef; --lam-n:#102536; --do:#f07a7a; --do-n:#301a1a;
+    --vang:#e3b24e; --vang-n:#2e2410; --tim:#b79be6; --tim-n:#231a33;
+    --bong:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35); color-scheme:dark;
+  }}
+  :root[data-theme="dark"]{
+    --nen:#0d141b; --the:#151f29; --the2:#101922; --vien:#223040; --chu:#e9f0f6; --mo:#90a0ae; --mo2:#5f7080;
+    --xanh:#45d1aa; --xanh-n:#112a24; --lam:#58a8ef; --lam-n:#102536; --do:#f07a7a; --do-n:#301a1a;
+    --vang:#e3b24e; --vang-n:#2e2410; --tim:#b79be6; --tim-n:#231a33;
+    --bong:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35); color-scheme:dark;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--nen);color:var(--chu);font-family:var(--font);}
+  .wrap{max-width:430px;margin:0 auto;padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px));padding-block:14px 26px;}
+  .cap{font-family:var(--head);font-size:17px;margin:0 2px 3px;} .capd{color:var(--mo);font-size:12px;margin:0 2px 13px;}
+
+  .phone{background:var(--the);border:1px solid var(--vien);border-radius:26px;box-shadow:var(--bong);overflow:hidden;display:flex;flex-direction:column;height:720px;}
+  .body{flex:1;overflow:hidden;position:relative;}
+  .screen{position:absolute;inset:0;overflow-y:auto;padding:16px 16px 20px;display:none;}
+  .screen.on{display:block;}
+  /* đầu trang trong */
+  .top{display:flex;align-items:center;gap:11px;margin-bottom:16px;}
+  .mk{width:36px;height:36px;border-radius:10px;background:linear-gradient(145deg,var(--lam),var(--xanh));display:grid;place-items:center;font-size:18px;flex:none;}
+  .top .n{font-family:var(--head);font-weight:700;font-size:15px;} .top .v{font-size:10.5px;color:var(--mo2);}
+  .back{display:flex;align-items:center;gap:9px;margin-bottom:14px;cursor:pointer;}
+  .back .b{width:34px;height:34px;border-radius:10px;border:1px solid var(--vien);display:grid;place-items:center;font-size:17px;}
+  .back .ti{font-family:var(--head);font-weight:700;font-size:16px;}
+  h2{font-family:var(--head);font-size:15px;margin:18px 2px 10px;} .muc{font-size:11px;font-weight:700;color:var(--mo2);text-transform:uppercase;letter-spacing:.6px;margin:18px 2px 9px;}
+
+  .stat{background:linear-gradient(145deg,var(--xanh-n),transparent);border:1px solid var(--vien);border-radius:16px;padding:16px;margin-bottom:16px;}
+  .stat .big{font-family:var(--head);font-size:30px;font-weight:700;letter-spacing:-1px;} .stat .big b{color:var(--xanh);}
+  .stat .lbl{font-size:12.5px;color:var(--mo);} .stat .row{display:flex;gap:16px;margin-top:12px;}
+  .stat .row div{font-size:11.5px;color:var(--mo);} .stat .row b{display:block;font-size:16px;color:var(--chu);font-family:var(--head);}
+
+  .primary{width:100%;border:none;background:var(--lam);color:#fff;border-radius:15px;padding:16px;font-family:var(--head);font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px;box-shadow:0 8px 16px rgba(22,103,184,.25);}
+  .ghost{width:100%;border:1px solid var(--vien);background:var(--the);color:var(--chu);border-radius:13px;padding:13px;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;margin-top:9px;}
+
+  .row{display:flex;align-items:center;gap:13px;background:var(--the);border:1px solid var(--vien);border-radius:14px;padding:13px 14px;margin-bottom:9px;cursor:pointer;}
+  .row .ic{width:40px;height:40px;flex:none;border-radius:11px;display:grid;place-items:center;font-size:20px;background:var(--xanh-n);}
+  .row .tx{flex:1;min-width:0;} .row .tx .t{font-weight:650;font-size:14.5px;} .row .tx .d{font-size:11.5px;color:var(--mo);margin-top:1px;}
+  .row .ch{color:var(--mo2);font-size:19px;}
+  .pill{font-size:11px;font-weight:700;padding:4px 9px;border-radius:999px;white-space:nowrap;}
+  .p-ok{color:var(--xanh);background:var(--xanh-n);} .p-loi{color:var(--do);background:var(--do-n);} .p-cho{color:var(--vang);background:var(--vang-n);}
+
+  /* lưới cam giám sát */
+  .cams{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .cam{border:1px solid var(--vien);border-radius:14px;overflow:hidden;background:var(--the2);}
+  .cam .fr{aspect-ratio:16/10;background:linear-gradient(135deg,#2a3744,#1c2630);display:grid;place-items:center;color:#7f93a4;font-size:12px;position:relative;}
+  .cam .fr.loi{background:repeating-linear-gradient(45deg,#3a1e1e,#3a1e1e 8px,#331a1a 8px,#331a1a 16px);color:#f0a0a0;}
+  .cam .fr .live{position:absolute;top:7px;left:7px;font-size:9px;font-weight:800;color:#fff;background:rgba(209,67,67,.9);padding:2px 6px;border-radius:5px;}
+  .cam .cap2{display:flex;align-items:center;gap:6px;padding:8px 10px;font-size:11.5px;} .cam .cap2 .dot{width:7px;height:7px;border-radius:50%;}
+
+  /* chẩn đoán % */
+  .bar{height:9px;border-radius:5px;background:var(--vien);overflow:hidden;margin:3px 0 2px;} .bar i{display:block;height:100%;border-radius:5px;}
+  .kn{margin-bottom:11px;} .kn .hd2{display:flex;justify-content:space-between;font-size:12.5px;} .kn .hd2 b{font-family:var(--head);}
+  .note{font-size:11.5px;color:var(--mo);background:var(--the2);border:1px solid var(--vien);border-radius:11px;padding:11px;margin-top:6px;}
+
+  .nav{display:flex;border-top:1px solid var(--vien);background:var(--the);}
+  .nav button{flex:1;border:none;background:transparent;color:var(--mo2);font-family:inherit;font-size:10px;font-weight:600;padding:9px 2px 11px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;}
+  .nav button .i{font-size:19px;} .nav button.on{color:var(--xanh);}
+  .foot{margin-top:14px;text-align:center;color:var(--mo);font-size:11px;line-height:1.5;} .foot b{color:var(--chu);}
+</style>
+
+<div class="wrap">
+  <div class="phone">
+    <div class="body">
+
+      <!-- TRANG CHỦ -->
+      <div class="screen on" id="s-home">
+        <div class="top"><div class="mk">📹</div><div><div class="n">CamLink</div><div class="v">2.3.0</div></div><span class="pill p-ok" style="margin-left:auto">● 2 dự án</span></div>
+        <div class="stat">
+          <div class="big"><b>45</b>/46 cam đang lên</div>
+          <div class="lbl">Camera Xã Phú Lý · Tân Triều</div>
+          <div class="row" style="background:none;border:none;padding:0;margin:12px 0 0;cursor:default">
+            <div style="font-size:11.5px;color:var(--mo)"><b style="display:block;font-size:16px;color:var(--do);font-family:var(--head)">1</b>điểm lỗi</div>
+            <div style="font-size:11.5px;color:var(--mo);margin-left:16px"><b style="display:block;font-size:16px;font-family:var(--head)">13:05</b>kiểm gần nhất</div>
+          </div>
+        </div>
+        <button class="primary" onclick="go('s-cai')">▶️ Cài điểm này</button>
+        <div class="muc">Việc thường dùng</div>
+        <div class="row" onclick="go('s-kiem')"><span class="ic" style="background:var(--lam-n)">🔍</span><span class="tx"><div class="t">Kiểm tra từ xa</div><div class="d">Soát cả dự án · sửa từ xa</div></span><span class="ch">›</span></div>
+        <div class="row" onclick="go('s-giam')"><span class="ic">🖥️</span><span class="tx"><div class="t">Giám sát trực tiếp</div><div class="d">Xem hình mọi cam</div></span><span class="pill p-loi">1 lỗi</span><span class="ch">›</span></div>
+      </div>
+
+      <!-- KIỂM TRA (danh sách điểm) -->
+      <div class="screen" id="s-kiem">
+        <div class="top"><div class="mk">🔍</div><div><div class="n">Kiểm tra từ xa</div><div class="v">Phú Lý · 11 điểm · kiểm 13:05</div></div></div>
+        <button class="primary" style="background:var(--xanh)">⟳ Kiểm lại cả dự án</button>
+        <div class="muc">Điểm</div>
+        <div class="row" onclick="go('s-diem')"><span class="ic" style="background:var(--do-n)">📍</span><span class="tx"><div class="t">Điểm 2 · Chùa Pháp Bảo</div><div class="d">1/2 cam · cam 1 không trả lời</div></span><span class="pill p-loi">Lỗi</span></div>
+        <div class="row"><span class="ic">📍</span><span class="tx"><div class="t">Điểm 1 · Trạm y tế</div><div class="d">2/2 cam đạt</div></span><span class="pill p-ok">Đạt</span></div>
+        <div class="row"><span class="ic">📍</span><span class="tx"><div class="t">Điểm 3 · Ấp 4 Bàu Điền</div><div class="d">2/2 cam đạt</div></span><span class="pill p-ok">Đạt</span></div>
+        <div class="row"><span class="ic" style="background:var(--vang-n)">📍</span><span class="tx"><div class="t">Điểm 4 · Bình Chánh 761</div><div class="d">Cam trả lời chậm</div></span><span class="pill p-cho">Chờ</span></div>
+        <div class="row"><span class="ic">📍</span><span class="tx"><div class="t">Điểm 5 · Bàu Phụng</div><div class="d">2/2 cam đạt</div></span><span class="pill p-ok">Đạt</span></div>
+      </div>
+
+      <!-- CHI TIẾT ĐIỂM -->
+      <div class="screen" id="s-diem">
+        <div class="back" onclick="go('s-kiem')"><div class="b">‹</div><div class="ti">Điểm 2 · Chùa Pháp Bảo</div></div>
+        <div class="capd" style="margin:-6px 2px 12px">phuly-chuaphapbao.ddns.net → 123.31.122.115</div>
+        <div class="cams">
+          <div class="cam"><div class="fr loi">✖ Cam 1 rớt</div><div class="cap2"><span class="dot" style="background:var(--do)"></span>Cam 1 · :8080</div></div>
+          <div class="cam"><div class="fr"><span class="live">● TRỰC TIẾP</span>🎥</div><div class="cap2"><span class="dot" style="background:var(--xanh)"></span>Cam 2 · :8081</div></div>
+        </div>
+        <h2>🩺 Khả năng lỗi</h2>
+        <div class="kn"><div class="hd2"><span>Modem / đường truyền VNPT</span><b style="color:var(--do)">48%</b></div><div class="bar"><i style="width:48%;background:var(--do)"></i></div></div>
+        <div class="kn"><div class="hd2"><span>Mất điện tại điểm</span><b style="color:var(--vang)">45%</b></div><div class="bar"><i style="width:45%;background:var(--vang)"></i></div></div>
+        <div class="kn"><div class="hd2"><span>Nguồn / dây cam 1</span><b style="color:var(--mo)">7%</b></div><div class="bar"><i style="width:7%;background:var(--mo2)"></i></div></div>
+        <div class="note">⚠ Kiểm nguồn điện / modem tại điểm trước — chưa nên sửa từ xa. Gọi: kỹ thuật VNPT.</div>
+        <button class="ghost">🔁 Khởi động lại cam 1</button>
+        <button class="ghost">🧭 Kiểm tra sâu điểm này</button>
+      </div>
+
+      <!-- GIÁM SÁT -->
+      <div class="screen" id="s-giam">
+        <div class="top"><div class="mk">🖥️</div><div><div class="n">Giám sát trực tiếp</div><div class="v">45/46 cam lên · đo 12s trước</div></div></div>
+        <div class="cams">
+          <div class="cam"><div class="fr"><span class="live">● TT</span>🎥</div><div class="cap2"><span class="dot" style="background:var(--xanh)"></span>Đ1 · Trạm y tế</div></div>
+          <div class="cam"><div class="fr loi">✖ rớt 13:05</div><div class="cap2"><span class="dot" style="background:var(--do)"></span>Đ2 · Pháp Bảo</div></div>
+          <div class="cam"><div class="fr"><span class="live">● TT</span>🎥</div><div class="cap2"><span class="dot" style="background:var(--xanh)"></span>Đ3 · Bàu Điền</div></div>
+          <div class="cam"><div class="fr">● 8s</div><div class="cap2"><span class="dot" style="background:var(--xanh)"></span>Đ4 · 761</div></div>
+          <div class="cam"><div class="fr"><span class="live">● TT</span>🎥</div><div class="cap2"><span class="dot" style="background:var(--xanh)"></span>Đ5 · Bàu Phụng</div></div>
+          <div class="cam"><div class="fr">● 10s</div><div class="cap2"><span class="dot" style="background:var(--xanh)"></span>Đ6 · Rừng Lý Lịch</div></div>
+        </div>
+        <button class="ghost" style="margin-top:12px">🧭 Kiểm tra sâu cả dự án</button>
+      </div>
+
+      <!-- QUẢN TRỊ -->
+      <div class="screen" id="s-quan">
+        <div class="top"><div class="mk">🔐</div><div><div class="n">Quản trị &amp; khôi phục</div><div class="v">Máy chủ · đã mở khoá</div></div></div>
+        <div class="muc">Mật khẩu &amp; tài khoản</div>
+        <div class="row"><span class="ic" style="background:var(--lam-n)">🔄</span><span class="tx"><div class="t">Xoay mật khẩu admin</div><div class="d">Đổi, không đụng tài khoản khách</div></span><span class="ch">›</span></div>
+        <div class="row"><span class="ic">👁️</span><span class="tx"><div class="t">Tài khoản Xem cho khách</div><div class="d">Chỉ xem, mức User</div></span><span class="ch">›</span></div>
+        <div class="row"><span class="ic" style="background:var(--do-n)">🆘</span><span class="tx"><div class="t">Khôi phục khi quên</div><div class="d">Từ xa, không cần reset tay</div></span><span class="ch">›</span></div>
+        <div class="muc">Thợ</div>
+        <div class="row"><span class="ic" style="background:var(--tim-n)">🎟️</span><span class="tx"><div class="t">Cấp mã cho thợ</div><div class="d">Quyền hẹp, tự hết hạn</div></span><span class="ch">›</span></div>
+        <div class="row"><span class="ic">📋</span><span class="tx"><div class="t">Phiên thợ đang chạy</div><div class="d">1 phiên · thu hồi một chạm</div></span><span class="pill p-cho">1</span></div>
+        <div class="row"><span class="ic">📜</span><span class="tx"><div class="t">Nhật ký</div><div class="d">Ai làm gì, lúc nào</div></span><span class="ch">›</span></div>
+      </div>
+
+      <!-- THÊM -->
+      <div class="screen" id="s-them">
+        <div class="top"><div class="mk">⋯</div><div><div class="n">Thêm</div><div class="v">Công cụ ít dùng</div></div></div>
+        <div class="row" onclick="go('s-theodoi')"><span class="ic" style="background:var(--tim-n)">📈</span><span class="tx"><div class="t">Theo dõi ổn định</div><div class="d">1 điểm đang cảnh báo</div></span><span class="pill p-loi">1</span></div>
+        <div class="row"><span class="ic">🗺️</span><span class="tx"><div class="t">Bản đồ điểm</div></span><span class="ch">›</span></div>
+        <div class="row"><span class="ic">📁</span><span class="tx"><div class="t">Dự án (file Excel)</div></span><span class="ch">›</span></div>
+        <div class="row"><span class="ic" style="background:var(--cam-n,var(--vang-n))">🔑</span><span class="tx"><div class="t">User / Pass cam &amp; modem</div></span><span class="ch">›</span></div>
+        <div class="row"><span class="ic">📡</span><span class="tx"><div class="t">Thu mẫu thiết bị</div></span><span class="ch">›</span></div>
+        <div class="row"><span class="ic">📘</span><span class="tx"><div class="t">Hướng dẫn</div></span><span class="ch">›</span></div>
+        <div class="row"><span class="ic">⬆️</span><span class="tx"><div class="t">Cập nhật</div></span><span class="ch">›</span></div>
+        <div class="row"><span class="ic">☰</span><span class="tx"><div class="t">Chuyển về giao diện chữ (cũ)</div><div class="d">Giữ nguyên, đổi lại bất cứ lúc nào</div></span><span class="ch">›</span></div>
+      </div>
+
+      <!-- THEO DÕI -->
+      <div class="screen" id="s-theodoi">
+        <div class="back" onclick="go('s-them')"><div class="b">‹</div><div class="ti">Theo dõi ổn định</div></div>
+        <div class="row"><span class="ic" style="background:var(--do-n)">📈</span><span class="tx"><div class="t">Điểm 2 · Chùa Pháp Bảo</div><div class="d">Đang theo dõi · rớt 3 lần · còn 4h</div></span><span class="pill p-loi">●</span></div>
+        <div class="note" style="margin-top:4px">Hết giờ app tự ra <b>báo cáo PDF</b>: dải thời gian, nguyên nhân, đề xuất.</div>
+        <button class="ghost" style="margin-top:12px">📄 Mở báo cáo gần nhất</button>
+      </div>
+
+      <!-- CÀI ĐIỂM (tiến trình) -->
+      <div class="screen" id="s-cai">
+        <div class="back" onclick="go('s-home')"><div class="b">‹</div><div class="ti">Cài điểm này</div></div>
+        <div class="stat" style="text-align:center"><div class="big"><b>80%</b></div><div class="lbl">Đang cấu hình cam 2 / 3…</div></div>
+        <div class="row" style="cursor:default"><span class="ic p-ok" style="background:var(--xanh-n)">✓</span><span class="tx"><div class="t">Đổi mật khẩu modem</div></span></div>
+        <div class="row" style="cursor:default"><span class="ic" style="background:var(--xanh-n)">✓</span><span class="tx"><div class="t">Cam 1 · IP, port, NAT, tên miền</div></span></div>
+        <div class="row" style="cursor:default"><span class="ic" style="background:var(--lam-n)">⟳</span><span class="tx"><div class="t">Cam 2 · đang cấu hình…</div></span></div>
+        <div class="row" style="cursor:default;opacity:.5"><span class="ic">○</span><span class="tx"><div class="t">Cam 3 · chờ</div></span></div>
+      </div>
+
+    </div>
+
+    <div class="nav">
+      <button class="on" data-s="s-home"><span class="i">🏠</span>Trang chủ</button>
+      <button data-s="s-kiem"><span class="i">🔍</span>Kiểm tra</button>
+      <button data-s="s-giam"><span class="i">🖥️</span>Giám sát</button>
+      <button data-s="s-quan"><span class="i">🔐</span>Quản trị</button>
+      <button data-s="s-them"><span class="i">⋯</span>Thêm</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const navs = document.querySelectorAll(".nav button");
+  const canh = {"s-home":"s-home","s-kiem":"s-kiem","s-diem":"s-kiem","s-giam":"s-giam","s-quan":"s-quan","s-them":"s-them","s-theodoi":"s-them","s-cai":"s-home"};
+  function go(id){
+    document.querySelectorAll(".screen").forEach(s=>s.classList.toggle("on",s.id===id));
+    const tab=canh[id]||"s-home";
+    navs.forEach(b=>b.classList.toggle("on",b.dataset.s===tab));
+    document.querySelector(".body").scrollTop=0;
+    const sc=document.getElementById(id); if(sc) sc.scrollTop=0;
+  }
+  navs.forEach(b=>b.addEventListener("click",()=>go(b.dataset.s)));
+</script>

@@ -1,0 +1,111 @@
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>CamLink Đồ Hoạ</title>
+<style>
+  /* Layout: màn hình điện thoại — thanh trạng thái trên, 1 ô lớn "Cài điểm", lưới ô biểu tượng, thanh chuyển giao diện dưới */
+  :root {
+    --nen: #eef2f6; --khung: #ffffff; --vien: #dde5ec; --chu: #16222e; --mo: #6b7a88;
+    --xanh: #0e7c66; --xanh-nen: #e2f3ee; --lam: #15618f; --lam-nen: #e3eef6;
+    --tim: #6d4aa3; --tim-nen: #ece4f6; --cam: #b5611a; --cam-nen: #f6ebdf;
+    --do: #b23b3b; --do-nen: #f6e4e4; --xam: #4a5a67; --xam-nen: #e7edf2;
+    --bong: 0 1px 2px rgba(20,40,60,.06), 0 3px 10px rgba(20,40,60,.05);
+    --font: "Be Vietnam Pro", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --nen: #0f161c; --khung: #18222b; --vien: #27343f; --chu: #e7eef4; --mo: #93a3b1;
+    --xanh: #4fd1ac; --xanh-nen: #123029; --lam: #6cb6e6; --lam-nen: #12293a;
+    --tim: #b79be6; --tim-nen: #241a38; --cam: #e0a567; --cam-nen: #33240f;
+    --do: #ef8a8a; --do-nen: #351c1c; --xam: #b6c3ce; --xam-nen: #1e2831;
+    --bong: 0 1px 2px rgba(0,0,0,.3), 0 3px 12px rgba(0,0,0,.3); color-scheme: dark;
+  } }
+  :root[data-theme="dark"] {
+    --nen: #0f161c; --khung: #18222b; --vien: #27343f; --chu: #e7eef4; --mo: #93a3b1;
+    --xanh: #4fd1ac; --xanh-nen: #123029; --lam: #6cb6e6; --lam-nen: #12293a;
+    --tim: #b79be6; --tim-nen: #241a38; --cam: #e0a567; --cam-nen: #33240f;
+    --do: #ef8a8a; --do-nen: #351c1c; --xam: #b6c3ce; --xam-nen: #1e2831;
+    --bong: 0 1px 2px rgba(0,0,0,.3), 0 3px 12px rgba(0,0,0,.3); color-scheme: dark;
+  }
+  body { background: var(--nen); color: var(--chu); font-family: var(--font); margin: 0; }
+  .wrap { max-width: 430px; margin: 0 auto; padding-left: max(14px, env(safe-area-inset-left,0px)); padding-right: max(14px, env(safe-area-inset-right,0px)); padding-block: 14px 22px; }
+
+  /* thanh đầu */
+  .top { display: flex; align-items: center; gap: 11px; margin-bottom: 6px; }
+  .logo { width: 44px; height: 44px; border-radius: 13px; background: linear-gradient(145deg, var(--lam), var(--xanh));
+          display: grid; place-items: center; color: #fff; font-size: 23px; box-shadow: var(--bong); flex: none; }
+  .ten { font-weight: 800; font-size: 19px; letter-spacing: -.2px; }
+  .pb { font-size: 12px; color: var(--mo); font-weight: 600; }
+  .chip { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--xanh); background: var(--xanh-nen);
+          padding: 7px 11px; border-radius: 999px; display: flex; align-items: center; gap: 6px; }
+  .cham { width: 8px; height: 8px; border-radius: 50%; background: var(--xanh); }
+
+  /* ô lớn cài điểm */
+  .caidiem { margin: 14px 0; border: none; width: 100%; text-align: left; cursor: pointer;
+             background: linear-gradient(135deg, var(--lam), #0f4e74); color: #fff; border-radius: 20px;
+             padding: 18px 20px; box-shadow: var(--bong); display: flex; align-items: center; gap: 16px; font-family: inherit; }
+  .caidiem .ic { font-size: 34px; } .caidiem .t { font-size: 20px; font-weight: 800; }
+  .caidiem .s { font-size: 13px; opacity: .9; font-weight: 500; margin-top: 2px; }
+
+  .nhan { font-size: 12.5px; font-weight: 700; color: var(--mo); text-transform: uppercase; letter-spacing: .6px; margin: 16px 2px 9px; }
+
+  /* lưới ô */
+  .luoi { display: grid; grid-template-columns: repeat(3, 1fr); gap: 11px; }
+  .o { background: var(--khung); border: 1px solid var(--vien); border-radius: 17px; padding: 15px 9px 13px;
+      display: flex; flex-direction: column; align-items: center; gap: 9px; cursor: pointer; box-shadow: var(--bong);
+      font-family: inherit; color: var(--chu); min-height: 92px; justify-content: center; }
+  .o .ic { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; font-size: 24px; }
+  .o .l { font-size: 12.5px; font-weight: 650; text-align: center; line-height: 1.2; }
+  .o .badge { position: relative; }
+  .o .badge::after { content: "1"; position: absolute; top: -4px; right: -8px; background: var(--do); color: #fff;
+                     font-size: 10px; font-weight: 800; min-width: 16px; height: 16px; border-radius: 9px; display: grid; place-items: center; padding: 0 3px; }
+  .lam-i { background: var(--lam-nen); } .xanh-i { background: var(--xanh-nen); } .tim-i { background: var(--tim-nen); }
+  .cam-i { background: var(--cam-nen); } .do-i { background: var(--do-nen); } .xam-i { background: var(--xam-nen); }
+
+  /* thanh chuyển giao diện */
+  .doi { margin-top: 20px; background: var(--khung); border: 1px solid var(--vien); border-radius: 15px; padding: 5px;
+         display: flex; box-shadow: var(--bong); }
+  .doi button { flex: 1; border: none; background: transparent; font-family: inherit; font-size: 13.5px; font-weight: 700;
+                color: var(--mo); padding: 11px; border-radius: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; }
+  .doi button.on { background: var(--xam-nen); color: var(--chu); }
+  .ghi { text-align: center; font-size: 11.5px; color: var(--mo); margin-top: 11px; line-height: 1.5; }
+</style>
+
+<div class="wrap">
+  <div class="top">
+    <div class="logo">📹</div>
+    <div>
+      <div class="ten">CamLink</div>
+      <div class="pb">Phiên bản 2.3.0</div>
+    </div>
+    <div class="chip"><span class="cham"></span> Sẵn sàng · 2 dự án</div>
+  </div>
+
+  <button class="caidiem">
+    <span class="ic">▶️</span>
+    <span><div class="t">Cài điểm này</div><div class="s">Vào WiFi modem rồi bấm chạy</div></span>
+  </button>
+
+  <div class="nhan">Kiểm tra & giám sát</div>
+  <div class="luoi">
+    <button class="o"><span class="ic lam-i">🔍</span><span class="l">Kiểm tra từ xa</span></button>
+    <button class="o"><span class="ic xanh-i">🖥️</span><span class="l">Giám sát trực tiếp</span></button>
+    <button class="o"><span class="ic tim-i badge">📈</span><span class="l">Theo dõi ổn định</span></button>
+    <button class="o"><span class="ic lam-i">🗺️</span><span class="l">Bản đồ điểm</span></button>
+    <button class="o"><span class="ic xam-i">🧩</span><span class="l">Sơ đồ gần nhất</span></button>
+    <button class="o"><span class="ic xanh-i">📤</span><span class="l">Gửi kết quả</span></button>
+  </div>
+
+  <div class="nhan">Cấu hình & quản trị</div>
+  <div class="luoi">
+    <button class="o"><span class="ic do-i">🔐</span><span class="l">Quản trị &amp; khôi phục</span></button>
+    <button class="o"><span class="ic cam-i">🔑</span><span class="l">User / Pass</span></button>
+    <button class="o"><span class="ic lam-i">📁</span><span class="l">Dự án (Excel)</span></button>
+    <button class="o"><span class="ic xanh-i">📡</span><span class="l">Thu mẫu thiết bị</span></button>
+    <button class="o"><span class="ic xam-i">📘</span><span class="l">Hướng dẫn</span></button>
+    <button class="o"><span class="ic xam-i">⬆️</span><span class="l">Cập nhật</span></button>
+  </div>
+
+  <div class="doi">
+    <button class="on">🔲 Đồ hoạ</button>
+    <button>☰ Chữ (cũ)</button>
+  </div>
+  <div class="ghi">Đổi qua lại bất cứ lúc nào · Giao diện chữ cũ giữ nguyên, không mất gì</div>
+</div>
