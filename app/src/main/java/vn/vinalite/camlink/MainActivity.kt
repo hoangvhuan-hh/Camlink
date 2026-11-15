@@ -58,6 +58,8 @@ class MainActivity : Activity() {
     private val dhTab = mutableListOf<TextView>()
     private var doHoa = false
     private val maGiamSatDH = 42
+    private val maViTriTuDong = 14
+    private var daXinViTri = false
     private val cacNut = mutableListOf<Button>()
     private val ui = Handler(Looper.getMainLooper())
     private val maFile = 11
@@ -102,6 +104,7 @@ class MainActivity : Activity() {
         capNhatTieuDe()
         Loi.baoLoiCu(this)
         TheoDoi.damBaoChay(this)
+        ngheWifi()
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -351,6 +354,78 @@ class MainActivity : Activity() {
             .show()
     }
 
+    // ================================================================= 2.5: TỰ CÀI khi vào WiFi modem của điểm
+    // Điện thoại vừa vào một WiFi (hoặc vừa mở app khi đang ở WiFi đó) → lấy GPS → dò điểm trong file.
+    // Đủ chắc (≤150 m, đúng 1 điểm, có tên miền, chưa cài) thì đếm ngược 8 giây rồi TỰ CÀI, không cần bấm "Cài điểm này".
+    // Không chắc thì đứng yên, chỉ ghi một dòng lý do — nút bấm tay vẫn còn nguyên.
+    private val daXetTuDong = mutableSetOf<String>()      // mỗi WiFi (theo IP modem + IP máy) chỉ xét một lần mỗi lượt mở app
+    private var dangXetTuDong = false
+    private var hopTuDong: AlertDialog? = null
+    private var dangHien = false
+
+    private fun batTuDong() = getSharedPreferences("camlink", MODE_PRIVATE).getBoolean("tu_dong", true)
+
+    private fun ngheWifi() {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val yc = android.net.NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI).build()
+        runCatching {
+            cm.registerNetworkCallback(yc, object : ConnectivityManager.NetworkCallback() {
+                override fun onLinkPropertiesChanged(network: android.net.Network, lp: android.net.LinkProperties) {
+                    ui.postDelayed({ xetTuDong() }, 1500)      // chờ DHCP cấp IP xong
+                }
+            })
+        }
+    }
+
+    private fun xetTuDong() {
+        if (!dangHien || !batTuDong() || dangChay.isNotEmpty() || dangXetTuDong || hopTuDong != null) return
+        if (!coQuyenViTri()) return
+        val (may, gw) = mangWifi()
+        if (may.isEmpty() || gw.isEmpty()) return
+        val khoa = "$gw|$may"
+        if (!daXetTuDong.add(khoa)) return
+        dangXetTuDong = true
+        layViTri { vt ->
+            dangXetTuDong = false
+            if (vt == null) { daXetTuDong.remove(khoa); return@layViTri }
+            viTriCuoi = vt
+            val r = try { org.json.JSONObject(core.callAttr("tu_dong_xet", vt.latitude, vt.longitude).toString()) } catch (_: Exception) { return@layViTri }
+            if (!r.optBoolean("ok")) {
+                if (r.optString("ma").isNotEmpty() && r.optInt("m", 9999) <= 400)
+                    datTrangThai("Đã vào WiFi nhưng chưa tự cài: ${r.optString("ly_do")}", XAM)
+                return@layViTri
+            }
+            if (dangChay.isNotEmpty() || !dangHien) { daXetTuDong.remove(khoa); return@layViTri }
+            val ma = r.optString("ma"); val stt = r.optString("stt")
+            val ten = core.callAttr("ten_diem", ma, stt).toString()
+            var con = 8
+            val hop = AlertDialog.Builder(this)
+                .setTitle("Tự cài sau $con giây")
+                .setMessage("$ten\nCách điểm ${r.optInt("m")} m · WiFi modem $gw\n\nApp tự tìm cam, đặt port, IP, DDNS và mở port modem theo file dự án.")
+                .setPositiveButton("Cài ngay", null)
+                .setNegativeButton("Huỷ", null)
+                .setCancelable(false)
+                .create()
+            hopTuDong = hop
+            val chay = { if (hopTuDong === hop) { hopTuDong = null; hop.dismiss(); nhatKy.ghi("Tự cài: $ten (GPS cách ${r.optInt("m")} m, WiFi $gw)"); chayDiem(ma, stt, ten) } }
+            val dem = object : Runnable {
+                override fun run() {
+                    if (hopTuDong !== hop) return
+                    con -= 1
+                    if (con <= 0) chay() else { hop.setTitle("Tự cài sau $con giây"); ui.postDelayed(this, 1000) }
+                }
+            }
+            hop.setOnShowListener {
+                hop.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener { chay() }
+                hop.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
+                    hopTuDong = null; hop.dismiss(); datTrangThai("Đã huỷ tự cài — bấm Cài điểm này khi cần", XAM)
+                }
+            }
+            hop.show()
+            ui.postDelayed(dem, 1000)
+        }
+    }
+
     private fun coQuyenViTri() =
         checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
@@ -551,6 +626,7 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == maViTriTuDong) { xetTuDong(); return }
         if (requestCode == maViTri) {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) batDauChay()
             else chonDiem(chiKiemTra = false)
@@ -1141,9 +1217,15 @@ class MainActivity : Activity() {
 
         t.addView(nhan("3 · Tới điểm"))
         val c = the()
-        c.addView(chu("Vào WiFi modem của điểm → về Trang chủ bấm Cài điểm này.", 13.5f, M_CHU, dam = true))
-        c.addView(chu("App bật GPS, dò điểm gần nhất trong file, lấy đúng tên miền + tài khoản DDNS của điểm đó rồi tự cài cam và mở port modem.", 13f, M_MO), lpDoc(tren = 4))
-        t.addView(c, lpDoc())
+        val bat = batTuDong()
+        c.addView(chu(if (bat) "Tự cài khi vào WiFi modem: ĐANG BẬT" else "Tự cài khi vào WiFi modem: ĐANG TẮT", 14f, if (bat) M_XANH else M_MO, dam = true))
+        c.addView(chu(if (bat) "Mở app, cho điện thoại vào WiFi modem của điểm là xong: app lấy GPS, dò điểm trong file, đếm ngược 8 giây rồi tự cài cam và mở port modem. Không khớp chắc một điểm (xa quá 150 m, hai điểm sát nhau, thiếu tên miền, điểm đã cài) thì app đứng yên, bấm Cài điểm này."
+            else "Vào WiFi modem của điểm → về Trang chủ bấm Cài điểm này. App lấy GPS, dò điểm trong file rồi cài.", 13f, M_MO), lpDoc(tren = 4))
+        t.addView(c, lpDoc(duoi = 10))
+        t.addView(nutNho(if (bat) "Tắt tự cài" else "Bật tự cài") {
+            getSharedPreferences("camlink", MODE_PRIVATE).edit().putBoolean("tu_dong", !bat).apply()
+            dungTrangDuAn()
+        }, lpDoc())
         dhDuAn.addView(t)
     }
 
@@ -1184,8 +1266,19 @@ class MainActivity : Activity() {
         sv.post { sv.fullScroll(ScrollView.FOCUS_DOWN) }
     }
 
+    override fun onPause() {
+        super.onPause()
+        dangHien = false
+    }
+
     override fun onResume() {
         super.onResume()
+        dangHien = true
+        if (!coQuyenViTri() && batTuDong() && core.callAttr("co_du_lieu").toBoolean() && !daXinViTri) {
+            daXinViTri = true      // xin quyền vị trí một lần để tự dò điểm; từ chối thì vẫn bấm tay được
+            requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), maViTriTuDong)
+        }
+        ui.postDelayed({ xetTuDong() }, 800)
         if (::dhThe.isInitialized && doHoa) lamMoiTrangChu()
     }
 

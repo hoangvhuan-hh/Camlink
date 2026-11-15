@@ -1354,3 +1354,38 @@ def thong_tin_cai(ma, stt):
     return json.dumps({"domain": d.get("domain", ""), "u_ddns": d.get("u", ""), "co_p_ddns": bool(d.get("p")),
                        "cam_user": cd.get("cam_user", "admin"), "modem_user": cd.get("modem_user", "admin"), "modem_mac_dinh": mac_dinh,
                        "so": int(d.get("so") or 0)}, ensure_ascii=False)
+
+
+# ------------------------------------------------------------------ 2.5: TỰ CÀI khi điện thoại vào WiFi modem của điểm
+TU_DONG_MET = 150      # GPS phải cách điểm trong file không quá chừng này mới tự cài
+
+
+def tu_dong_xet(lat, lng):
+    """Điện thoại vừa vào một WiFi: có điểm nào ĐỦ CHẮC để tự cài không bấm nút không?
+    Chỉ 'ok' khi: gần đúng 1 điểm (≤150 m, không có điểm khác sát bên), điểm có tên miền, chưa cài xong, đã có pass cam.
+    Trả JSON {ok, ma, stt, ten, m, ly_do}. Không chắc thì ok=False kèm lý do — app đứng yên, thợ bấm tay."""
+    r = {"ok": False, "ma": "", "stt": "", "ten": "", "m": -1, "ly_do": ""}
+    if not _cac_du_an():
+        r["ly_do"] = "chưa có file cấu hình dự án"
+        return json.dumps(r, ensure_ascii=False)
+    if "cam_pw" not in C.doc_cai_dat():
+        r["ly_do"] = "chưa nhập user/pass cam"
+        return json.dumps(r, ensure_ascii=False)
+    g = diem_gan(lat, lng)
+    if not g:
+        r["ly_do"] = "file dự án không có toạ độ điểm"
+        return json.dumps(r, ensure_ascii=False)
+    ma, stt, _, ten, m, sat = g
+    da = _doc_du_an(ma)
+    r.update(ma=ma, stt=stt, ten=f"{stt}. {ten}", m=int(m))
+    if m > TU_DONG_MET:
+        r["ly_do"] = f"điểm gần nhất cách {int(m)} m (quá {TU_DONG_MET} m)"
+    elif sat:
+        r["ly_do"] = "có điểm khác ở sát bên — cần người chọn đúng điểm"
+    elif not da["diem"][stt].get("domain"):
+        r["ly_do"] = "điểm chưa có tên miền DDNS"
+    elif da.get("da_xong", {}).get(stt):
+        r["ly_do"] = f"điểm đã cài xong lúc {da['da_xong'][stt]}"
+    else:
+        r["ok"] = True
+    return json.dumps(r, ensure_ascii=False)
