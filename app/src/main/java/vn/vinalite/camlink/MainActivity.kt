@@ -1363,7 +1363,7 @@ class MainActivity : Activity() {
             if (d.optInt("ten_mien") < n) v.addView(chu("Điểm thiếu tên miền: lúc cài app hỏi nhập tên miền hoặc nạp file tên miền.", 12f, M_MO), lpDoc(tren = 4))
             t.addView(v, lpDoc(duoi = 10))
         }
-        t.addView(nutNho(if (ds.length() == 0) "📁  Nạp file Excel dự án" else "📁  Nạp thêm / cập nhật file Excel") { moFile() }, lpDoc())
+        t.addView(nutNho(if (ds.length() == 0) "📁  Nạp file Excel dự án mới" else "📁  Nạp thêm / cập nhật file Excel dự án mới") { moFile() }, lpDoc())
 
         t.addView(nhan("2 · User / pass mặc định"))
         val v = the()
