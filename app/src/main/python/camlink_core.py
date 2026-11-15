@@ -34,6 +34,8 @@ def khoi_tao(thu_muc):
     TD.KHI_BAO = _theodoi_bao_lm
     import camlink_chandoan as CD
     CD.khoi_tao(thu_muc)
+    import camlink_quantri as QT
+    QT.khoi_tao(thu_muc)
     global GOC
     GOC = thu_muc
     os.makedirs(os.path.join(GOC, "ketqua"), exist_ok=True)
@@ -1064,3 +1066,54 @@ def chandoan_xac_nhan(ma, su_co, nguyen_nhan, ghi_chu=""):
 def chandoan_ds_nguyen_nhan():
     import camlink_chandoan as CD
     return json.dumps([[k, v[0]] for k, v in CD.NGUYEN_NHAN.items()], ensure_ascii=False)
+
+
+# ===================== Quản trị & Khôi phục (chưa gắn nút — sẵn để nối app) =====================
+def qt_da_tao():
+    import camlink_quantri as QT
+    return QT.da_tao()
+
+
+def qt_tao_tai_khoan(pin, thiet_bi_id, ten_may="Máy chủ"):
+    import camlink_quantri as QT
+    return QT.tao_tai_khoan(pin, thiet_bi_id, ten_may)
+
+
+def qt_quyen(thiet_bi_id, pham_vi=""):
+    import camlink_quantri as QT
+    return QT.quyen(thiet_bi_id, pham_vi)
+
+
+def qt_nap_tu_cai_dat(pin, ma, thiet_bi_id):
+    import camlink_quantri as QT
+    return QT.nap_tu_cai_dat(pin, ma, _doc_du_an(ma).get("diem", []), C.doc_cai_dat())
+
+
+def qt_cap_ma_mot_lan(pin, pham_vi, gio=24):
+    import camlink_quantri as QT
+    return QT.cap_ma_mot_lan(pin, pham_vi, gio)
+
+
+def qt_tho_dung_ma(ma, thiet_bi_id):
+    import camlink_quantri as QT
+    return QT.tho_dung_ma(ma, thiet_bi_id)
+
+
+def qt_thu_hoi_phien(pin, chi_so=None, thiet_bi_id=None):
+    import camlink_quantri as QT
+    return QT.thu_hoi_phien(pin, chi_so, thiet_bi_id)
+
+
+def qt_xem_mat_khau(thiet_bi_id, ma, stt, pin=None):
+    import camlink_quantri as QT
+    return json.dumps(QT.xem_mat_khau(thiet_bi_id, ma, stt, pin), ensure_ascii=False)
+
+
+def qt_nhat_ky(n=200):
+    import camlink_quantri as QT
+    return json.dumps(QT.nhat_ky(n), ensure_ascii=False)
+
+
+def qt_phien_dang_song():
+    import camlink_quantri as QT
+    return json.dumps(QT.phien_dang_song(), ensure_ascii=False)
