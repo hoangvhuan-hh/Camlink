@@ -380,6 +380,7 @@ class MainActivity : Activity() {
     private var mangRieng: android.net.Network? = null      // WiFi modem app tự vào (chỉ app dùng, điện thoại vẫn giữ 4G)
     private var cbRieng: ConnectivityManager.NetworkCallback? = null
     private val daXinWifi = mutableSetOf<String>()
+    private var choWifiTay: String? = null      // đã báo "Vui lòng kết nối WiFi": ghi IP modem lúc báo ("" nếu chưa ở WiFi nào) để nhận ra khi thợ vào WiFi khác
 
     private fun wifiChung(): Pair<String, String> = try {
         val w = core.callAttr("lay_wifi").asList().map { it.toString() }
@@ -404,8 +405,10 @@ class MainActivity : Activity() {
         if (!coQuyenViTri()) return
         val (may, gw) = mangWifi()
         val (tenWifi, _) = wifiChung()
+        val vuaVaoTay = choWifiTay != null && gw.isNotEmpty() && gw != choWifiTay      // thợ vừa tự vào WiFi sau khi app báo
         val dangOModem = may.isNotEmpty() && gw.isNotEmpty() &&
-            (tenWifi.isEmpty() || try { core.callAttr("wifi_khop", ssidDangVao()).toBoolean() } catch (_: Exception) { false })
+            (tenWifi.isEmpty() || vuaVaoTay || try { core.callAttr("wifi_khop", ssidDangVao()).toBoolean() } catch (_: Exception) { false })
+        if (vuaVaoTay) choWifiTay = null
         val tuVao = !dangOModem && tenWifi.isNotEmpty() && android.os.Build.VERSION.SDK_INT >= 29      // chưa ở WiFi modem → app tự vào
         if (!dangOModem && !tuVao) return
         val khoa = if (dangOModem) "$gw|$may" else "tu-vao"
@@ -466,8 +469,15 @@ class MainActivity : Activity() {
                 ui.post {
                     if (cbRieng !== this) return@post
                     thaWifiRieng()
-                    datTrangThai("✖ Không vào được WiFi «$tenWifi»\nVào WiFi modem bằng tay, hoặc sửa tên / mật khẩu WiFi ở Dự án & cấu hình", DO)
-                    nhatKy.ghi("✖ Không thấy hoặc không vào được WiFi «$tenWifi» (sai tên / mật khẩu, hoặc modem chưa lên).")
+                    choWifiTay = mangWifi().second      // thử đúng MỘT lần 30 giây rồi dừng — không tự thử lại
+                    datTrangThai("⚠ Vui lòng kết nối WiFi\n$ten — chưa cài", VANG)
+                    nhatKy.ghi("⚠ Sau 30 giây không vào được WiFi «$tenWifi» ở $ten (khác tên hoặc khác mật khẩu mặc định). Chờ kết nối WiFi bằng tay.")
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Vui lòng kết nối WiFi")
+                        .setMessage("$ten\n\nApp không vào được WiFi mặc định «$tenWifi» sau 30 giây — điểm này WiFi khác tên hoặc khác mật khẩu.\n\nHãy kết nối WiFi modem của điểm này bằng tay. Kết nối xong quay lại app, app tự cài tiếp.")
+                        .setPositiveButton("Mở cài đặt WiFi") { _, _ -> runCatching { startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)) } }
+                        .setNegativeButton("Đóng", null)
+                        .show()
                 }
             }
             override fun onLost(network: android.net.Network) {
@@ -475,9 +485,10 @@ class MainActivity : Activity() {
             }
         }
         cbRieng = cb
-        try { cm.requestNetwork(yc, cb, 60_000) } catch (e: Exception) {
+        try { cm.requestNetwork(yc, cb, 30_000) } catch (e: Exception) {
             thaWifiRieng()
-            datTrangThai("✖ Máy không cho app tự vào WiFi — vào WiFi modem bằng tay", DO)
+            choWifiTay = mangWifi().second
+            datTrangThai("⚠ Vui lòng kết nối WiFi\n$ten — chưa cài", VANG)
         }
     }
 
