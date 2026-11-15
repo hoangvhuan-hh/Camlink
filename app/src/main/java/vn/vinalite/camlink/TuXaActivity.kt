@@ -426,7 +426,8 @@ class TuXaActivity : Activity() {
                 return false
             }
         }
-        goc.addView(rada, LinearLayout.LayoutParams(-1, (resources.displayMetrics.heightPixels * 0.40).toInt()))
+        rada.visibility = View.GONE      // rada chỉ hiện trong lúc quét
+        goc.addView(rada, LinearLayout.LayoutParams(-1, 0, 1f))
         duoi = LinearLayout(this)
         duoi.orientation = LinearLayout.VERTICAL
         duoi.setPadding(dp(12), dp(4), dp(12), dp(8))
@@ -612,10 +613,10 @@ class TuXaActivity : Activity() {
 
     // ---------------- kiểm tra ----------------
     /** nhanh=true (mặc định): điểm lần trước toàn ĐẠT lấy từ lịch sử, phát live xác minh; chỉ quét lại điểm có sự cố. Giữ lâu nút = quét đầy đủ. */
-    /** Đang quét: rada chiếm hết màn (bảng kết quả ẩn). Quét xong: rada thu còn 40%, bảng kết quả hiện bên dưới. */
+    /** Đang quét: rada chiếm hết màn (bảng kết quả ẩn). Quét xong: ẨN rada, bảng kết quả chiếm cả màn. */
     private fun cheDoQuet(dangQuet: Boolean) {
-        rada.layoutParams = if (dangQuet) LinearLayout.LayoutParams(-1, 0, 1f)
-                            else LinearLayout.LayoutParams(-1, (resources.displayMetrics.heightPixels * 0.40).toInt())
+        rada.visibility = if (dangQuet) View.VISIBLE else View.GONE
+        rada.layoutParams = LinearLayout.LayoutParams(-1, 0, 1f)
         duoi.layoutParams = if (dangQuet) LinearLayout.LayoutParams(-1, -2) else LinearLayout.LayoutParams(-1, 0, 1f)
         cuonKq.visibility = if (dangQuet) View.GONE else View.VISIBLE
     }
