@@ -1352,7 +1352,10 @@ def _lich_su_kiem(ma):
     import camlink_tuxa as T
     try:
         with open(T._f_lich_su(GOC, ma), encoding="utf-8") as fh:
-            return {str(p.get("stt")): p for p in json.load(fh).get("diem", [])}
+            kq = json.load(fh)
+        out = {str(p.get("stt")): p for p in kq.get("diem", [])}
+        out["_luc"] = {"luc": str(kq.get("luc", "")), "cam": []}      # giờ của lần kiểm (khoá riêng, không trùng số điểm)
+        return out
     except (OSError, ValueError):
         return {}
 
@@ -1386,6 +1389,10 @@ def tom_tat_du_an():
         da_cai = sum(1 for k in diem if diem_da_cai(da, k, ls))
         out.append({"ma": str(r[0]), "ten": da.get("ten", ""), "diem": len(diem),
                     "hoan_thanh": bool(diem) and da_cai == len(diem),
+                    "cam_kiem": sum(len(ls[k].get("cam", [])) for k in diem if k in ls),
+                    "cam_len": sum(1 for k in diem if k in ls for c in ls[k].get("cam", []) if c.get("muc") == "xanh"),
+                    "luc_kiem": (ls.get("_luc") or {}).get("luc", ""),
+                    "tu_litemark": "kho_ddns" in da,
                     "cam": sum(int(v.get("so") or 0) for v in diem.values()),
                     "toa_do": sum(1 for k in diem if td.get(k)),
                     "ten_mien": sum(1 for v in diem.values() if v.get("domain")),
