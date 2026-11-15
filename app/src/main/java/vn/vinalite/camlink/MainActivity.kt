@@ -274,6 +274,7 @@ class MainActivity : Activity() {
         }
         val uri: Uri = data?.data ?: return
         if (requestCode == maZip && resultCode == RESULT_OK) { napZip(uri); return }
+        if (requestCode == maFileDdns && resultCode == RESULT_OK) { napDdns(uri); return }
         if (requestCode != maFile || resultCode != RESULT_OK) return
         var tenFile = "khao_sat.xlsx"
         contentResolver.query(uri, null, null, null, null)?.use { c ->
@@ -330,9 +331,22 @@ class MainActivity : Activity() {
 
     // ---------------- Chạy ----------------
     private fun sanSang(): Boolean {
-        if (!core.callAttr("co_du_lieu").toBoolean()) { moFile(); return false }
+        if (!core.callAttr("co_du_lieu").toBoolean()) { hoiFileCauHinh(); return false }
         if (!core.callAttr("co_cai_dat").toBoolean()) { hopCaiDat(); return false }
         return true
+    }
+
+    /** Chưa có dự án nào = app chưa biết điểm nào, tên miền DDNS nào → nói rõ rồi mới mở chọn file (không mở mù). */
+    private fun hoiFileCauHinh() {
+        AlertDialog.Builder(this)
+            .setTitle("Chưa có file cấu hình dự án")
+            .setMessage("App cài theo file cấu hình: danh sách điểm, số cam và TÊN MIỀN DDNS của từng điểm. Máy này chưa có dự án nào nên chưa cài được.\n\n" +
+                "• Có file Excel khảo sát (cột Domain, User, PW): chọn file.\n" +
+                "• Dự án tạo bên LiteMark: nhận dự án về, tên miền nạp sau hoặc nhập tại cột.")
+            .setPositiveButton("Chọn file Excel") { _, _ -> moFile() }
+            .setNeutralButton("Nhận từ LiteMark") { _, _ -> startActivity(Intent(this, TuXaActivity::class.java)) }
+            .setNegativeButton("Đóng", null)
+            .show()
     }
 
     private fun coQuyenViTri() =
@@ -398,15 +412,22 @@ class MainActivity : Activity() {
     /** Điểm (dự án nhận từ LiteMark) chưa có tên miền → chọn tên miền TẠI CỘT trước khi cài. */
     private fun xacNhanCai(ma: String, stt: String, m: Int, canhBao: String?) {
         val can = try { core.callAttr("can_chon_ten_mien", ma, stt).toBoolean() } catch (_: Exception) { false }
-        if (!can) { xacNhanCaiThat(ma, stt, m, canhBao); return }
-        val ds = org.json.JSONArray(core.callAttr("ung_vien_ten_mien", ma, stt).toString())
-        if (ds.length() == 0) {
-            AlertDialog.Builder(this).setTitle("Điểm này chưa có tên miền")
-                .setMessage("Kho tên miền của bên cấp đã dùng hết. Vẫn cài cam, mở port; DDNS để trống chờ bên cấp tên miền.")
-                .setPositiveButton("Tiếp tục cài") { _, _ -> xacNhanCaiThat(ma, stt, m, canhBao) }.setNegativeButton("Huỷ", null).show()
+        val thieu = try { core.callAttr("ten_mien_diem", ma, stt).toString().isEmpty() } catch (_: Exception) { false }
+        if (!can && !thieu) { xacNhanCaiThat(ma, stt, m, canhBao); return }
+        val ten = core.callAttr("ten_diem", ma, stt).toString()
+        val ds = if (can) org.json.JSONArray(core.callAttr("ung_vien_ten_mien", ma, stt).toString()) else org.json.JSONArray()
+        if (ds.length() == 0) {      // chưa nạp file tên miền, hoặc kho của bên cấp đã dùng hết
+            val hop = AlertDialog.Builder(this).setTitle("Điểm này chưa có tên miền DDNS")
+                .setMessage("$ten\n\n" + (if (can) "Kho tên miền của bên cấp đã dùng hết." else "Dự án chưa nạp file tên miền của bên cấp.") +
+                    " Không có tên miền thì app không đặt được DDNS lên cam và không kiểm tra từ xa được điểm này.\n\nChọn một cách:")
+                .setPositiveButton("Nhập tên miền") { _, _ -> nhapTenMien(ma, stt, m, canhBao, ten) }
+                .setNeutralButton("Nạp file tên miền") { _, _ -> choDdns = arrayOf(ma, stt, m.toString(), canhBao ?: ""); moFileDdns() }
+                .setNegativeButton("Cài không DDNS") { _, _ ->
+                    xacNhanCaiThat(ma, stt, m, listOfNotNull(canhBao, "Điểm chưa có tên miền: chỉ đặt port, IP cam và mở port modem. DDNS bỏ trống — có tên miền thì chạy lại điểm này.").joinToString("\n⚠ "))
+                }
+            hop.show()
             return
         }
-        val ten = core.callAttr("ten_diem", ma, stt).toString()
         val nhan = (0 until minOf(ds.length(), 8)).map { i ->
             val d = ds.getJSONObject(i); val kc = d.optInt("kc", -1)
             "${d.optString("domain")}  ·  dòng ${d.optString("no")} ${d.optString("ten")}" + (if (kc >= 0) "  ·  cách ghim $kc m" else "  ·  (file không có toạ độ)") + (if (kc > 100) "  ⚠ XA" else "")
@@ -428,6 +449,72 @@ class MainActivity : Activity() {
             .setNegativeButton("Huỷ", null).show()
     }
 
+    private var choDdns: Array<String>? = null      // điểm đang chờ nạp file tên miền: mã, stt, mét, cảnh báo
+    private val maFileDdns = 13
+
+    private fun moFileDdns() {
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT)
+        i.addCategory(Intent.CATEGORY_OPENABLE)
+        i.type = "*/*"
+        startActivityForResult(i, maFileDdns)
+    }
+
+    /** Nạp file tên miền của bên cấp ngay tại cột, ghép theo toạ độ rồi quay lại đúng bước chọn tên miền cho điểm đang cài. */
+    private fun napDdns(uri: Uri) {
+        val cho = choDdns ?: return
+        choDdns = null
+        val dich = File(cacheDir, "ddns.xlsx")
+        contentResolver.openInputStream(uri)?.use { vao -> dich.outputStream().use { vao.copyTo(it) } }
+        datTrangThai("⏳ Đang ghép tên miền vào các điểm…", LAM)
+        thread {
+            try {
+                val bc = org.json.JSONObject(core.callAttr("lm_nap_ddns", cho[0], dich.absolutePath, nhatKy).toString())
+                ui.post {
+                    datTrangThai("✔ Đã nạp ${bc.optInt("tong_dong")} tên miền · tự ghép ${bc.optInt("tu_gan")} điểm", XANH)
+                    xacNhanCai(cho[0], cho[1], cho[2].toInt(), cho[3].ifEmpty { null })
+                }
+            } catch (e: Exception) {
+                val loi = e.message?.substringAfterLast("Error: ")?.take(200) ?: e.toString()
+                ui.post {
+                    datTrangThai("✖ File tên miền không đọc được", DO)
+                    nhatKy.ghi("✖ File tên miền: $loi")
+                    AlertDialog.Builder(this).setTitle("File tên miền không đọc được").setMessage(loi)
+                        .setPositiveButton("Chọn lại") { _, _ -> xacNhanCai(cho[0], cho[1], cho[2].toInt(), cho[3].ifEmpty { null }) }
+                        .setNegativeButton("Đóng", null).show()
+                }
+            }
+        }
+    }
+
+    /** Nhập tay tên miền (và tài khoản DDNS nếu có) cho điểm đang đứng. */
+    private fun nhapTenMien(ma: String, stt: String, m: Int, canhBao: String?, ten: String, loi: String = "", cu: List<String> = listOf("", "", "")) {
+        val hop = LinearLayout(this)
+        hop.orientation = LinearLayout.VERTICAL
+        hop.setPadding(dp(20), dp(8), dp(20), 0)
+        val goiY = listOf("Tên miền, vd: congtrinh-01.ddns.net", "User DDNS (bỏ trống nếu không có)", "Pass DDNS (bỏ trống nếu không có)")
+        val o = goiY.mapIndexed { i, g ->
+            val e = EditText(this)
+            e.hint = g
+            e.setText(cu[i])
+            e.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+            hop.addView(e)
+            e
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Tên miền cho: $ten")
+            .setMessage(if (loi.isEmpty()) "Nhập đúng tên miền bên cấp giao cho điểm này." else "⚠ $loi")
+            .setView(hop)
+            .setPositiveButton("Lưu và cài") { _, _ ->
+                val v = o.map { it.text.toString().trim() }
+                val kq = core.callAttr("dat_ten_mien_tay", ma, stt, v[0], v[1], v[2]).toString()
+                if (kq.isNotEmpty()) { nhapTenMien(ma, stt, m, canhBao, ten, kq, v); return@setPositiveButton }
+                nhatKy.ghi("Đã nhập tên miền ${v[0].lowercase()} cho $ten (nhập tay tại cột)")
+                xacNhanCaiThat(ma, stt, m, canhBao)
+            }
+            .setNegativeButton("Quay lại") { _, _ -> xacNhanCai(ma, stt, m, canhBao) }
+            .show()
+    }
+
     /** Bảng kiểm tra trước khi cài: chế độ, điểm, mạng WiFi, việc sẽ làm. */
     private fun xacNhanCaiThat(ma: String, stt: String, m: Int, canhBao: String?) {
         val (may, gw) = mangWifi()
@@ -437,9 +524,12 @@ class MainActivity : Activity() {
             else -> "Vị trí: không rõ (không có GPS)"
         }
         val mang = if (may.isEmpty()) "WiFi: CHƯA VÀO WiFi nào" else "WiFi: máy $may · modem $gw"
+        val tenMien = try { core.callAttr("ten_mien_diem", ma, stt).toString() } catch (_: Exception) { "?" }
         val noiDung = StringBuilder()
-            .append("CHẾ ĐỘ: CÀI TẠI CHỖ\n").append(ten).append("\n").append(viTri).append("\n").append(mang).append("\n\n")
-            .append("App sẽ: tìm cam trong mạng này → đặt port, IP, DDNS (cam nào đã đúng thì giữ nguyên) → mở port trên modem → kiểm tra tên miền.\n")
+            .append("CHẾ ĐỘ: CÀI TẠI CHỖ\n").append(ten).append("\n").append(viTri).append("\n").append(mang).append("\n")
+            .append(if (tenMien.isEmpty()) "Tên miền: CHƯA CÓ — cài không DDNS" else if (tenMien == "?") "" else "Tên miền: $tenMien").append("\n\n")
+            .append(if (tenMien.isEmpty()) "App sẽ: tìm cam trong mạng này → đặt port, IP (cam nào đã đúng thì giữ nguyên) → mở port trên modem. DDNS bỏ trống.\n"
+                    else "App sẽ: tìm cam trong mạng này → đặt port, IP, DDNS (cam nào đã đúng thì giữ nguyên) → mở port trên modem → kiểm tra tên miền.\n")
         if (canhBao != null) noiDung.append("\n⚠ ").append(canhBao).append("\n")
         noiDung.append("\nChỉ bấm BẮT ĐẦU khi đang đứng tại điểm này và điện thoại đã vào WiFi modem của điểm.")
         datTrangThai("📍 TẠI CHỖ — $ten", LAM)

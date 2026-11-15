@@ -362,6 +362,9 @@ def kiem_tra_tu_xa(ma, stt, log):
     dom = d["domain"]
     C.log(f"KIỂM TRA TỪ XA — [{da['ten']}] điểm {stt}: {d['ten']}")
     C.log("Chỉ đọc qua Internet, không thay đổi gì trên cam hay modem.")
+    if not dom:
+        C.log("✖ Điểm này chưa có tên miền DDNS → chưa kiểm tra từ xa được. Nạp file tên miền hoặc nhập tên miền khi cài điểm.")
+        return tom_tat_tu_xa(0, d["so"])
     try:
         ip = socket.gethostbyname(dom)
     except OSError:
@@ -1295,3 +1298,28 @@ def tong_quan():
     except Exception:
         pass
     return json.dumps(out, ensure_ascii=False)
+
+
+# ------------------------------------------------------------------ 2.4.1: điểm chưa có tên miền DDNS
+def ten_mien_diem(ma, stt):
+    """Tên miền DDNS của điểm ('' nếu chưa có) — app hỏi trước khi cài để không cài mù."""
+    return str(_doc_du_an(ma)["diem"][str(stt)].get("domain") or "")
+
+
+def dat_ten_mien_tay(ma, stt, domain, u="", p=""):
+    """Nhập tay tên miền tại cột (chưa có file của bên cấp). Trả '' nếu xong, hoặc câu báo lỗi để hiện cho thợ."""
+    dom = str(domain or "").strip().lower()
+    dom = re.sub(r"^[a-z]+://", "", dom).split("/")[0].split(":")[0]
+    if not re.fullmatch(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+", dom):
+        return "Tên miền không hợp lệ — ví dụ đúng: tencongtrinh-01.ddns.net"
+    da = _doc_du_an(ma)
+    for k, d in da["diem"].items():
+        if k != str(stt) and str(d.get("domain") or "").lower() == dom:
+            return f"Tên miền này đã gán cho điểm {k}. {d.get('ten', '')} — mỗi điểm một tên miền."
+    x = da["diem"][str(stt)]
+    for k in da.get("kho_ddns", []):          # trùng dòng trong kho của bên cấp thì đánh dấu đã dùng
+        if str(k.get("domain") or "").lower() == dom and not k.get("dung"):
+            k["dung"] = str(stt)
+    x.update(domain=dom, u=str(u or "").strip(), p=str(p or "").strip(), dom_nguon=f"nhập tay tại cột {time.strftime('%d/%m %H:%M')}")
+    _ghi_du_an(ma, da)
+    return ""
