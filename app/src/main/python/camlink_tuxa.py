@@ -1404,6 +1404,9 @@ body.quet #tia{opacity:1}
 .d{width:26px;height:26px;border-radius:50%;color:#04121a;font:bold 12px sans-serif;text-align:center;line-height:26px;position:relative;border:2px solid #06121b;box-sizing:border-box}
 .d.xanh{background:#45d1aa;box-shadow:0 0 10px #45d1aa}.d.vang{background:#f0b429;box-shadow:0 0 10px #f0b429}
 .d.do{background:#ff5a5a;box-shadow:0 0 12px #ff5a5a;color:#fff}.d.chua{background:#5f7a8a;box-shadow:0 0 6px #5f7a8a}
+.d.mo{opacity:.3;box-shadow:none!important;filter:saturate(.4)}
+.d.loe{animation:loe .7s ease-out}
+@keyframes loe{0%{transform:scale(.6);opacity:.3}45%{transform:scale(1.7);box-shadow:0 0 26px 10px #b8fff0}100%{transform:scale(1)}}
 .d.dang::after{content:"";position:absolute;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;border:2px solid #b8fff0;animation:song 1s ease-out infinite}
 @keyframes song{from{transform:scale(1);opacity:.9}to{transform:scale(3.2);opacity:0}}
 body:not(.quet) .d.do{animation:nhay 1.1s ease-in-out infinite}
@@ -1438,11 +1441,16 @@ if(!m){ var gia=document.getElementById('gia'); gia.style.display='block'; docum
   xep.forEach(function(d,i){var n=xep.length,v=i%2?0.34:0.2,r=(n<7?0.27:v)*Math.min(innerWidth,innerHeight)*1.25,a=2*Math.PI*i/n-Math.PI/2;
     var e=tao(d);e.style.left=(innerWidth/2+r*Math.cos(a))+'px';e.style.top=(innerHeight/2+r*Math.sin(a)*0.8)+'px';gia.appendChild(e)}); }
 else if(khong.length){ var th=document.getElementById('thieu'); th.style.display='block'; khong.forEach(function(d){th.appendChild(tao(d))}) }
-function dem(){var x=0,l=0,n=0;for(var k in nut){n++;var c=nut[k].className;if(c.indexOf('xanh')>0)x++;else if(c.indexOf('do')>0||c.indexOf('vang')>0)l++}
- document.getElementById('hn').innerHTML='<b>'+x+'</b>/'+n+' điểm đạt'+(l?'<i>'+l+' điểm lỗi</i>':'')}
+function dem(){var x=0,l=0,n=0,q=0;for(var k in nut){n++;var e=nut[k];if(e.classList.contains('mo'))continue;q++;
+  if(e.classList.contains('xanh'))x++;else if(e.classList.contains('do')||e.classList.contains('vang'))l++}
+ document.getElementById('hn').innerHTML=(q<n?'đã quét <b>'+q+'</b>/'+n:'<b>'+x+'</b>/'+n+' điểm đạt')+(l?'<i>'+l+' điểm lỗi</i>':'')}
+window.addEventListener('resize',function(){ if(m){m.invalidateSize();try{m.fitBounds(g.getBounds().pad(0.25));if(coTD.length==1)m.setZoom(15)}catch(e){}}
+ else{var n=xep.length;xep.forEach(function(d,i){var v=i%2?0.34:0.2,r=(n<7?0.27:v)*Math.min(innerWidth,innerHeight)*1.25,a=2*Math.PI*i/n-Math.PI/2,e=nut[d.stt];
+   e.style.left=(innerWidth/2+r*Math.cos(a))+'px';e.style.top=(innerHeight/2+r*Math.sin(a)*0.8)+'px'})} });
 window.rada={
+ batDau:function(){for(var k in nut){nut[k].className='d chua mo'}document.body.classList.add('quet');document.getElementById('hs').textContent='ĐANG QUÉT…';dem()},
  bd:function(s){var e=nut[s];if(e)e.classList.add('dang');document.body.classList.add('quet')},
- kq:function(s,muc){var e=nut[s];if(!e)return;e.className='d '+(muc||'chua');dem()},
+ kq:function(s,muc){var e=nut[s];if(!e)return;e.className='d loe '+(muc||'chua');dem()},
  tatCa:function(o){for(var s in o)if(nut[s])nut[s].className='d '+(o[s]||'chua');dem()},
  tt:function(pct,chu){document.body.classList.add('quet');document.getElementById('tt').textContent=pct+'%';document.getElementById('hs').textContent='ĐANG QUÉT · '+chu},
  xong:function(chu){document.body.classList.remove('quet');for(var k in nut)nut[k].classList.remove('dang');document.getElementById('tt').textContent='';document.getElementById('hs').textContent=chu||'ĐÃ QUÉT XONG';dem()},

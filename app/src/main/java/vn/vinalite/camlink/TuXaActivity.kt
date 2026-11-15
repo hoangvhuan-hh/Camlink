@@ -47,6 +47,7 @@ class TuXaActivity : Activity() {
     private lateinit var tenDa: TextView
     private lateinit var rada: android.webkit.WebView
     private lateinit var cuonKq: ScrollView
+    private lateinit var duoi: LinearLayout
     private var radaSan = false
     private val radaCho = mutableListOf<String>()
 
@@ -426,7 +427,7 @@ class TuXaActivity : Activity() {
             }
         }
         goc.addView(rada, LinearLayout.LayoutParams(-1, (resources.displayMetrics.heightPixels * 0.40).toInt()))
-        val duoi = LinearLayout(this)
+        duoi = LinearLayout(this)
         duoi.orientation = LinearLayout.VERTICAL
         duoi.setPadding(dp(12), dp(4), dp(12), dp(8))
         thanhTienDo = android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
@@ -611,48 +612,49 @@ class TuXaActivity : Activity() {
 
     // ---------------- kiểm tra ----------------
     /** nhanh=true (mặc định): điểm lần trước toàn ĐẠT lấy từ lịch sử, phát live xác minh; chỉ quét lại điểm có sự cố. Giữ lâu nút = quét đầy đủ. */
+    /** Đang quét: rada chiếm hết màn (bảng kết quả ẩn). Quét xong: rada thu còn 40%, bảng kết quả hiện bên dưới. */
+    private fun cheDoQuet(dangQuet: Boolean) {
+        rada.layoutParams = if (dangQuet) LinearLayout.LayoutParams(-1, 0, 1f)
+                            else LinearLayout.LayoutParams(-1, (resources.displayMetrics.heightPixels * 0.40).toInt())
+        duoi.layoutParams = if (dangQuet) LinearLayout.LayoutParams(-1, -2) else LinearLayout.LayoutParams(-1, 0, 1f)
+        cuonKq.visibility = if (dangQuet) View.GONE else View.VISIBLE
+    }
+
     private fun kiem(nhanh: Boolean = true) {
         if (ma.isEmpty() || dangChay) return
         dangChay = true
         tenDa.text = "$tenDuAn · CamLink ${packageManager.getPackageInfo(packageName, 0).versionName}"
-        napRada()
-        // 2.9.2 — hiện NGAY kết quả lần kiểm trước (không bắt chờ), việc kiểm lại chạy ở nền rồi tự cập nhật lên màn này
+        // 2.10.1 — lúc quét chỉ có màn rada: mọi điểm mờ, điểm nào quét xong thì SÁNG LÊN; hết lượt quét mới hiện bảng kết quả
         val cuJson = try { core.callAttr("tuxa_gan_nhat", ma).toString() } catch (_: Exception) { "" }
         val lichSu = try { if (cuJson.isNotEmpty()) JSONObject(cuJson).takeIf { (it.optJSONArray("diem")?.length() ?: 0) > 0 } else null } catch (_: Exception) { null }
-        if (lichSu != null) {
-            ketQua = lichSu
-            veBang("Kết quả lần kiểm ${lichSu.optString("luc")} — đang kiểm lại ở nền…")
-            val b = the("#0F5D8C", "#EAF2FA")
-            b.addView(chu("⏳ Đang xem kết quả lần kiểm ${lichSu.optString("luc")}", 15f, true, "#0F5D8C"))
-            b.addView(chu(if (nhanh) "App đang kiểm lại ở nền (điểm có sự cố quét lại đầy đủ). Xong sẽ tự cập nhật ngay trên màn này." else "App đang quét ĐẦY ĐỦ lại ở nền. Xong sẽ tự cập nhật ngay trên màn này.", 13f, mau = "#5B6776"))
-            khung.addView(b, 0)
-        } else {
-            ketQua = null
-            khung.removeAllViews()   // lần đầu chưa có lịch sử: màn chờ như cũ
-            khung.addView(chu(if (nhanh) "⏳ Kiểm tra nhanh $tenDuAn…\nĐiểm lần trước toàn đạt: lấy lại, phát live để xác minh.\nĐiểm có sự cố: quét lại đầy đủ, tự sửa nếu được.\n(Giữ lâu nút Kiểm tra lại = quét đầy đủ mọi điểm)"
-                              else "⏳ Đang quét ĐẦY ĐỦ $tenDuAn…\nCam đang chạy tốt: chỉ đọc và báo cáo.\nCam có vấn đề: app tự sửa rồi kiểm tra lại cấu hình.", 15f, mau = "#0F5D8C"))
-        }
-        nk.ghi("⏳ Đang kiểm tra $tenDuAn qua Internet…")
+        khung.removeAllViews()
+        cheDoQuet(true)
+        napRada()
+        js("rada.batDau()")
+        nk.ghi(if (nhanh) "⏳ Đang quét $tenDuAn… (giữ lâu nút Kiểm lại = quét đầy đủ mọi điểm)" else "⏳ Đang quét ĐẦY ĐỦ $tenDuAn…")
         thread {
             val co4G = gan4G(true)
             try {
                 val j = core.callAttr("tuxa_kiem", ma, nk, nhanh).toString()
                 ui.post {
-                    val cuon = khung.parent as? ScrollView
-                    val viTri = cuon?.scrollY ?: 0
-                    val d0 = ketQua?.optInt("dat") ?: 0
+                    val d0 = lichSu?.optInt("dat") ?: -1
                     ketQua = JSONObject(j)
+                    cheDoQuet(false)
                     veBang(if (co4G) "Đã kiểm tra qua 4G (như IOC gọi từ ngoài)" else "⚠ Không bật được 4G — đã kiểm tra qua WiFi; nếu đang ở trong WiFi của chính điểm, kết quả có thể sai")
                     js("rada.xong('ĐÃ QUÉT XONG ${java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())}')")
-                    if (lichSu != null) {               // đang xem lịch sử: cập nhật tại chỗ, giữ nguyên chỗ đang đọc, báo có gì đổi (xem hình thì vào tab Giám sát)
-                        cuon?.post { cuon.scrollTo(0, viTri) }
-                        val d1 = ketQua?.optInt("dat") ?: 0
-                        Toast.makeText(this, if (d1 == d0) "Đã kiểm lại: không đổi ($d1 cam đạt)" else "Đã kiểm lại: $d0 → $d1 cam đạt", Toast.LENGTH_LONG).show()
-                    }
+                    val d1 = ketQua?.optInt("dat") ?: 0
+                    if (d0 >= 0 && d1 != d0) Toast.makeText(this, "So với lần trước: $d0 → $d1 cam đạt", Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
-                js("rada.xong('KIỂM LẠI LỖI')")
-                ui.post { nk.ghi("✖ Lỗi kiểm tra: ${e.message}"); if (lichSu != null) tienDo.text = "✖ Kiểm lại lỗi — đang hiện kết quả lần ${lichSu.optString("luc")}" }
+                ui.post {
+                    nk.ghi("✖ Lỗi kiểm tra: ${e.message}")
+                    cheDoQuet(false)
+                    if (lichSu != null) {      // quét lỗi: hiện lại kết quả lần trước, ghi rõ là số cũ
+                        ketQua = lichSu
+                        veBang("✖ Quét lần này lỗi — đang hiện kết quả lần ${lichSu.optString("luc")}")
+                    }
+                    js("rada.xong('QUÉT LỖI')")
+                }
             } finally {
                 gan4G(false)
                 dangChay = false
