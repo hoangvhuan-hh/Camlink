@@ -391,6 +391,15 @@ class MainActivity : Activity() {
             viTriCuoi = vt
             val r = try { org.json.JSONObject(core.callAttr("tu_dong_xet", vt.latitude, vt.longitude).toString()) } catch (_: Exception) { return@layViTri }
             if (!r.optBoolean("ok")) {
+                val daCai = r.optString("da_cai")
+                if (daCai.isNotEmpty() && dangChay.isEmpty()) {      // tới điểm đã cài: báo đã cài + tự mở hình các cam, không cài lại
+                    val ma = r.optString("ma"); val stt = r.optString("stt")
+                    val ten = core.callAttr("ten_diem", ma, stt).toString()
+                    log.text = ""
+                    nhatKy.ghi("✔ $ten — ĐÃ CÀI lúc $daCai. Đang lấy hình các cam qua tên miền…")
+                    chayNen("ĐÃ CÀI $daCai · $ten — đang lấy hình", coTomTat = false) { bangChung(ma, stt, thuLai = false); null }
+                    return@layViTri
+                }
                 if (r.optString("ma").isNotEmpty() && r.optInt("m", 9999) <= 400)
                     datTrangThai("Đã vào WiFi nhưng chưa tự cài: ${r.optString("ly_do")}", XAM)
                 return@layViTri

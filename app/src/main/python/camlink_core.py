@@ -1386,6 +1386,7 @@ def tu_dong_xet(lat, lng):
         r["ly_do"] = "điểm chưa có tên miền DDNS"
     elif da.get("da_xong", {}).get(stt):
         r["ly_do"] = f"điểm đã cài xong lúc {da['da_xong'][stt]}"
+        r["da_cai"] = da["da_xong"][stt]      # app báo "đã cài" rồi tự mở hình, không cài lại
     else:
         r["ok"] = True
     return json.dumps(r, ensure_ascii=False)

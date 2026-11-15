@@ -25,4 +25,5 @@ kt("điểm 2 đã cài xong → không tự cài lại", "đã cài" in x(10.51
 kt("điểm 3 thiếu tên miền → không tự cài", "tên miền" in x(10.5200, 106.5000)["ly_do"])
 kt("điểm 4 và 5 sát nhau (33 m) → không tự cài, cần người chọn", "sát bên" in x(10.5301, 106.5000)["ly_do"])
 kt("ở xa mọi điểm (văn phòng) → không tự cài", not x(10.8, 106.7)["ok"])
-print(f"\n✓ 2.5.0 tự cài: {dat}/{dat} đạt")
+kt("điểm đã cài → trả mốc đã cài để app báo + mở hình", x(10.5100, 106.5000).get("da_cai") == "15/11 09:00" and "da_cai" not in x(10.5200, 106.5000))
+print(f"\n✓ 2.5.x tự cài: {dat}/{dat} đạt")
