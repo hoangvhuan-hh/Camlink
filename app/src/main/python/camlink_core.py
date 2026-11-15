@@ -1347,6 +1347,33 @@ def dat_ten_mien_tay(ma, stt, domain, u="", p=""):
     return ""
 
 
+# ------------------------------------------------------------------ 2.12: "ĐÃ CÀI" tính theo SỰ THẬT, không chỉ theo lần cài bằng app này
+def _lich_su_kiem(ma):
+    import camlink_tuxa as T
+    try:
+        with open(T._f_lich_su(GOC, ma), encoding="utf-8") as fh:
+            return {str(p.get("stt")): p for p in json.load(fh).get("diem", [])}
+    except (OSError, ValueError):
+        return {}
+
+
+def diem_da_cai(da, stt, ls=None):
+    """Điểm coi là ĐÃ CÀI khi: app cài đạt (da_xong) · hoặc có hồ sơ lúc cài · hoặc từng thấy cam của điểm (dấu vết MAC) ·
+    hoặc lần kiểm tra từ xa gần nhất có cam của điểm đang lên. Trả câu mô tả ('' nếu chưa cài)."""
+    stt = str(stt)
+    x = (da.get("da_xong") or {}).get(stt)
+    if x:
+        return f"đã cài lúc {x}"
+    if ((da.get("ho_so") or {}).get(stt) or {}).get("cam"):
+        return "đã cài (có hồ sơ lúc cài)"
+    p = (ls or {}).get(stt) or {}
+    if any(c.get("muc") == "xanh" for c in p.get("cam", [])):
+        return f"đang chạy (kiểm tra từ xa {p.get('luc', '')[:8].strip()})".replace(" ()", "")
+    if ((da.get("vet") or {}).get(stt) or {}).get("mac"):
+        return "đã cài (từng thấy cam của điểm khi kiểm tra từ xa)"
+    return ""
+
+
 # ------------------------------------------------------------------ 2.4.2: trang "Dự án & cấu hình" — cho thấy file đã nạp đủ gì
 def tom_tat_du_an():
     """Mỗi dự án: số điểm, bao nhiêu điểm có toạ độ (để GPS tự dò), có tên miền, có user/pass DDNS kèm. Không trả mật khẩu."""
@@ -1355,12 +1382,15 @@ def tom_tat_du_an():
         da = _doc_du_an(str(r[0]))
         diem = da.get("diem", {})
         td = da.get("toa_do", {})
+        ls = _lich_su_kiem(str(r[0]))
+        da_cai = sum(1 for k in diem if diem_da_cai(da, k, ls))
         out.append({"ma": str(r[0]), "ten": da.get("ten", ""), "diem": len(diem),
+                    "hoan_thanh": bool(diem) and da_cai == len(diem),
                     "cam": sum(int(v.get("so") or 0) for v in diem.values()),
                     "toa_do": sum(1 for k in diem if td.get(k)),
                     "ten_mien": sum(1 for v in diem.values() if v.get("domain")),
                     "tk_ddns": sum(1 for v in diem.values() if v.get("domain") and v.get("u") and v.get("p")),
-                    "da_xong": sum(1 for k in diem if da.get("da_xong", {}).get(k)),
+                    "da_xong": da_cai,
                     "rieng": sum(1 for v in diem.values() if v.get("rieng")),
                     "litemark": bool(da.get("kho_ddns") is not None and "kho_ddns" in da)})
     cd = C.doc_cai_dat()
@@ -1408,9 +1438,10 @@ def tu_dong_xet(lat, lng):
         r["ly_do"] = "có điểm khác ở sát bên — cần người chọn đúng điểm"
     elif not da["diem"][stt].get("domain"):
         r["ly_do"] = "điểm chưa có tên miền DDNS"
-    elif da.get("da_xong", {}).get(stt):
-        r["ly_do"] = f"điểm đã cài xong lúc {da['da_xong'][stt]}"
-        r["da_cai"] = da["da_xong"][stt]      # app báo "đã cài" rồi tự mở hình, không cài lại
+    elif diem_da_cai(da, stt, _lich_su_kiem(ma)):      # đã cài theo sự thật (kể cả điểm cài từ trước / bằng máy khác) → KHÔNG tự cài lại
+        mo_ta = diem_da_cai(da, stt, _lich_su_kiem(ma))
+        r["ly_do"] = f"điểm {mo_ta}"
+        r["da_cai"] = da.get("da_xong", {}).get(stt) or mo_ta      # app báo "đã cài" rồi tự mở hình, không cài lại
     else:
         r["ok"] = True
     return json.dumps(r, ensure_ascii=False)

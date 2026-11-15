@@ -1,2 +1,2 @@
 """Phiên bản lõi Python — tệp riêng, không import gì, để app so sánh lõi trong APK với lõi cập nhật đè."""
-PHIEN_BAN = "2.11.0"
+PHIEN_BAN = "2.12.0"

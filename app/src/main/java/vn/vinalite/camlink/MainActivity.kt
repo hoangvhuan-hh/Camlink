@@ -52,7 +52,8 @@ class MainActivity : Activity() {
     private lateinit var dhTrang: android.widget.FrameLayout
     private lateinit var dhChu: ScrollView
     private lateinit var dhThem: ScrollView
-    private lateinit var dhDuAn: ScrollView
+    private lateinit var dhDuAn: LinearLayout
+    private lateinit var dhCaiDat: ScrollView
     private lateinit var dhChamGS: android.view.View
     private lateinit var dhMoTaDuAn: TextView
     private val dhTab = mutableListOf<TextView>()
@@ -1194,7 +1195,8 @@ class MainActivity : Activity() {
         them("📍", "Chọn điểm bằng tay", "Khi GPS không nhận đúng điểm") { chonDiem(chiKiemTra = false) }
         them("📡", "Thu mẫu thiết bị", "Gặp modem / cam lạ") { thuMau() }
         t.addView(nhan("Dự án & cài đặt"))
-        them("📁", "Dự án & cấu hình", "File cấu hình · user/pass mặc định", khoaKhiChay = false) { chonTrang(5) }
+        them("📁", "Dự án", "File cấu hình từng dự án", khoaKhiChay = false) { chonTrang(5) }
+        them("⚙️", "Cài đặt chung", "User/pass mặc định · tự cài", khoaKhiChay = false) { chonTrang(6) }
         them("⬆️", "Cập nhật", "Lõi vài trăm KB; APK chỉ khi cần") { capNhat() }
         them("📘", "Hướng dẫn sử dụng", "", khoaKhiChay = false) { startActivity(Intent(this, HuongDanActivity::class.java)) }
         them("☰", "Đổi sang giao diện chữ", "Giao diện cũ, đủ mọi nút", khoaKhiChay = false) { datGiaoDien(false) }
@@ -1202,9 +1204,13 @@ class MainActivity : Activity() {
         dhThem.addView(t)
         dhThem.visibility = android.view.View.GONE
         dhTrang.addView(dhThem)
-        dhDuAn = ScrollView(this)
+        dhDuAn = LinearLayout(this)
+        dhDuAn.orientation = LinearLayout.VERTICAL
         dhDuAn.visibility = android.view.View.GONE
         dhTrang.addView(dhDuAn)
+        dhCaiDat = ScrollView(this)
+        dhCaiDat.visibility = android.view.View.GONE
+        dhTrang.addView(dhCaiDat)
 
         // ---------- Thanh tab dưới
         val vach = android.view.View(this)
@@ -1235,7 +1241,9 @@ class MainActivity : Activity() {
         dhChu.visibility = if (i == 0) android.view.View.VISIBLE else android.view.View.GONE
         dhThem.visibility = if (i == 4) android.view.View.VISIBLE else android.view.View.GONE
         dhDuAn.visibility = if (i == 5) android.view.View.VISIBLE else android.view.View.GONE
+        dhCaiDat.visibility = if (i == 6) android.view.View.VISIBLE else android.view.View.GONE
         if (i == 5) dungTrangDuAn()
+        if (i == 6) dungTrangCaiDat()
         dhTab.forEachIndexed { k, b -> b.setTextColor(Color.parseColor(if (k == i) M_XANH else M_MO2)) }
         if (i == 0) lamMoiTrangChu()
     }
@@ -1255,6 +1263,7 @@ class MainActivity : Activity() {
     private fun lamMoiTrangChu() {
         if (!::dhThe.isInitialized) return
         if (dhDuAn.visibility == android.view.View.VISIBLE) dungTrangDuAn()
+        if (dhCaiDat.visibility == android.view.View.VISIBLE) dungTrangCaiDat()
         dhMoTaDuAn.text = try {
             val q = org.json.JSONObject(core.callAttr("tom_tat_du_an").toString())
             val n = q.getJSONArray("du_an").length()
@@ -1313,87 +1322,218 @@ class MainActivity : Activity() {
         if (loi > 0) dhChamGS.visibility = android.view.View.VISIBLE
     }
 
-    /** Trang "Dự án & cấu hình": MỘT chỗ duy nhất để nạp file cấu hình và đặt user/pass mặc định; cho thấy file đủ gì để GPS tự dò. */
+    // ---------------- 2.12: trang Dự án — đầu trang cố định (nút thêm, cài đặt chung, lọc, tìm), danh sách từng dòng gọn
+    private var dhLoc = "dang"                          // dang = đang thi công · xong = hoàn thành · tat = tất cả
+    private var dhTim = ""
+    private val dhMo = mutableSetOf<String>()           // dự án đang bung chi tiết
+    private var dhDs: LinearLayout? = null
+    private var dhDuLieu = org.json.JSONObject()
+
+    private fun theTrang(): LinearLayout {
+        val v = LinearLayout(this)
+        v.orientation = LinearLayout.VERTICAL
+        v.background = bo(M_THE, 15, M_VIEN)
+        v.setPadding(dp(15), dp(13), dp(15), dp(13))
+        return v
+    }
+
+    private fun dongTrang(v: LinearLayout, ten: String, gia: String, mau: String = M_CHU) {
+        val h = LinearLayout(this)
+        h.orientation = LinearLayout.HORIZONTAL
+        h.addView(chu(ten, 13f, M_MO), LinearLayout.LayoutParams(0, -2, 1f))
+        h.addView(chu(gia, 13f, mau, dam = true))
+        v.addView(h, lpDoc(tren = 5))
+    }
+
+    private fun nutTrang(s: String, mau: String = M_LAM, bam: () -> Unit): TextView {
+        val n = chu(s, 14.5f, "#FFFFFF", dam = true)
+        n.gravity = android.view.Gravity.CENTER
+        n.background = bo(mau, 12)
+        n.setPadding(dp(12), dp(12), dp(12), dp(12))
+        n.setOnClickListener { if (!ban()) bam() }
+        return n
+    }
+
+    /** Trang Dự án: phần trên CỐ ĐỊNH không cuộn (＋ Dự án mới · Cài đặt chung · nhãn lọc · ô tìm); bên dưới là danh sách cuộn. */
     private fun dungTrangDuAn() {
         dhDuAn.removeAllViews()
+        dhDuLieu = try { org.json.JSONObject(core.callAttr("tom_tat_du_an").toString()) } catch (_: Exception) { org.json.JSONObject() }
+        val ds = dhDuLieu.optJSONArray("du_an") ?: org.json.JSONArray()
+        var soDang = 0; var soXong = 0
+        for (i in 0 until ds.length()) if (ds.getJSONObject(i).optBoolean("hoan_thanh")) soXong++ else soDang++
+        if (dhLoc == "dang" && soDang == 0 && soXong > 0) dhLoc = "tat"      // không còn dự án đang thi công thì đừng mở ra trang trống
+
+        val dau = LinearLayout(this)
+        dau.orientation = LinearLayout.VERTICAL
+        dau.setPadding(dp(18), dp(22), dp(18), dp(6))
+        // tiêu đề + nút thêm dự án (luôn thấy, không bị danh sách đẩy đi)
+        val h = LinearLayout(this)
+        h.orientation = LinearLayout.HORIZONTAL
+        h.gravity = android.view.Gravity.CENTER_VERTICAL
+        val tieu = LinearLayout(this); tieu.orientation = LinearLayout.VERTICAL
+        tieu.addView(chu("Dự án", 20f, M_CHU, dam = true))
+        tieu.addView(chu("${ds.length()} dự án · $soDang đang thi công · $soXong hoàn thành", 12f, M_MO2))
+        h.addView(tieu, LinearLayout.LayoutParams(0, -2, 1f))
+        val them = chu("＋ Dự án mới", 14f, "#FFFFFF", dam = true)
+        them.background = bo(M_LAM, 20)
+        them.setPadding(dp(14), dp(10), dp(14), dp(10))
+        them.setOnClickListener { if (!ban()) moFile() }
+        h.addView(them)
+        dau.addView(h, lpDoc(duoi = 10))
+        // cài đặt chung: user/pass mặc định + tự cài (tách khỏi danh sách)
+        val cd = hang("⚙️", "Cài đặt chung",
+            "Cam ${dhDuLieu.optString("cam_user", "admin")}" + (if (dhDuLieu.optBoolean("co_cam_pw")) "" else " (CHƯA có pass)") +
+            " · WiFi ${dhDuLieu.optString("wifi_ten").ifEmpty { "chưa nhập" }} · Tự cài ${if (batTuDong()) "bật" else "tắt"}") { chonTrang(6) }
+        if (!dhDuLieu.optBoolean("co_cam_pw")) cd.second.visibility = android.view.View.VISIBLE
+        dau.addView(cd.first, lpDoc(duoi = 10))
+        // nhãn lọc
+        val loc = LinearLayout(this)
+        loc.orientation = LinearLayout.HORIZONTAL
+        fun nhanLoc(ma: String, ten: String) {
+            val chon = dhLoc == ma
+            val t = chu(ten, 13f, if (chon) "#FFFFFF" else M_MO, dam = true)
+            t.gravity = android.view.Gravity.CENTER
+            t.background = bo(if (chon) M_XANH else M_THE, 18, if (chon) null else M_VIEN)
+            t.setPadding(dp(10), dp(8), dp(10), dp(8))
+            t.setOnClickListener { dhLoc = ma; dungTrangDuAn() }
+            val lp = LinearLayout.LayoutParams(0, -2, 1f); lp.rightMargin = dp(6)
+            loc.addView(t, lp)
+        }
+        nhanLoc("dang", "Đang thi công · $soDang")
+        nhanLoc("xong", "Hoàn thành · $soXong")
+        nhanLoc("tat", "Tất cả · ${ds.length()}")
+        dau.addView(loc, lpDoc(duoi = 8))
+        // ô tìm: chỉ hiện khi nhiều dự án
+        if (ds.length() > 8) {
+            val o = EditText(this)
+            o.hint = "🔎 Tìm theo tên dự án"
+            o.setText(dhTim)
+            o.textSize = 14f
+            o.setSingleLine(true)
+            o.background = bo(M_THE, 12, M_VIEN)
+            o.setPadding(dp(12), dp(9), dp(12), dp(9))
+            o.addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) { dhTim = s?.toString() ?: ""; veDsDuAn() }      // chỉ vẽ lại danh sách, giữ con trỏ ô tìm
+            })
+            dau.addView(o, lpDoc(duoi = 6))
+        } else dhTim = ""
+        dhDuAn.addView(dau)
+
+        val cuon = ScrollView(this)
+        val l = LinearLayout(this)
+        l.orientation = LinearLayout.VERTICAL
+        l.setPadding(dp(18), dp(2), dp(18), dp(18))
+        cuon.addView(l)
+        dhDs = l
+        dhDuAn.addView(cuon, LinearLayout.LayoutParams(-1, 0, 1f))
+        veDsDuAn()
+    }
+
+    private fun khongDau(x: String) = java.text.Normalizer.normalize(x.lowercase(), java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").replace('đ', 'd')
+
+    /** Danh sách dự án: mỗi dự án MỘT DÒNG (tên · tiến độ · chấm cảnh báo); bấm dòng mới bung chi tiết. */
+    private fun veDsDuAn() {
+        val l = dhDs ?: return
+        l.removeAllViews()
+        val ds = dhDuLieu.optJSONArray("du_an") ?: org.json.JSONArray()
+        if (ds.length() == 0) {
+            val v = theTrang()
+            v.addView(chu("Chưa có dự án nào", 15.5f, M_CHU, dam = true))
+            v.addView(chu("Bấm ＋ Dự án mới để nạp file Excel. Mỗi dòng một điểm, gồm các cột: No · Tên điểm · link bản đồ (để GPS tự dò) · Camera · Domain · USER · PW (tài khoản DDNS cấp kèm tên miền).", 13f, M_MO), lpDoc(tren = 4))
+            l.addView(v)
+            return
+        }
+        val tim = khongDau(dhTim.trim())
+        var dem = 0
+        for (i in 0 until ds.length()) {
+            val d = ds.getJSONObject(i)
+            val xong = d.optBoolean("hoan_thanh")
+            if ((dhLoc == "dang" && xong) || (dhLoc == "xong" && !xong)) continue
+            if (tim.isNotEmpty() && !khongDau(d.optString("ten")).contains(tim)) continue
+            dem++
+            val ma = d.optString("ma"); val n = d.optInt("diem")
+            val thieu = d.optInt("ten_mien") < n || d.optInt("toa_do") < n
+            val mo = ma in dhMo
+            val v = LinearLayout(this)
+            v.orientation = LinearLayout.VERTICAL
+            v.background = bo(M_THE, 13, M_VIEN)
+            v.setPadding(dp(14), dp(11), dp(12), dp(11))
+            val h = LinearLayout(this)
+            h.orientation = LinearLayout.HORIZONTAL
+            h.gravity = android.view.Gravity.CENTER_VERTICAL
+            val tx = LinearLayout(this); tx.orientation = LinearLayout.VERTICAL
+            val ten = chu(d.optString("ten"), 15f, M_CHU, dam = true)
+            ten.maxLines = 1; ten.ellipsize = android.text.TextUtils.TruncateAt.END
+            tx.addView(ten)
+            tx.addView(chu((if (xong) "✔ Hoàn thành · " else "") + "${d.optInt("da_xong")}/$n điểm đã cài · ${d.optInt("cam")} cam", 12.5f, if (xong) M_XANH else M_MO))
+            h.addView(tx, LinearLayout.LayoutParams(0, -2, 1f))
+            if (thieu && !xong) {
+                val cham = android.view.View(this)
+                cham.background = bo(M_DO, 5)
+                h.addView(cham, LinearLayout.LayoutParams(dp(9), dp(9)).apply { rightMargin = dp(8) })
+            }
+            h.addView(chu(if (mo) "▾" else "›", 20f, M_MO2))
+            v.addView(h)
+            if (mo) {
+                fun du(k: String) = "${d.optInt(k)}/$n"
+                fun mau(k: String) = if (d.optInt(k) == n) M_XANH else M_DO
+                dongTrang(v, "Toạ độ (GPS tự dò điểm)", du("toa_do"), mau("toa_do"))
+                dongTrang(v, "Tên miền DDNS", du("ten_mien"), mau("ten_mien"))
+                dongTrang(v, "User/pass DDNS kèm tên miền", du("tk_ddns"), mau("tk_ddns"))
+                if (d.optInt("toa_do") < n) v.addView(chu("Điểm thiếu toạ độ: tới nơi app sẽ hỏi chọn điểm bằng tay.", 12f, M_MO), lpDoc(tren = 6))
+                if (d.optInt("ten_mien") < n) v.addView(chu("Điểm thiếu tên miền: lúc cài app hỏi nhập tên miền hoặc nạp file tên miền.", 12f, M_MO), lpDoc(tren = 4))
+                if (d.optInt("rieng") > 0) v.addView(chu("${d.optInt("rieng")} điểm đang dùng user/pass riêng (khác mặc định).", 12f, M_MO), lpDoc(tren = 4))
+                v.addView(chu("Cập nhật dự án này: bấm ＋ Dự án mới rồi chọn lại file Excel cùng tên.", 12f, M_MO2), lpDoc(tren = 6))
+            }
+            v.isClickable = true
+            v.setOnClickListener { if (mo) dhMo.remove(ma) else dhMo.add(ma); veDsDuAn() }
+            l.addView(v, lpDoc(duoi = 8))
+        }
+        if (dem == 0) l.addView(chu(when {
+            tim.isNotEmpty() -> "Không có dự án nào khớp «${dhTim.trim()}»."
+            dhLoc == "dang" -> "Không có dự án nào đang thi công."
+            else -> "Chưa có dự án nào hoàn thành."
+        }, 13.5f, M_MO), lpDoc(tren = 10))
+    }
+
+    /** Trang Cài đặt chung: user/pass mặc định + tự cài (tách khỏi danh sách dự án). */
+    private fun dungTrangCaiDat() {
+        dhCaiDat.removeAllViews()
+        val q = try { org.json.JSONObject(core.callAttr("tom_tat_du_an").toString()) } catch (_: Exception) { org.json.JSONObject() }
         val t = LinearLayout(this)
         t.orientation = LinearLayout.VERTICAL
         t.setPadding(dp(18), dp(22), dp(18), dp(18))
-        t.addView(dauTrang("Dự án & cấu hình", "Nạp một lần — tới điểm chỉ bấm Cài điểm này"), lpDoc())
-        val q = try { org.json.JSONObject(core.callAttr("tom_tat_du_an").toString()) } catch (_: Exception) { org.json.JSONObject() }
-        val ds = q.optJSONArray("du_an") ?: org.json.JSONArray()
-        fun the(): LinearLayout {
-            val v = LinearLayout(this)
-            v.orientation = LinearLayout.VERTICAL
-            v.background = bo(M_THE, 15, M_VIEN)
-            v.setPadding(dp(15), dp(13), dp(15), dp(13))
-            return v
-        }
-        fun dong(v: LinearLayout, ten: String, gia: String, mau: String = M_CHU) {
-            val h = LinearLayout(this)
-            h.orientation = LinearLayout.HORIZONTAL
-            h.addView(chu(ten, 13f, M_MO), LinearLayout.LayoutParams(0, -2, 1f))
-            h.addView(chu(gia, 13f, mau, dam = true))
-            v.addView(h, lpDoc(tren = 5))
-        }
-        fun nutNho(s: String, bam: () -> Unit): TextView {
-            val n = chu(s, 14.5f, "#FFFFFF", dam = true)
-            n.gravity = android.view.Gravity.CENTER
-            n.background = bo(M_LAM, 12)
-            n.setPadding(dp(12), dp(12), dp(12), dp(12))
-            n.setOnClickListener { if (!ban()) bam() }
-            return n
-        }
-
-        t.addView(nhan("1 · File cấu hình dự án"))
-        if (ds.length() == 0) {
-            val v = the()
-            v.addView(chu("Chưa có dự án nào", 15.5f, M_CHU, dam = true))
-            v.addView(chu("Nạp file Excel của dự án. Mỗi dòng một điểm, gồm các cột: No · Tên điểm · link bản đồ (để GPS tự dò) · Camera · Domain · USER · PW (tài khoản DDNS cấp kèm tên miền).", 13f, M_MO), lpDoc(tren = 4))
-            t.addView(v, lpDoc(duoi = 10))
-        }
-        for (i in 0 until ds.length()) {
-            val d = ds.getJSONObject(i)
-            val n = d.optInt("diem")
-            fun du(k: String) = "${d.optInt(k)}/$n"
-            fun mau(k: String) = if (d.optInt(k) == n) M_XANH else M_DO
-            val v = the()
-            v.addView(chu(d.optString("ten"), 15.5f, M_CHU, dam = true))
-            v.addView(chu("$n điểm · ${d.optInt("cam")} cam · đã cài ${d.optInt("da_xong")}/$n", 12.5f, M_MO))
-            dong(v, "Toạ độ (GPS tự dò điểm)", du("toa_do"), mau("toa_do"))
-            dong(v, "Tên miền DDNS", du("ten_mien"), mau("ten_mien"))
-            dong(v, "User/pass DDNS kèm tên miền", du("tk_ddns"), mau("tk_ddns"))
-            if (d.optInt("toa_do") < n) v.addView(chu("Điểm thiếu toạ độ: tới nơi app sẽ hỏi chọn điểm bằng tay.", 12f, M_MO), lpDoc(tren = 6))
-            if (d.optInt("rieng") > 0) v.addView(chu("${d.optInt("rieng")} điểm đang dùng user/pass riêng (khác mặc định).", 12f, M_MO), lpDoc(tren = 6))
-            if (d.optInt("ten_mien") < n) v.addView(chu("Điểm thiếu tên miền: lúc cài app hỏi nhập tên miền hoặc nạp file tên miền.", 12f, M_MO), lpDoc(tren = 4))
-            t.addView(v, lpDoc(duoi = 10))
-        }
-        t.addView(nutNho(if (ds.length() == 0) "📁  Nạp file Excel dự án mới" else "📁  Nạp thêm / cập nhật file Excel dự án mới") { moFile() }, lpDoc())
-
-        t.addView(nhan("2 · User / pass mặc định"))
-        val v = the()
-        dong(v, "Cam", q.optString("cam_user", "admin") + " / " + (if (q.optBoolean("co_cam_pw")) "••••••" else "CHƯA NHẬP"), if (q.optBoolean("co_cam_pw")) M_CHU else M_DO)
-        dong(v, "Modem", q.optString("modem_user", "admin") + " / " + (if (q.optBoolean("modem_mac_dinh", true)) "admin (mặc định)" else "••••••"))
-        dong(v, "DDNS", "theo từng dòng trong file")
-        dong(v, "WiFi modem", q.optString("wifi_ten").ifEmpty { "chưa nhập — vào WiFi bằng tay" }, if (q.optString("wifi_ten").isEmpty()) M_MO else M_CHU)
-        v.addView(chu("Dùng chung cho mọi điểm, nhập một lần. Điểm nào khác thì nhập riêng tại điểm — app ưu tiên phần nhập riêng, mặc định giữ nguyên.", 12f, M_MO), lpDoc(tren = 6))
+        val ve = chu("‹ Dự án", 14f, M_LAM, dam = true)
+        ve.setPadding(0, 0, 0, dp(10))
+        ve.setOnClickListener { chonTrang(5) }
+        t.addView(ve)
+        t.addView(dauTrang("Cài đặt chung", "Dùng cho mọi dự án, nhập một lần"), lpDoc())
+        t.addView(nhan("User / pass mặc định"))
+        val v = theTrang()
+        dongTrang(v, "Cam", q.optString("cam_user", "admin") + " / " + (if (q.optBoolean("co_cam_pw")) "••••••" else "CHƯA NHẬP"), if (q.optBoolean("co_cam_pw")) M_CHU else M_DO)
+        dongTrang(v, "Modem", q.optString("modem_user", "admin") + " / " + (if (q.optBoolean("modem_mac_dinh", true)) "admin (mặc định)" else "••••••"))
+        dongTrang(v, "DDNS", "theo từng dòng trong file")
+        dongTrang(v, "WiFi modem", q.optString("wifi_ten").ifEmpty { "chưa nhập — vào WiFi bằng tay" }, if (q.optString("wifi_ten").isEmpty()) M_MO else M_CHU)
+        v.addView(chu("Điểm nào thực tế khác thì nhập riêng tại điểm — app ưu tiên phần nhập riêng, mặc định giữ nguyên.", 12f, M_MO), lpDoc(tren = 6))
         v.isClickable = true
         v.setOnClickListener { if (!ban()) hopCaiDat() }
         t.addView(v, lpDoc(duoi = 10))
-        t.addView(nutNho("🔑  Sửa user / pass cam · modem · WiFi") { hopCaiDat() }, lpDoc())
-
-        t.addView(nhan("3 · Tới điểm"))
-        val c = the()
+        t.addView(nutTrang("🔑  Sửa user / pass cam · modem · WiFi") { hopCaiDat() }, lpDoc())
+        t.addView(nhan("Tới điểm"))
+        val c = theTrang()
         val bat = batTuDong()
         c.addView(chu(if (bat) "Tự cài khi vào WiFi modem: ĐANG BẬT" else "Tự cài khi vào WiFi modem: ĐANG TẮT", 14f, if (bat) M_XANH else M_MO, dam = true))
-        c.addView(chu(if (bat) (if (q.optString("wifi_ten").isEmpty()) "" else "Đã nhập WiFi dùng chung: tới điểm chỉ cần mở app, app tự vào WiFi modem. ") + "Mở app, cho điện thoại vào WiFi modem của điểm là xong: app lấy GPS, dò điểm trong file, đếm ngược 8 giây rồi tự cài cam và mở port modem. Không khớp chắc một điểm (xa quá 150 m, hai điểm sát nhau, thiếu tên miền, điểm đã cài) thì app đứng yên, bấm Cài điểm này."
+        c.addView(chu(if (bat) (if (q.optString("wifi_ten").isEmpty()) "" else "Đã nhập WiFi dùng chung: tới điểm chỉ cần mở app, app tự vào WiFi modem. ") +
+                "App lấy GPS, dò điểm trong file, đếm ngược 8 giây rồi tự cài cam và mở port modem. Điểm đã cài hoặc đang chạy thì KHÔNG cài lại, chỉ báo đã cài và mở hình. Không khớp chắc một điểm (xa quá 150 m, hai điểm sát nhau, thiếu tên miền) thì app đứng yên, bấm Cài điểm này."
             else "Vào WiFi modem của điểm → về Trang chủ bấm Cài điểm này. App lấy GPS, dò điểm trong file rồi cài.", 13f, M_MO), lpDoc(tren = 4))
         t.addView(c, lpDoc(duoi = 10))
-        t.addView(nutNho(if (bat) "Tắt tự cài" else "Bật tự cài") {
+        t.addView(nutTrang(if (bat) "Tắt tự cài" else "Bật tự cài", if (bat) M_MO else M_XANH) {
             getSharedPreferences("camlink", MODE_PRIVATE).edit().putBoolean("tu_dong", !bat).apply()
-            dungTrangDuAn()
+            dungTrangCaiDat()
         }, lpDoc())
-        dhDuAn.addView(t)
+        dhCaiDat.addView(t)
     }
 
     /** Giám sát trực tiếp dùng kết quả kiểm gần nhất của dự án (đúng như nút trong màn Kiểm tra từ xa). */
@@ -1452,6 +1592,7 @@ class MainActivity : Activity() {
 
     @Deprecated("")
     override fun onBackPressed() {
+        if (doHoa && ::dhCaiDat.isInitialized && dhCaiDat.visibility == android.view.View.VISIBLE) { chonTrang(5); return }
         if (doHoa && ::dhThem.isInitialized && (dhThem.visibility == android.view.View.VISIBLE || dhDuAn.visibility == android.view.View.VISIBLE)) { chonTrang(0); return }
         @Suppress("DEPRECATION") super.onBackPressed()
     }

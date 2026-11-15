@@ -32,3 +32,23 @@ kt("WiFi: lưu tên đúng + khớp chính xác", K.luu_wifi("CAMERA_XA", "12345
 kt("WiFi: tên có * khớp theo phần đầu", K.luu_wifi("VNPT_*", "") == "" and K.wifi_khop("VNPT_AB12") and not K.wifi_khop("Viettel_1"))
 kt("WiFi: trang Dự án hiện tên, không lộ mật khẩu", json.loads(K.tom_tat_du_an())["wifi_ten"] == "VNPT_*" and "wifi_mk" not in K.tom_tat_du_an())
 print(f"\n✓ 2.6 tự vào WiFi + tự cài: {dat}/{dat} đạt")
+
+# ---- 2.12: "đã cài" theo sự thật — điểm đang chạy (cài từ trước) không bị tự cài lại, dự án tính đúng hoàn thành
+import camlink_tuxa as T
+d0 = K._doc_du_an("thu")
+kt("trước khi có kết quả kiểm: điểm 1 chưa cài → được tự cài", x(10.5002, 106.5001)["ok"])
+os.makedirs(os.path.dirname(T._f_lich_su(K.GOC, "thu")), exist_ok=True)
+json.dump({"luc": "15/11/2026 17:00", "diem": [{"stt": "1", "luc": "17:00:01 15/11/2026", "cam": [{"so": 1, "muc": "xanh"}, {"so": 2, "muc": "do"}]},
+                                              {"stt": "4", "cam": [{"so": 1, "muc": "do"}]}]}, open(T._f_lich_su(K.GOC, "thu"), "w"))
+r = x(10.5002, 106.5001)
+kt("điểm 1 đang chạy theo kiểm tra từ xa → KHÔNG tự cài lại, báo đã cài", not r["ok"] and r.get("da_cai") and "đang chạy" in r["ly_do"])
+d0.setdefault("vet", {})["5"] = {"mac": ["AA:05"], "ip": [], "domain": []}; K._ghi_du_an("thu", d0)
+q = [p for p in json.loads(K.tom_tat_du_an())["du_an"] if p["ma"] == "thu"][0]
+kt("đếm đã cài: 1 (đang chạy) + 2 (app cài) + 5 (từng thấy cam) = 3/5, chưa hoàn thành", q["da_xong"] == 3 and not q["hoan_thanh"])
+D2 = lambda dom: {"ten": "Cột", "domain": dom, "u": "a", "p": "b", "so": 1, "bs": 0, "map": ""}
+K._ghi_du_an("xong", {"ten": "Đã xong", "diem": {"1": D2("x1.ddns.net"), "2": D2("x2.ddns.net")}, "toa_do": {}, "da_xong": {}})
+ma_x = [r[0] for r in K.ds_du_an() if r[1] == "Đã xong"][0]      # app chuẩn hoá mã dự án theo tên
+json.dump({"luc": "x", "diem": [{"stt": "1", "cam": [{"so": 1, "muc": "xanh"}]}, {"stt": "2", "cam": [{"so": 1, "muc": "xanh"}]}]}, open(T._f_lich_su(K.GOC, ma_x), "w"))
+q = [p for p in json.loads(K.tom_tat_du_an())["du_an"] if p["ma"] == ma_x][0]
+kt("dự án cài từ trước, cam đang lên đủ → HOÀN THÀNH 2/2 (trước đây báo 0/2)", q["hoan_thanh"] and q["da_xong"] == 2)
+print(f"✓ 2.12 đã cài theo sự thật: {dat}/{dat} đạt")
