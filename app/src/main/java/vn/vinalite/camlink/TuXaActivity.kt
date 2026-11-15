@@ -526,22 +526,42 @@ class TuXaActivity : Activity() {
     private fun kiem(nhanh: Boolean = true) {
         if (ma.isEmpty() || dangChay) return
         dangChay = true
-        ketQua = null
-        khung.removeAllViews()   // xoá sạch kết quả cũ trước khi kiểm tra lại
-        khung.addView(chu(if (nhanh) "⏳ Kiểm tra nhanh $tenDuAn…\nĐiểm lần trước toàn đạt: lấy lại, phát live để xác minh.\nĐiểm có sự cố: quét lại đầy đủ, tự sửa nếu được.\n(Giữ lâu nút Kiểm tra lại = quét đầy đủ mọi điểm)"
-                          else "⏳ Đang quét ĐẦY ĐỦ $tenDuAn…\nCam đang chạy tốt: chỉ đọc và báo cáo.\nCam có vấn đề: app tự sửa rồi kiểm tra lại cấu hình.", 15f, mau = "#0F5D8C"))
+        // 2.9.2 — hiện NGAY kết quả lần kiểm trước (không bắt chờ), việc kiểm lại chạy ở nền rồi tự cập nhật lên màn này
+        val cuJson = try { core.callAttr("tuxa_gan_nhat", ma).toString() } catch (_: Exception) { "" }
+        val lichSu = try { if (cuJson.isNotEmpty()) JSONObject(cuJson).takeIf { (it.optJSONArray("diem")?.length() ?: 0) > 0 } else null } catch (_: Exception) { null }
+        if (lichSu != null) {
+            ketQua = lichSu
+            veBang("Kết quả lần kiểm ${lichSu.optString("luc")} — đang kiểm lại ở nền…")
+            val b = the("#0F5D8C", "#EAF2FA")
+            b.addView(chu("⏳ Đang xem kết quả lần kiểm ${lichSu.optString("luc")}", 15f, true, "#0F5D8C"))
+            b.addView(chu(if (nhanh) "App đang kiểm lại ở nền (điểm có sự cố quét lại đầy đủ). Xong sẽ tự cập nhật ngay trên màn này." else "App đang quét ĐẦY ĐỦ lại ở nền. Xong sẽ tự cập nhật ngay trên màn này.", 13f, mau = "#5B6776"))
+            khung.addView(b, 0)
+        } else {
+            ketQua = null
+            khung.removeAllViews()   // lần đầu chưa có lịch sử: màn chờ như cũ
+            khung.addView(chu(if (nhanh) "⏳ Kiểm tra nhanh $tenDuAn…\nĐiểm lần trước toàn đạt: lấy lại, phát live để xác minh.\nĐiểm có sự cố: quét lại đầy đủ, tự sửa nếu được.\n(Giữ lâu nút Kiểm tra lại = quét đầy đủ mọi điểm)"
+                              else "⏳ Đang quét ĐẦY ĐỦ $tenDuAn…\nCam đang chạy tốt: chỉ đọc và báo cáo.\nCam có vấn đề: app tự sửa rồi kiểm tra lại cấu hình.", 15f, mau = "#0F5D8C"))
+        }
         nk.ghi("⏳ Đang kiểm tra $tenDuAn qua Internet…")
         thread {
             val co4G = gan4G(true)
             try {
                 val j = core.callAttr("tuxa_kiem", ma, nk, nhanh).toString()
                 ui.post {
+                    val cuon = khung.parent as? ScrollView
+                    val viTri = cuon?.scrollY ?: 0
+                    val d0 = ketQua?.optInt("dat") ?: 0
                     ketQua = JSONObject(j)
                     veBang(if (co4G) "Đã kiểm tra qua 4G (như IOC gọi từ ngoài)" else "⚠ Không bật được 4G — đã kiểm tra qua WiFi; nếu đang ở trong WiFi của chính điểm, kết quả có thể sai")
-                    moGiamSat()
+                    if (lichSu == null) moGiamSat()      // lần đầu chưa có lịch sử: giữ cách cũ, kiểm xong mở màn giám sát
+                    else {                              // đang xem lịch sử: cập nhật tại chỗ, giữ nguyên chỗ đang đọc, báo có gì đổi
+                        cuon?.post { cuon.scrollTo(0, viTri) }
+                        val d1 = ketQua?.optInt("dat") ?: 0
+                        Toast.makeText(this, if (d1 == d0) "Đã kiểm lại: không đổi ($d1 cam đạt)" else "Đã kiểm lại: $d0 → $d1 cam đạt", Toast.LENGTH_LONG).show()
+                    }
                 }
             } catch (e: Exception) {
-                ui.post { nk.ghi("✖ Lỗi kiểm tra: ${e.message}") }
+                ui.post { nk.ghi("✖ Lỗi kiểm tra: ${e.message}"); if (lichSu != null) tienDo.text = "✖ Kiểm lại lỗi — đang hiện kết quả lần ${lichSu.optString("luc")}" }
             } finally {
                 gan4G(false)
                 dangChay = false
