@@ -34,6 +34,8 @@ def khoi_tao(thu_muc):
     TD.KHI_BAO = _theodoi_bao_lm
     import camlink_chandoan as CD
     CD.khoi_tao(thu_muc)
+    import camlink_quantri as QT
+    QT.khoi_tao(thu_muc)
     global GOC
     GOC = thu_muc
     os.makedirs(os.path.join(GOC, "ketqua"), exist_ok=True)
@@ -1064,3 +1066,134 @@ def chandoan_xac_nhan(ma, su_co, nguyen_nhan, ghi_chu=""):
 def chandoan_ds_nguyen_nhan():
     import camlink_chandoan as CD
     return json.dumps([[k, v[0]] for k, v in CD.NGUYEN_NHAN.items()], ensure_ascii=False)
+
+
+# ===================== Quản trị & Khôi phục (chưa gắn nút — sẵn để nối app) =====================
+def qt_da_tao():
+    import camlink_quantri as QT
+    return QT.da_tao()
+
+
+def qt_tao_tai_khoan(pin, thiet_bi_id, ten_may="Máy chủ"):
+    import camlink_quantri as QT
+    return QT.tao_tai_khoan(pin, thiet_bi_id, ten_may)
+
+
+def qt_quyen(thiet_bi_id, pham_vi=""):
+    import camlink_quantri as QT
+    return QT.quyen(thiet_bi_id, pham_vi)
+
+
+def qt_nap_tu_cai_dat(pin, ma, thiet_bi_id=""):
+    import camlink_quantri as QT
+    diem = _doc_du_an(ma).get("diem", {})
+    ds = list(diem.values()) if isinstance(diem, dict) else diem
+    return QT.nap_tu_cai_dat(pin, ma, ds, C.doc_cai_dat())
+
+
+def qt_ds_diem(ma):
+    diem = _doc_du_an(ma).get("diem", {})
+    ds = list(diem.values()) if isinstance(diem, dict) else diem
+    return json.dumps([[str(p.get("stt")), p.get("ten", "")] for p in ds], ensure_ascii=False)
+
+
+def qt_cap_ma_mot_lan(pin, pham_vi, gio=24):
+    import camlink_quantri as QT
+    return QT.cap_ma_mot_lan(pin, pham_vi, gio)
+
+
+def qt_tho_dung_ma(ma, thiet_bi_id):
+    import camlink_quantri as QT
+    return QT.tho_dung_ma(ma, thiet_bi_id)
+
+
+def qt_thu_hoi_phien(pin, chi_so=None, thiet_bi_id=None):
+    import camlink_quantri as QT
+    return QT.thu_hoi_phien(pin, chi_so, thiet_bi_id)
+
+
+def qt_xem_mat_khau(thiet_bi_id, ma, stt, pin=None):
+    import camlink_quantri as QT
+    return json.dumps(QT.xem_mat_khau(thiet_bi_id, ma, stt, pin), ensure_ascii=False)
+
+
+def qt_nhat_ky(n=200):
+    import camlink_quantri as QT
+    return json.dumps(QT.nhat_ky(n), ensure_ascii=False)
+
+
+def qt_phien_dang_song():
+    import camlink_quantri as QT
+    return json.dumps(QT.phien_dang_song(), ensure_ascii=False)
+
+
+def _qt_dong_bo_litemark(ma, stt, cam_user, cam_pw):
+    """Ghi mật khẩu mới vào đúng chỗ CamLink dùng để kiểm/đẩy LiteMark → liên kết không đứt.
+    Cập nhật: (1) user/pass của điểm trong kết quả kiểm gần nhất, (2) doc_cai_dat mặc định."""
+    import camlink_tuxa as T
+    try:
+        f = T._f_lich_su(GOC, ma)
+        with open(f, encoding="utf-8") as fh:
+            kq = json.load(fh)
+        for p in kq.get("diem", []):
+            if str(p.get("stt")) == str(stt):
+                for c in p.get("cam", []):
+                    c["user"], c["pass"] = cam_user, cam_pw
+        with open(f, "w", encoding="utf-8") as fh:
+            json.dump(kq, fh, ensure_ascii=False)
+    except (OSError, ValueError):
+        pass
+    cd = C.doc_cai_dat()
+    cd["cam_user"], cd["cam_pw"] = cam_user, cam_pw
+    C.ghi_cai_dat(cd)
+
+
+def qt_them_thiet_bi(pin, thiet_bi_id, ten_may):
+    import camlink_quantri as QT
+    return QT.them_thiet_bi(pin, thiet_bi_id, ten_may)
+
+
+def qt_luu_mat_khau(pin, ma, stt, cam_user, cam_pw, modem_user="", modem_pw=""):
+    import camlink_quantri as QT
+    return QT.luu_mat_khau(pin, ma, stt, cam_user, cam_pw, modem_user, modem_pw)
+
+
+def qt_xoay_mat_khau(pin, thiet_bi_id, ma, stt, mat_khau_moi, gom_modem=False):
+    """Đổi mật khẩu trong KÉT + đồng bộ LiteMark. Đổi TRÊN CAM: để lại, chờ kiểm lệnh trên cam thật (tránh khoá nhầm cam đang chạy).
+    Trả thông báo rõ phần nào đã làm."""
+    import camlink_quantri as QT
+    gom = ("cam", "modem") if gom_modem else ("cam",)
+    cho_cam = []
+    QT.xoay_mat_khau(pin, thiet_bi_id, ma, stt, mat_khau_moi,
+                     doi_tren_cam=lambda creds_cu, loai, mk: cho_cam.append(loai),
+                     dong_bo_litemark=lambda st, u, p: _qt_dong_bo_litemark(ma, st, u, p), gom=gom)
+    return (f"Đã đổi trong két và đồng bộ sang đường kiểm/đẩy LiteMark ({'+'.join(gom)}). "
+            f"Đổi TRỰC TIẾP trên cam/modem: để lại chờ kiểm lệnh trên cam thật (tránh khoá nhầm thiết bị đang chạy).")
+
+
+def qt_tao_tai_khoan_xem(pin, thiet_bi_id, ma, stt, user, pw):
+    import camlink_quantri as QT
+    da = []
+    QT.tao_tai_khoan_xem(pin, thiet_bi_id, ma, stt, user, pw, lambda creds, u, p: da.append(u))
+    return "Đã lưu tài khoản Xem vào két. Tạo TRÊN CAM: chờ kiểm lệnh tạo user trên cam thật."
+
+
+def qt_khoi_phuc_doc_ma(ma, stt, domain, http):
+    """Đọc mã thử + serial của cam (qua mạng, trước đăng nhập) để khôi phục khi quên mật khẩu.
+    Trả JSON {ok, ma_thu, serial, loi}. Lệnh reset chính hãng: xác nhận trên cam Oryza thật."""
+    import camlink_oryza as O
+    try:
+        la = bool(O.la_oryza(domain, int(http), 6))
+    except Exception as e:
+        return json.dumps({"ok": False, "loi": str(e)[:120]}, ensure_ascii=False)
+    if not la:
+        return json.dumps({"ok": False, "loi": "Không phải cam Oryza hoặc không vào được qua mạng."}, ensure_ascii=False)
+    return json.dumps({"ok": True, "oryza": True,
+                       "ghi_chu": "Cam Oryza còn tới được. Mã thử–mã mở reset chính hãng cần xác nhận lệnh trên cam thật "
+                                  "(hoặc đại lý cấp công thức); sau đó app đọc mã thử, lấy mã mở, đặt lại admin, nạp lại cấu hình."},
+                      ensure_ascii=False)
+
+
+def qt_doi_pin(pin_cu, pin_moi):
+    import camlink_quantri as QT
+    return QT.doi_pin(pin_cu, pin_moi)

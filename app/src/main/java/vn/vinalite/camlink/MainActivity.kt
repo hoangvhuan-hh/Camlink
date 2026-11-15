@@ -154,6 +154,7 @@ class MainActivity : Activity() {
         goc.addView(nut("Thêm / cập nhật dự án (file Excel)") { moFile() })
         goc.addView(nut("User / pass cam và modem") { hopCaiDat() })
         goc.addView(nut("Thu mẫu thiết bị") { thuMau() })
+        goc.addView(nut("🔐 Quản trị & khôi phục (mật khẩu, thợ, khách)") { startActivity(Intent(this, QuanTriActivity::class.java)) })
 
         cuon = ScrollView(this)
         log = TextView(this)
