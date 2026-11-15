@@ -1323,3 +1323,34 @@ def dat_ten_mien_tay(ma, stt, domain, u="", p=""):
     x.update(domain=dom, u=str(u or "").strip(), p=str(p or "").strip(), dom_nguon=f"nhập tay tại cột {time.strftime('%d/%m %H:%M')}")
     _ghi_du_an(ma, da)
     return ""
+
+
+# ------------------------------------------------------------------ 2.4.2: trang "Dự án & cấu hình" — cho thấy file đã nạp đủ gì
+def tom_tat_du_an():
+    """Mỗi dự án: số điểm, bao nhiêu điểm có toạ độ (để GPS tự dò), có tên miền, có user/pass DDNS kèm. Không trả mật khẩu."""
+    out = []
+    for r in ds_du_an():
+        da = _doc_du_an(str(r[0]))
+        diem = da.get("diem", {})
+        td = da.get("toa_do", {})
+        out.append({"ma": str(r[0]), "ten": da.get("ten", ""), "diem": len(diem),
+                    "cam": sum(int(v.get("so") or 0) for v in diem.values()),
+                    "toa_do": sum(1 for k in diem if td.get(k)),
+                    "ten_mien": sum(1 for v in diem.values() if v.get("domain")),
+                    "tk_ddns": sum(1 for v in diem.values() if v.get("domain") and v.get("u") and v.get("p")),
+                    "da_xong": sum(1 for k in diem if da.get("da_xong", {}).get(k)),
+                    "litemark": bool(da.get("kho_ddns") is not None and "kho_ddns" in da)})
+    cd = C.doc_cai_dat()
+    return json.dumps({"du_an": out, "cam_user": cd.get("cam_user", "admin"), "co_cam_pw": bool(cd.get("cam_pw")),
+                       "modem_user": cd.get("modem_user", "admin"),
+                       "modem_mac_dinh": cd.get("modem_user", "admin") == "admin" and cd.get("modem_pw", "admin") == "admin"}, ensure_ascii=False)
+
+
+def thong_tin_cai(ma, stt):
+    """Dòng tóm tắt cho bảng xác nhận trước khi cài: tài khoản nào sẽ dùng, lấy từ đâu. Không trả mật khẩu."""
+    d = _doc_du_an(ma)["diem"][str(stt)]
+    cd = C.doc_cai_dat()
+    mac_dinh = cd.get("modem_user", "admin") == "admin" and cd.get("modem_pw", "admin") == "admin"
+    return json.dumps({"domain": d.get("domain", ""), "u_ddns": d.get("u", ""), "co_p_ddns": bool(d.get("p")),
+                       "cam_user": cd.get("cam_user", "admin"), "modem_user": cd.get("modem_user", "admin"), "modem_mac_dinh": mac_dinh,
+                       "so": int(d.get("so") or 0)}, ensure_ascii=False)

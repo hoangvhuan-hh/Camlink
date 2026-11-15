@@ -23,3 +23,10 @@ d = K._doc_du_an("thu")["diem"]["1"]
 kt("lưu chuẩn hoá + tài khoản DDNS", d["domain"] == "thu-01.ddns.net" and d["u"] == "u1" and d["p"] == "p1" and "nhập tay" in d["dom_nguon"])
 kt("điểm 2 không bị đụng", K._doc_du_an("thu")["diem"]["2"]["domain"] == "thu-02.ddns.net")
 print(f"\n✓ 2.4.1 tên miền tại cột: {dat}/{dat} đạt")
+q = json.loads(K.tom_tat_du_an())
+d = q["du_an"][0]
+kt("trang Dự án: đếm đúng điểm / tên miền / tài khoản DDNS", d["diem"] == 2 and d["ten_mien"] == 2 and d["tk_ddns"] == 2 and d["toa_do"] == 0)
+kt("modem mặc định admin/admin, không lộ mật khẩu", q["modem_mac_dinh"] and "modem_pw" not in q and "cam_pw" not in q)
+tt = json.loads(K.thong_tin_cai("thu", "2"))
+kt("bảng xác nhận: user DDNS theo file, không lộ pass", tt["u_ddns"] == "a" and tt["co_p_ddns"] and "p" not in tt)
+print(f"✓ 2.4.2: {dat}/{dat} đạt")
