@@ -24,6 +24,14 @@ RTSP = [554, 5541, 5542, 5543, 5544, 5545]
 IP_TU = 200
 PORT_QUET = [80, 8080, 8081, 8082, 8083, 8084, 8085]
 MODEM_PASS_MOI = "Aa112233@"
+PORT_WEB_MODEM = 8098      # port ngoài dẫn vào trang quản trị modem (để sửa modem từ xa)
+PASS_MODEM_YEU = ("", "admin", "password", "user", "root", "1234", "12345", "123456", "1234567", "12345678", "123456789", "admin123", "vnpt", "megavnn")
+
+
+def pass_modem_yeu(user, pw):
+    """Mật khẩu modem còn mặc định / dễ đoán → KHÔNG được mở trang quản trị ra Internet."""
+    pw = str(pw or "")
+    return len(pw) < 8 or pw.lower() in PASS_MODEM_YEU or pw.lower() == str(user or "").lower()
 
 # Dữ liệu file ks_Camera_Xa_Phu_Ly.xlsx (số điểm: tên, tên miền, user/pass DDNS, số cam)
 PHU_LY = {}  # app Android nạp từ file khảo sát người dùng chọn (không nhúng mật khẩu vào APK)
@@ -495,6 +503,7 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
 
     log("-- Modem: mở port")
     wan = None
+    web_modem = 0
     igd = upnp_tim()
     if igd:
         dem = co_san = 0
@@ -512,6 +521,24 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
         ma, t = upnp_goi(igd, "GetExternalIPAddress", {})
         m = re.search(r"<NewExternalIPAddress>(.*?)<", t)
         wan = m and m.group(1)
+        # 2.8 — mở quản trị modem từ xa: chỉ khi mật khẩu modem KHÔNG còn mặc định/yếu
+        if pass_modem_yeu(modem_user, modem_pw):
+            log("   ⚠ CHƯA mở quản trị modem từ xa: mật khẩu modem còn mặc định/yếu — mở ra Internet là bị chiếm modem. "
+                "Đổi mật khẩu modem (từ 8 ký tự), nhập mật khẩu mới vào app rồi chạy lại điểm này.")
+        else:
+            try:
+                ma, t = upnp_goi(igd, "AddPortMapping", {"NewRemoteHost": "", "NewExternalPort": PORT_WEB_MODEM, "NewProtocol": "TCP",
+                                 "NewInternalPort": 80, "NewInternalClient": gw, "NewEnabled": 1,
+                                 "NewPortMappingDescription": "camlink_modem", "NewLeaseDuration": 0})
+                if ma == 200 or "718" in t or "Conflict" in t:
+                    web_modem = PORT_WEB_MODEM
+                    log(f"   ✔ Mở quản trị modem từ xa: {d['domain']}:{PORT_WEB_MODEM} → trang modem {gw} (đăng nhập bằng mật khẩu modem)")
+                else:
+                    log("   ⚠ Modem không cho mở port vào chính nó qua UPnP → muốn quản trị modem từ xa phải bật 'Remote management' "
+                        "trong trang modem (app cần mẫu modem này để tự bật).")
+                    CAN_MAU.append("modem")
+            except Exception as e:
+                log(f"   ⚠ Mở quản trị modem từ xa lỗi: {str(e)[:80]}")
     else:
         log("   ⚠ Modem tắt UPnP → tạm mở port tay theo bảng dưới (Virtual Servers)")
         CAN_MAU.append("modem")
@@ -530,7 +557,7 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
                 ip_dom = None
             log(f"   {'✔' if ip_dom == wan else '⚠'} {d['domain']} → {ip_dom} (cần {wan}; DDNS có thể mất 1–5 phút)")
     global KQ_CUOI
-    KQ_CUOI = {"stt": stt, "ten": d["ten"], "domain": d["domain"], "gw": gw, "wan": wan or "",
+    KQ_CUOI = {"stt": stt, "ten": d["ten"], "domain": d["domain"], "gw": gw, "wan": wan or "", "web_modem": web_modem,
                "upnp": bool(igd), "luat": [{"ten": t, "port": p, "ip": ip} for t, p, ip in luat],
                "cam": [{"so": k["so"], "ip": k["ip"], "http": k["http"], "rtsp": k["rtsp"], "model": k.get("model", ""),
                         "mac": k.get("mac", ""), "ok": bool(k.get("ok")), "ghi": "; ".join(k["ghi"])} for k in ket_qua]}

@@ -77,7 +77,115 @@ def _ket(cam, muc, nguyen_nhan, viec, sua=None, nhan=""):
     return cam
 
 
+# ------------------------------------------------------------------ 2.8: ĐƯỜNG DỰ PHÒNG BẰNG IP khi tên miền hỏng
+# Tên miền chỉ là nhãn; IP nhà mạng đổi được. Khi tên miền không dẫn tới điểm, thử các IP công cộng GẦN NHẤT từng thấy điểm còn sống
+# (theo dõi → lịch sử các lần kiểm → IP lúc cài). CHỈ tin khi cam ở IP đó có MAC trùng cam của chính điểm này —
+# vì IP cũ có thể đã cấp cho điểm khác cùng dự án (cùng port, cùng mật khẩu).
+HONG_TEN_MIEN = ("TÊN MIỀN KHÔNG HOẠT ĐỘNG", "TÊN MIỀN TRỎ IP NỘI BỘ", "MẤT ĐIỆN / MẤT MẠNG CẢ ĐIỂM", "KHÔNG CAM NÀO TRẢ LỜI (IP còn sống)")
+_DP = {}      # stt → {"mac": {MAC cam của điểm}, "ip": [IP từng thấy, mới nhất trước]} — nạp ở đầu mỗi lần kiểm dự án
+
+
+def gom_du_phong(da):
+    out = {}
+    vet, hs = da.get("vet", {}), da.get("ho_so", {})
+    td = {}
+    try:
+        import camlink_theodoi as TD
+        for m in TD.ds():
+            if m.get("domain") and (m.get("ip_cuoi_len") or m.get("ip_dau")):
+                td.setdefault(str(m["domain"]).lower(), m.get("ip_cuoi_len") or m.get("ip_dau"))
+    except Exception:
+        pass
+    for stt, d in da.get("diem", {}).items():
+        v, h = vet.get(str(stt), {}), hs.get(str(stt), {})
+        mac = {str(x).upper() for x in v.get("mac", []) if x} | {str(c.get("mac", "")).upper() for c in h.get("cam", []) if c.get("mac")}
+        ip = []
+        for x in [td.get(str(d.get("domain") or "").lower())] + [i.get("ip") for i in reversed(v.get("ip", []))] + [h.get("wan")]:
+            if x and x not in ip and not _ip_noi_bo(x):
+                ip.append(x)
+        out[str(stt)] = {"mac": mac, "ip": ip[:4], "web_modem": int(h.get("web_modem") or 0)}
+    return out
+
+
+def nhap_ddns_qua(host, http, cu, cp, dom, u, p):
+    """Nhập lại DDNS lên cam, đi vào cam qua `host` (tên miền, hoặc IP dự phòng khi tên miền hỏng). Trả (ok, thông báo)."""
+    try:
+        if camlink_oryza.la_oryza(host, http):
+            return True, camlink_oryza.dat_ddns(host, http, cu, cp, dom, u, p)
+        nt = C.nen_tang(host, http)
+        if nt == "isapi":
+            C.ddns_isapi(host, http, cu, cp, dom, u, p)
+            return True, "DDNS đã nhập lại"
+        if nt == "dahua":
+            C.ddns_dahua(host, http, cu, cp, dom, u, p)
+            return True, "DDNS đã nhập lại"
+        return False, "hãng cam này chưa có lệnh nhập DDNS từ xa (cần thu mẫu thiết bị)"
+    except Exception as e:
+        return False, f"nhập DDNS lỗi: {str(e)[:100]}"
+
+
+def _thu_ip_du_phong(kq, d, cd):
+    dp = _DP.get(str(kq["stt"])) or {}
+    if kq.get("tong") not in HONG_TEN_MIEN or not dp.get("mac"):
+        return kq
+    cd = C.cd_diem(d, cd)
+    cu, cp = cd.get("cam_user", "admin"), cd.get("cam_pw", "")
+    dom = d["domain"]
+    cams = kq["cam"]
+    for ip in [x for x in dp.get("ip", []) if x != kq.get("ip")]:
+        cong = [c["http"] for c in cams]
+        with ThreadPoolExecutor(8) as ex:
+            ket = dict(zip(cong, ex.map(lambda x: cham_tg(ip, x), cong)))
+        dung = []
+        for c in cams:
+            if ket[c["http"]][0] != "mo":
+                continue
+            mac = ser = ""
+            try:
+                ov = C.Onvif(ip, c["http"], cu, cp)
+                if ov.co():
+                    mac = ov.token_mang()[1] or ""
+                    try:
+                        ser = ov.thong_tin().get("serial", "") or ""
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            khop = next((x for x in (mac, ser) if x and x.upper() in dp["mac"]), "")      # hồ sơ lưu MAC hoặc số serial
+            if khop:
+                dung.append((c, khop))
+        if not dung:
+            continue
+        dau = min(c["http"] for c, _ in dung)
+        for c, mac in dung:
+            c.update(web=f"http://{ip}:{c['http']}", live=f"rtsp://{cu}:{cp}@{ip}:{c['rtsp']}/", qua_ip=ip)
+            _ket(c, VANG, f"Cam vẫn chạy ở IP {ip} (đã đối chiếu MAC/serial {mac}) nhưng tên miền {dom} không dẫn tới điểm → IOC không xem được",
+                 [f"Tạm xem cam qua http://{ip}:{c['http']} (IP nhà mạng có thể đổi tiếp).",
+                  "Bấm Sửa từ xa: app vào cam qua IP này và nhập lại DDNS để tên miền chạy lại."],
+                 ["nhap_lai_ddns"] if c["http"] == dau else [], "Tên miền hỏng — cam còn sống qua IP")
+        kq["du_phong"] = {"ip": ip, "http": dau, "cam": [c["http"] for c, _ in dung], "ip_ten_mien": kq.get("ip", "")}
+        if dp.get("web_modem") and cham_tg(ip, dp["web_modem"])[0] == "mo":
+            kq["web_modem"] = f"http://{ip}:{dp['web_modem']}"
+        kq["muc"] = DO if any(c["muc"] == DO for c in cams) else VANG
+        kq["tong"] = f"TÊN MIỀN HỎNG — {len(dung)}/{len(cams)} cam còn sống qua IP dự phòng"
+        kq["viec"] = [f"Điểm vẫn chạy ở IP {ip} (MAC cam trùng hồ sơ điểm). Tên miền {dom} "
+                      + (f"đang trỏ {kq['ip']}" if kq.get("ip") else "không phân giải được") + " → DDNS không cập nhật.",
+                      "Bấm Sửa từ xa (hoặc kiểm tra có tự sửa): app vào cam qua IP dự phòng và nhập lại DDNS.",
+                      "IP nhà mạng có thể đổi tiếp — xử lý sớm khi IP này còn đúng."]
+        return _xong(kq)
+    return kq
+
+
 def kiem_diem(stt, d, cd, anh_dir, ma, ho_so=None):
+    d = {k: v for k, v in d.items() if k != "_host"}
+    kq = _kiem_diem_goc(stt, d, cd, anh_dir, ma, ho_so)
+    try:
+        return _thu_ip_du_phong(kq, d, cd)
+    except Exception:
+        return kq
+
+
+def _kiem_diem_goc(stt, d, cd, anh_dir, ma, ho_so=None):
     dom = d["domain"]
     cd = C.cd_diem(d, cd)      # user/pass nhập riêng cho điểm được ưu tiên
     cu, cp = cd.get("cam_user", "admin"), cd.get("cam_pw", "")
@@ -134,6 +242,9 @@ def kiem_diem(stt, d, cd, anh_dir, ma, ho_so=None):
     if web_khac:
         x = web_khac[0]
         kq["web_modem"] = f"{'https' if x == 443 else 'http'}://{dom}:{x}"
+    wm = int((ho_so or {}).get("web_modem") or 0)      # port quản trị modem app đã mở lúc cài
+    if wm and wm in web_khac:
+        kq["web_modem"] = f"http://{dom}:{wm}"
     kq["quet"] = {"cam_port": cam_port, "web_khac": web_khac, "so_quet": len(cam_port)}
     kq["so_quet"] = len(cam_port)
     song = any(r[0] != "im_lang" for r in ket.values())
@@ -470,11 +581,29 @@ def _f_lich_su(goc, ma):
 
 
 TU_SUA_DUOC = ("khoi_dong_cam", "dat_port_rtsp")
+CHO_DDNS = 45      # giây chờ tên miền cập nhật sau khi nhập lại DDNS qua IP dự phòng
 
 
 def tu_sua_diem(p, d, cd, anh_dir, ma, ho_so, log):
     """Chỉ đụng tới cam ĐANG CÓ VẤN ĐỀ: chạy sửa lỗi; sửa xong vào kiểm tra lại cấu hình,
     mất/sai cấu hình thì khôi phục. Cam đang chạy tốt: không đụng tới."""
+    if p.get("du_phong"):      # tên miền hỏng nhưng cam còn sống qua IP → vào bằng IP, nhập lại DDNS (tên miền đằng nào cũng đang hỏng)
+        ip, http = p["du_phong"]["ip"], p["du_phong"]["http"]
+        cdd = C.cd_diem(d, cd)
+        log(f"   🔧 Điểm {p['stt']}: tên miền hỏng → vào cam qua IP dự phòng {ip}:{http}, nhập lại DDNS …")
+        ok, tb = nhap_ddns_qua(ip, http, cdd.get("cam_user", "admin"), cdd.get("cam_pw", ""), d["domain"], d.get("u", ""), d.get("p", ""))
+        if ok:
+            time.sleep(CHO_DDNS)
+        moi = kiem_diem(p["stt"], d, cd, anh_dir, ma, ho_so)
+        ghi = f"Nhập lại DDNS qua IP dự phòng {ip} → {'XONG' if ok else 'CHƯA ĐƯỢC'}: {tb}"
+        for c in moi["cam"]:
+            if c["http"] == http:
+                c["da_sua"] = [ghi]
+        if moi.get("du_phong"):
+            moi["viec"] = [("App đã nhập lại DDNS qua IP dự phòng; tên miền cần 1–5 phút mới cập nhật — kiểm tra lại sau ít phút." if ok
+                            else f"App đã thử nhập lại DDNS qua IP dự phòng nhưng chưa được: {tb}")] + moi.get("viec", [])
+        log(f"   → Điểm {p['stt']}: {ghi}; sau đó: {moi['tong']}")
+        return _xong(moi)
     nhat_ky = {}
     can = [c for c in p["cam"] if c["muc"] != XANH and any(v in TU_SUA_DUOC for v in c.get("sua", []))]
     if not can:
@@ -525,6 +654,8 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True, nhanh=Fal
         log(f"⏭ {len(chua_cai)} điểm chưa có tên miền (chưa cài) — bỏ qua khi kiểm: {', '.join(chua_cai[:15])}{'…' if len(chua_cai) > 15 else ''}")
         ds = [k for k in ds if k not in chua_cai]
     ho_so = da.get("ho_so", {})
+    _DP.clear()
+    _DP.update(gom_du_phong(da))
     toa_do = da.get("toa_do", {})
     # chế độ NHANH: điểm lần trước toàn ĐẠT → lấy lại từ lịch sử, phát live để xác minh; chỉ quét lại điểm có sự cố
     ls_truoc = {}
@@ -628,7 +759,7 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True, nhanh=Fal
         log("⚠ " + khong_tin_cay)
     tien_do(89, "Đối chiếu chéo, tự sửa cam có vấn đề…")
     if tu_sua:
-        sua_n = [p for p in kqs if any(c["muc"] != XANH and any(v in TU_SUA_DUOC for v in c.get("sua", [])) for c in p["cam"])]
+        sua_n = [p for p in kqs if p.get("du_phong") or any(c["muc"] != XANH and any(v in TU_SUA_DUOC for v in c.get("sua", [])) for c in p["cam"])]
         if sua_n:
             log(f"TỰ SỬA {sum(1 for p in sua_n for c in p['cam'] if c['muc'] != XANH)} cam có vấn đề (cam đang chạy tốt không đụng tới):")
         for i, p in enumerate(kqs):
@@ -1015,10 +1146,8 @@ def sua(d, so, viec, cd, log=print, gw_dung=""):
             gw2, dns2 = ov.doc_gw_dns()
             return bool(gw2 and dns2), f"Gateway {gw2 or '(trống)'}, DNS {dns2 or '(trống)'} sau khi đặt lại."
         if viec == "nhap_lai_ddns":
-            if not camlink_oryza.la_oryza(dom, http):
-                return False, "Cam 1 không phải Oryza hoặc không vào được — chưa hỗ trợ nhập DDNS từ xa cho hãng này."
-            return True, camlink_oryza.dat_ddns(dom, http, cd.get("cam_user", "admin"), cd.get("cam_pw", ""),
-                                                dom, d.get("u", ""), d.get("p", ""))
+            host = d.get("_host") or dom      # tên miền hỏng thì đi vào cam bằng IP dự phòng
+            return nhap_ddns_qua(host, http, cd.get("cam_user", "admin"), cd.get("cam_pw", ""), dom, d.get("u", ""), d.get("p", ""))
         if viec in ("them_nat", "khoi_dong_modem"):
             return False, ("App chưa có lệnh điều khiển modem VNPT từ xa (đang chờ mẫu modem). Tạm thời: "
                            + ("ra điểm chạy lại CamLink để mở port." if viec == "them_nat"

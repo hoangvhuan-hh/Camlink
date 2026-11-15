@@ -268,6 +268,7 @@ def chay(ma, stt, may_ip, gw, log):
         k = C.KQ_CUOI
         da.setdefault("ho_so", {})[stt] = {"luc": time.strftime("%d/%m/%Y %H:%M"), "wan": k.get("wan", ""),
                                            "gw": k.get("gw", ""), "upnp": k.get("upnp"), "luat": k.get("luat", []),
+                                           "web_modem": k.get("web_modem", 0),
                                            "cam": [{"so": c["so"], "ip": c["ip"], "mac": c.get("mac", ""),
                                                     "model": c.get("model", "")} for c in k.get("cam", [])]}
     _ghi_du_an(ma, da)
@@ -769,7 +770,17 @@ def tuxa_gan_nhat(ma):
 def tuxa_sua(ma, stt, so, viec, log):
     import camlink_tuxa as T
     log = _cb(log)
-    ok, tb = T.sua(_doc_du_an(ma)["diem"][stt], int(so), viec, C.doc_cai_dat(), log)
+    d = dict(_doc_du_an(ma)["diem"][stt])
+    if viec == "nhap_lai_ddns":      # lần kiểm gần nhất thấy điểm sống qua IP dự phòng → vào cam bằng IP đó
+        try:
+            with open(T._f_lich_su(GOC, ma), encoding="utf-8") as fh:
+                pp = next((x for x in json.load(fh).get("diem", []) if str(x.get("stt")) == str(stt)), {})
+            if pp.get("du_phong"):
+                d["_host"] = pp["du_phong"]["ip"]
+                log(f"Tên miền đang hỏng → vào cam qua IP dự phòng {d['_host']}")
+        except (OSError, ValueError):
+            pass
+    ok, tb = T.sua(d, int(so), viec, C.doc_cai_dat(), log)
     return ["OK" if ok else "KHONG", tb]
 
 
