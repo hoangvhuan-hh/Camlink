@@ -693,7 +693,11 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True, nhanh=Fal
                 "chua_xac_nhan": 0, "khong_len": 0, "tung_thay": [], "hieu_chinh": [], "tong_hc": 0, "cam_la": [], "so_cam_la": 0, "da_sua": 0,
                 "sua_xong": 0, "rot": 0, "nhom_loi": {"ĐIỆN THOẠI KHÔNG CÓ INTERNET": len(ds)}, "ho_so": ho_so, "diem": []}
 
+    for k in tai_su_dung:      # màn rada: điểm lấy lại từ lịch sử giữ màu cũ
+        log(f"RADA_KQ {k}|{tai_su_dung[k].get('muc', 'xanh')}")
+
     def mot(k):
+        log(f"RADA_BD {k}")
         try:
             r = kiem_diem(k, diem[k], cd, anh_dir, ma, ho_so.get(k))
         except Exception as e:
@@ -707,6 +711,7 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True, nhanh=Fal
         r["map_goc"] = diem[k].get("map", "")
         bieu = {"xanh": "🟢", "vang": "🟡", "do": "🔴"}[r["muc"]]
         log(f" {bieu} {k}. {r['ten']} — {r['tong']}")
+        log(f"RADA_KQ {k}|{r['muc']}")
         with khoa_dem:
             xong_dem[0] += 1
             n = xong_dem[0]
@@ -734,6 +739,7 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True, nhanh=Fal
     for so_tt, i in enumerate(nghi_ngo):
         p = kqs[i]
         tien_do(76 + 12 * so_tt / max(len(nghi_ngo), 1), f"Lượt 2: đo lại điểm {p['stt']} ({so_tt + 1}/{len(nghi_ngo)})")
+        log(f"RADA_BD {p['stt']}")
         dom = p["domain"]
         ports = [c["http"] for c in p["cam"] if c["muc"] != XANH] or [C.HTTP[0]]
         thay_mo = False
@@ -1362,4 +1368,90 @@ def xuat_khao_sat_hieu_chinh(goc, da, kq):
         ws.column_dimensions[col].width = w
     f = os.path.join(goc, "ketqua", f"KhaoSat_HieuChinh_{kq['ma']}_{time.strftime('%Y%m%d_%H%M')}.xlsx")
     wb.save(f)
+    return f
+
+
+# ------------------------------------------------------------------ 2.10: MÀN RADA — bản đồ toàn tuyến, quét tới đâu đổi màu tới đó
+def rada_html(da, ma, ls, goc):
+    """Trang rada cho màn Kiểm tra từ xa: mọi điểm của dự án theo toạ độ, màu theo lần kiểm trước; app gọi JS rada.bd/kq/tt để cập nhật lúc quét.
+    Không có mạng / không có toạ độ vẫn chạy: điểm xếp trên vòng rada."""
+    import html as H
+    truoc = {str(p.get("stt")): p.get("muc", "") for p in (ls or {}).get("diem", [])}
+    td = da.get("toa_do", {})
+    ds = []
+    for k, d in sorted(da.get("diem", {}).items(), key=lambda x: int(x[0]) if str(x[0]).isdigit() else 0):
+        if not d.get("domain"):
+            continue
+        t = td.get(k)
+        ds.append({"stt": str(k), "ten": d.get("ten", ""), "lat": t[0] if t else None, "lng": t[1] if t else None, "muc": truoc.get(str(k)) or "chua"})
+    data = json.dumps(ds, ensure_ascii=False)
+    ten = H.escape(da.get("ten", ""))
+    page = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<link rel="stylesheet" href="__LF__leaflet.css"><script src="__LF__leaflet.js"></script>
+<style>
+html,body{height:100%;margin:0;background:#06121b;overflow:hidden;font-family:sans-serif;-webkit-user-select:none}
+#m{position:absolute;inset:0;background:#06121b}
+.leaflet-tile-pane{filter:invert(1) hue-rotate(185deg) brightness(.75) contrast(1.15) saturate(.45)}
+.leaflet-container{background:#06121b}.leaflet-control-attribution{background:#06121bcc!important;color:#5f8090!important;font-size:8px}.leaflet-control-attribution a{color:#5f8090!important}
+.leaflet-control-zoom a{background:#0b2230!important;color:#7fe3c8!important;border-color:#16394b!important}
+#luoi{position:absolute;inset:0;pointer-events:none;background:
+ radial-gradient(circle at 50% 50%,transparent 0 18%,#45d1aa22 18.2% 18.6%,transparent 18.8% 36%,#45d1aa1c 36.2% 36.6%,transparent 36.8% 54%,#45d1aa16 54.2% 54.6%,transparent 54.8%),
+ linear-gradient(#45d1aa14,#45d1aa14) 50% 0/1px 100% no-repeat,linear-gradient(#45d1aa14,#45d1aa14) 0 50%/100% 1px no-repeat}
+#tia{position:absolute;left:50%;top:50%;width:220vmax;height:220vmax;margin:-110vmax 0 0 -110vmax;pointer-events:none;border-radius:50%;opacity:0;transition:opacity .6s;
+ background:conic-gradient(from 0deg,transparent 0deg,transparent 300deg,#45d1aa05 310deg,#45d1aa55 359deg,#b8fff0aa 360deg);animation:xoay 3.2s linear infinite}
+body.quet #tia{opacity:1}
+@keyframes xoay{to{transform:rotate(360deg)}}
+.d{width:26px;height:26px;border-radius:50%;color:#04121a;font:bold 12px sans-serif;text-align:center;line-height:26px;position:relative;border:2px solid #06121b;box-sizing:border-box}
+.d.xanh{background:#45d1aa;box-shadow:0 0 10px #45d1aa}.d.vang{background:#f0b429;box-shadow:0 0 10px #f0b429}
+.d.do{background:#ff5a5a;box-shadow:0 0 12px #ff5a5a;color:#fff}.d.chua{background:#5f7a8a;box-shadow:0 0 6px #5f7a8a}
+.d.dang::after{content:"";position:absolute;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;border:2px solid #b8fff0;animation:song 1s ease-out infinite}
+@keyframes song{from{transform:scale(1);opacity:.9}to{transform:scale(3.2);opacity:0}}
+body:not(.quet) .d.do{animation:nhay 1.1s ease-in-out infinite}
+@keyframes nhay{50%{box-shadow:0 0 22px 6px #ff5a5a;transform:scale(1.15)}}
+#hud{position:absolute;left:8px;top:8px;z-index:1000;color:#b8fff0;background:#06121bd9;border:1px solid #16394b;border-radius:10px;padding:7px 10px;max-width:72%}
+#hud .t{font:bold 13px sans-serif;color:#e9fbf6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#hud .s{font:11px monospace;color:#7fe3c8;margin-top:2px;letter-spacing:.3px}
+#hud .n{font:bold 20px sans-serif;margin-top:3px}#hud .n b{color:#45d1aa}#hud .n i{font-style:normal;color:#ff7a7a;font-size:13px;margin-left:8px}
+#tt{position:absolute;right:8px;top:8px;z-index:1000;font:bold 22px monospace;color:#45d1aa;background:#06121bd9;border:1px solid #16394b;border-radius:10px;padding:6px 9px}
+#thieu{position:absolute;left:0;right:0;bottom:0;z-index:1000;padding:6px 8px;background:linear-gradient(transparent,#06121bf0 40%);white-space:nowrap;overflow-x:auto;display:none}
+#thieu span{font:10px sans-serif;color:#7f9aa8;margin-right:6px}#thieu .d{display:inline-block;margin-right:6px;vertical-align:middle}
+#gia{position:absolute;inset:0;display:none}#gia .d{position:absolute;margin:-13px 0 0 -13px}
+</style></head><body>
+<div id="m"></div><div id="gia"></div><div id="luoi"></div><div id="tia"></div>
+<div id="hud"><div class="t">__TEN__</div><div class="s" id="hs">SẴN SÀNG</div><div class="n" id="hn"></div></div><div id="tt"></div>
+<div id="thieu"><span>Chưa có toạ độ:</span></div>
+<script>
+var D=__DATA__,nut={},coTD=D.filter(function(d){return d.lat!=null}),khong=D.filter(function(d){return d.lat==null});
+function tao(d){var e=document.createElement('div');e.className='d '+(d.muc||'chua');e.textContent=d.stt;e.title=d.ten;
+ e.onclick=function(ev){ev.stopPropagation();location.href='camlink://diem/'+encodeURIComponent(d.stt)};nut[d.stt]=e;return e}
+var m=null;
+try{ if(window.L&&coTD.length){ m=L.map('m',{zoomControl:true,attributionControl:true});
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(m);
+  var g=L.featureGroup();
+  coTD.forEach(function(d){var ic=L.divIcon({className:'',html:'',iconSize:[26,26],iconAnchor:[13,13]});var mk=L.marker([d.lat,d.lng],{icon:ic}).addTo(g);
+    mk.on('add',function(){var el=mk.getElement();if(el&&!el.firstChild)el.appendChild(nut[d.stt]||tao(d))});tao(d);});
+  g.addTo(m); g.eachLayer(function(mk){var el=mk.getElement();if(el&&!el.firstChild){var ll=mk.getLatLng();var d=coTD.filter(function(x){return x.lat==ll.lat&&x.lng==ll.lng})[0];if(d)el.appendChild(nut[d.stt])}});
+  m.fitBounds(g.getBounds().pad(0.25)); if(coTD.length==1)m.setZoom(15);
+ } }catch(e){m=null}
+var xep = m ? khong : D;
+if(!m){ var gia=document.getElementById('gia'); gia.style.display='block'; document.getElementById('m').style.display='none';
+  xep.forEach(function(d,i){var n=xep.length,v=i%2?0.34:0.2,r=(n<7?0.27:v)*Math.min(innerWidth,innerHeight)*1.25,a=2*Math.PI*i/n-Math.PI/2;
+    var e=tao(d);e.style.left=(innerWidth/2+r*Math.cos(a))+'px';e.style.top=(innerHeight/2+r*Math.sin(a)*0.8)+'px';gia.appendChild(e)}); }
+else if(khong.length){ var th=document.getElementById('thieu'); th.style.display='block'; khong.forEach(function(d){th.appendChild(tao(d))}) }
+function dem(){var x=0,l=0,n=0;for(var k in nut){n++;var c=nut[k].className;if(c.indexOf('xanh')>0)x++;else if(c.indexOf('do')>0||c.indexOf('vang')>0)l++}
+ document.getElementById('hn').innerHTML='<b>'+x+'</b>/'+n+' điểm đạt'+(l?'<i>'+l+' điểm lỗi</i>':'')}
+window.rada={
+ bd:function(s){var e=nut[s];if(e)e.classList.add('dang');document.body.classList.add('quet')},
+ kq:function(s,muc){var e=nut[s];if(!e)return;e.className='d '+(muc||'chua');dem()},
+ tatCa:function(o){for(var s in o)if(nut[s])nut[s].className='d '+(o[s]||'chua');dem()},
+ tt:function(pct,chu){document.body.classList.add('quet');document.getElementById('tt').textContent=pct+'%';document.getElementById('hs').textContent='ĐANG QUÉT · '+chu},
+ xong:function(chu){document.body.classList.remove('quet');for(var k in nut)nut[k].classList.remove('dang');document.getElementById('tt').textContent='';document.getElementById('hs').textContent=chu||'ĐÃ QUÉT XONG';dem()},
+ chon:function(s){var e=nut[s];if(e){e.classList.add('dang');setTimeout(function(){e.classList.remove('dang')},2500)}}
+};
+dem();
+</script></body></html>""".replace("__LF__", LEAFLET).replace("__TEN__", ten).replace("__DATA__", data)
+    f = os.path.join(goc, "ketqua", f"Rada_{ma}.html")
+    os.makedirs(os.path.dirname(f), exist_ok=True)
+    with open(f, "w", encoding="utf-8") as fh:
+        fh.write(page)
     return f

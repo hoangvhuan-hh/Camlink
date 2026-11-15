@@ -44,6 +44,44 @@ class TuXaActivity : Activity() {
     private lateinit var core: PyObject
     private lateinit var khung: LinearLayout
     private lateinit var tienDo: TextView
+    private lateinit var tenDa: TextView
+    private lateinit var rada: android.webkit.WebView
+    private lateinit var cuonKq: ScrollView
+    private var radaSan = false
+    private val radaCho = mutableListOf<String>()
+
+    /** Gọi một lệnh trên trang rada (rada.bd / kq / tt / tatCa / xong); trang chưa nạp xong thì xếp hàng. */
+    private fun js(lenh: String) {
+        ui.post { if (radaSan) rada.evaluateJavascript("window.rada&&$lenh", null) else radaCho.add(lenh) }
+    }
+
+    private fun sach(x: String) = x.replace("\\", "").replace("'", "").replace("\n", " ")
+
+    /** Nạp trang rada của dự án: mọi điểm theo toạ độ, màu theo lần kiểm trước. */
+    private fun napRada() {
+        radaSan = false
+        radaCho.clear()
+        try {
+            val f = core.callAttr("tuxa_rada", ma).toString()
+            rada.loadUrl(android.net.Uri.fromFile(File(f)).toString())
+        } catch (e: Exception) { tienDo.text = "Không dựng được màn rada: ${e.message?.take(80)}" }
+    }
+
+    /** Đổ màu mọi điểm trên rada theo kết quả đang có. */
+    private fun dongBoRada() {
+        val ds = ketQua?.optJSONArray("diem") ?: return
+        val o = JSONObject()
+        for (i in 0 until ds.length()) { val p = ds.getJSONObject(i); o.put(p.optString("stt"), p.optString("muc")) }
+        js("rada.tatCa($o)")
+    }
+
+    /** Bấm một điểm trên rada → cuộn bảng chi tiết tới đúng thẻ của điểm đó. */
+    private fun cuonToi(stt: String) {
+        val v = khung.findViewWithTag<View>("diem_$stt")
+        if (v == null) { Toast.makeText(this, "Điểm $stt chưa có kết quả chi tiết — chờ quét xong", Toast.LENGTH_SHORT).show(); return }
+        cuonKq.post { cuonKq.smoothScrollTo(0, v.top) }
+        js("rada.chon('${sach(stt)}')")
+    }
     private val ui = Handler(Looper.getMainLooper())
     private var ma = ""
     private var tenDuAn = ""
@@ -176,9 +214,15 @@ class TuXaActivity : Activity() {
 
     inner class NhatKy {
         fun ghi(s: String) {
+            if (s.startsWith("RADA_BD ")) { js("rada.bd('${sach(s.substring(8).trim())}')"); return }
+            if (s.startsWith("RADA_KQ ")) {
+                val x = s.substring(8).trim()
+                js("rada.kq('${sach(x.substringBefore("|"))}','${sach(x.substringAfter("|", ""))}')"); return
+            }
             if (s.startsWith("TIEN_DO ")) {   // "TIEN_DO 27|Lượt 1: xong 3/11 điểm"
                 val pct = s.substring(8).substringBefore("|").trim().toIntOrNull() ?: return
                 val chu = s.substringAfter("|", "")
+                js("rada.tt($pct,'${sach(chu)}')")
                 ui.post {
                     thanhTienDo.visibility = if (pct >= 100) View.GONE else View.VISIBLE
                     chuTienDo.visibility = thanhTienDo.visibility
@@ -325,39 +369,83 @@ class TuXaActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         core = Python.getInstance().getModule("camlink_core")
+        // 2.10 — MÀN RADA: đầu trang tối + hàng nút gọn + bản đồ rada toàn tuyến; bảng chi tiết nằm bên dưới
         val goc = LinearLayout(this)
         goc.orientation = LinearLayout.VERTICAL
-        goc.setPadding(dp(14), dp(18), dp(14), dp(10))
         goc.setBackgroundColor(Color.parseColor("#EEF1F4"))
-        goc.addView(chu("Kiểm tra từ xa  ·  CamLink ${packageManager.getPackageInfo(packageName, 0).versionName}", 22f, true))
+        val dau = LinearLayout(this)
+        dau.orientation = LinearLayout.VERTICAL
+        dau.setBackgroundColor(Color.parseColor("#06121B"))
+        dau.setPadding(dp(14), dp(22), dp(14), dp(6))
+        val tieu = chu("Kiểm tra từ xa", 19f, true, "#E9FBF6")
+        dau.addView(tieu)
+        tenDa = chu("CamLink ${packageManager.getPackageInfo(packageName, 0).versionName}", 12f, mau = "#7FE3C8")
+        dau.addView(tenDa)
+        val cuonNut = android.widget.HorizontalScrollView(this)
+        cuonNut.isHorizontalScrollBarEnabled = false
         val hang = LinearLayout(this)
         hang.orientation = LinearLayout.HORIZONTAL
-        hang.addView(nut("🔄 Kiểm tra lại") { kiem() }.apply { setOnLongClickListener { kiem(false); true } }, LinearLayout.LayoutParams(0, -2, 1f))
-        hang.addView(nut("📤 Xuất Excel + gửi") { xuat() }, LinearLayout.LayoutParams(0, -2, 1f))
-        hang.addView(nut("📈 Theo dõi") { TheoDoi.danhSach(this) }, LinearLayout.LayoutParams(0, -2, 1f))
-        goc.addView(hang)
-        goc.addView(nut("📁 Chọn dự án / nạp file cấu hình") { chonDuAn() })
-        val hang2 = LinearLayout(this)
-        hang2.orientation = LinearLayout.HORIZONTAL
-        hang2.addView(nut("🖥 Màn hình giám sát") { moGiamSat() }, LinearLayout.LayoutParams(0, -2, 1f))
-        hang2.addView(nut("🗺 Bản đồ") { moBanDo() }, LinearLayout.LayoutParams(0, -2, 1f))
-        hang2.addView(nut("🔗 LiteMark") { liteMark() }, LinearLayout.LayoutParams(0, -2, 1f))
-        goc.addView(hang2)
+        hang.setPadding(0, dp(8), 0, dp(4))
+        fun vien(s: String, bam: () -> Unit): TextView {
+            val t = chu(s, 13f, true, "#B8FFF0")
+            val g = android.graphics.drawable.GradientDrawable()
+            g.setColor(Color.parseColor("#0B2230")); g.cornerRadius = dp(18).toFloat(); g.setStroke(dp(1), Color.parseColor("#16394B"))
+            t.background = g
+            t.setPadding(dp(13), dp(8), dp(13), dp(8))
+            t.setOnClickListener { bam() }
+            val lp = LinearLayout.LayoutParams(-2, -2); lp.rightMargin = dp(7)
+            hang.addView(t, lp)
+            return t
+        }
+        vien("🔄 Kiểm lại") { kiem() }.setOnLongClickListener { kiem(false); true }
+        vien("🖥 Giám sát") { moGiamSat() }
+        vien("📤 Xuất Excel") { xuat() }
+        vien("📈 Theo dõi") { TheoDoi.danhSach(this) }
+        vien("📁 Dự án") { chonDuAn() }
+        vien("🔗 LiteMark") { liteMark() }
+        vien("🗺 Bản đồ lớn") { moBanDo() }
+        cuonNut.addView(hang)
+        dau.addView(cuonNut)
+        goc.addView(dau)
+        rada = android.webkit.WebView(this)
+        rada.setBackgroundColor(Color.parseColor("#06121B"))
+        rada.settings.javaScriptEnabled = true
+        rada.settings.domStorageEnabled = true
+        rada.settings.allowFileAccess = true
+        rada.webViewClient = object : android.webkit.WebViewClient() {
+            override fun onPageFinished(view: android.webkit.WebView, url: String) {
+                radaSan = true
+                radaCho.forEach { view.evaluateJavascript("window.rada&&$it", null) }
+                radaCho.clear()
+            }
+            override fun shouldOverrideUrlLoading(view: android.webkit.WebView, req: android.webkit.WebResourceRequest): Boolean {
+                val u = req.url
+                if (u.scheme == "camlink" && u.host == "diem") { cuonToi(u.lastPathSegment ?: ""); return true }
+                if (u.scheme == "http" || u.scheme == "https") { moLink(u.toString()); return true }
+                return false
+            }
+        }
+        goc.addView(rada, LinearLayout.LayoutParams(-1, (resources.displayMetrics.heightPixels * 0.40).toInt()))
+        val duoi = LinearLayout(this)
+        duoi.orientation = LinearLayout.VERTICAL
+        duoi.setPadding(dp(12), dp(4), dp(12), dp(8))
         thanhTienDo = android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
         thanhTienDo.max = 100
         thanhTienDo.visibility = View.GONE
-        goc.addView(thanhTienDo, LinearLayout.LayoutParams(-1, dp(10)).apply { topMargin = dp(4) })
+        duoi.addView(thanhTienDo, LinearLayout.LayoutParams(-1, dp(8)).apply { topMargin = dp(2) })
         chuTienDo = chu("", 13f, true, "#0F5D8C")
         chuTienDo.visibility = View.GONE
-        goc.addView(chuTienDo)
-        tienDo = chu("", 13f, mau = "#0F5D8C")
-        tienDo.setPadding(dp(4), dp(4), dp(4), dp(4))
-        goc.addView(tienDo)
+        duoi.addView(chuTienDo)
+        tienDo = chu("", 12.5f, mau = "#0F5D8C")
+        tienDo.setPadding(dp(2), dp(3), dp(2), dp(3))
+        tienDo.maxLines = 2
+        duoi.addView(tienDo)
         khung = LinearLayout(this)
         khung.orientation = LinearLayout.VERTICAL
-        val cuon = ScrollView(this)
-        cuon.addView(khung)
-        goc.addView(cuon, LinearLayout.LayoutParams(-1, 0, 1f))
+        cuonKq = ScrollView(this)
+        cuonKq.addView(khung)
+        duoi.addView(cuonKq, LinearLayout.LayoutParams(-1, 0, 1f))
+        goc.addView(duoi, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(goc)
         if (intent.getBooleanExtra("mo_theo_doi", false)) ui.postDelayed({ TheoDoi.danhSach(this) }, 400)
         val nhanCt = intent.getStringExtra("nhan_ct")
@@ -526,6 +614,8 @@ class TuXaActivity : Activity() {
     private fun kiem(nhanh: Boolean = true) {
         if (ma.isEmpty() || dangChay) return
         dangChay = true
+        tenDa.text = "$tenDuAn · CamLink ${packageManager.getPackageInfo(packageName, 0).versionName}"
+        napRada()
         // 2.9.2 — hiện NGAY kết quả lần kiểm trước (không bắt chờ), việc kiểm lại chạy ở nền rồi tự cập nhật lên màn này
         val cuJson = try { core.callAttr("tuxa_gan_nhat", ma).toString() } catch (_: Exception) { "" }
         val lichSu = try { if (cuJson.isNotEmpty()) JSONObject(cuJson).takeIf { (it.optJSONArray("diem")?.length() ?: 0) > 0 } else null } catch (_: Exception) { null }
@@ -553,14 +643,15 @@ class TuXaActivity : Activity() {
                     val d0 = ketQua?.optInt("dat") ?: 0
                     ketQua = JSONObject(j)
                     veBang(if (co4G) "Đã kiểm tra qua 4G (như IOC gọi từ ngoài)" else "⚠ Không bật được 4G — đã kiểm tra qua WiFi; nếu đang ở trong WiFi của chính điểm, kết quả có thể sai")
-                    if (lichSu == null) moGiamSat()      // lần đầu chưa có lịch sử: giữ cách cũ, kiểm xong mở màn giám sát
-                    else {                              // đang xem lịch sử: cập nhật tại chỗ, giữ nguyên chỗ đang đọc, báo có gì đổi
+                    js("rada.xong('ĐÃ QUÉT XONG ${java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())}')")
+                    if (lichSu != null) {               // đang xem lịch sử: cập nhật tại chỗ, giữ nguyên chỗ đang đọc, báo có gì đổi (xem hình thì vào tab Giám sát)
                         cuon?.post { cuon.scrollTo(0, viTri) }
                         val d1 = ketQua?.optInt("dat") ?: 0
                         Toast.makeText(this, if (d1 == d0) "Đã kiểm lại: không đổi ($d1 cam đạt)" else "Đã kiểm lại: $d0 → $d1 cam đạt", Toast.LENGTH_LONG).show()
                     }
                 }
             } catch (e: Exception) {
+                js("rada.xong('KIỂM LẠI LỖI')")
                 ui.post { nk.ghi("✖ Lỗi kiểm tra: ${e.message}"); if (lichSu != null) tienDo.text = "✖ Kiểm lại lỗi — đang hiện kết quả lần ${lichSu.optString("luc")}" }
             } finally {
                 gan4G(false)
@@ -573,6 +664,7 @@ class TuXaActivity : Activity() {
         val k = ketQua ?: return
         khung.removeAllViews()
         tienDo.text = ghiChu
+        dongBoRada()
         // tổng
         val tong = k.optInt("tong_cam")
         val dat = k.optInt("dat")

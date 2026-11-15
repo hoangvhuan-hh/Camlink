@@ -1493,3 +1493,16 @@ def xoa_rieng(ma, stt):
     da["diem"][str(stt)].pop("rieng", None)
     _ghi_du_an(ma, da)
     return ""
+
+
+# ------------------------------------------------------------------ 2.10: màn rada của Kiểm tra từ xa
+def tuxa_rada(ma):
+    """Dựng trang rada (bản đồ toàn tuyến, màu theo lần kiểm trước). Trả đường dẫn file HTML."""
+    import camlink_tuxa as T
+    ls = {}
+    try:
+        with open(T._f_lich_su(GOC, ma), encoding="utf-8") as fh:
+            ls = json.load(fh)
+    except (OSError, ValueError):
+        pass
+    return T.rada_html(_doc_du_an(ma), ma, ls, GOC)
