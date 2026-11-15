@@ -1342,6 +1342,7 @@ def tom_tat_du_an():
                     "litemark": bool(da.get("kho_ddns") is not None and "kho_ddns" in da)})
     cd = C.doc_cai_dat()
     return json.dumps({"du_an": out, "cam_user": cd.get("cam_user", "admin"), "co_cam_pw": bool(cd.get("cam_pw")),
+                       "wifi_ten": cd.get("wifi_ten", ""),
                        "modem_user": cd.get("modem_user", "admin"),
                        "modem_mac_dinh": cd.get("modem_user", "admin") == "admin" and cd.get("modem_pw", "admin") == "admin"}, ensure_ascii=False)
 
@@ -1390,3 +1391,31 @@ def tu_dong_xet(lat, lng):
     else:
         r["ok"] = True
     return json.dumps(r, ensure_ascii=False)
+
+
+# ------------------------------------------------------------------ 2.6: WiFi modem dùng chung — app tự vào WiFi tại điểm
+def lay_wifi():
+    """[tên WiFi (kết thúc bằng * = mỗi modem khác phần đuôi), mật khẩu] — nhập một lần cho cả hệ thống."""
+    cd = C.doc_cai_dat()
+    return [cd.get("wifi_ten", ""), cd.get("wifi_mk", "")]
+
+
+def luu_wifi(ten, mk):
+    ten, mk = str(ten or "").strip(), str(mk or "")
+    if ten and mk and len(mk) < 8:
+        return "Mật khẩu WiFi phải từ 8 ký tự (để trống nếu WiFi không đặt mật khẩu)."
+    if ten.rstrip("*") == "" and ten:
+        return "Nhập ít nhất phần đầu của tên WiFi trước dấu *."
+    cd = C.doc_cai_dat()
+    cd.update(wifi_ten=ten, wifi_mk=mk)
+    C.ghi_cai_dat(cd)
+    return ""
+
+
+def wifi_khop(ssid):
+    """Tên WiFi điện thoại đang vào có phải WiFi modem của hệ thống không."""
+    ten = C.doc_cai_dat().get("wifi_ten", "")
+    ssid = str(ssid or "").strip('"')
+    if not ten or not ssid:
+        return False
+    return ssid.startswith(ten[:-1]) if ten.endswith("*") else ssid == ten
