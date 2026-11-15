@@ -168,6 +168,31 @@ def _bam(s):
     return hashlib.sha256(s.encode()).hexdigest()
 
 
+SAI_TOI_DA, KHOA_GIAY = 5, 300      # nhập sai PIN 5 lần liên tiếp → khoá mở khoá 5 phút
+
+
+def kiem_pin(pin):
+    """Mở khoá màn Quản trị: PIN phải ĐÚNG (giải được khoá két). Sai 5 lần liên tiếp thì khoá 5 phút. Trả '' nếu đúng, hoặc câu báo."""
+    tt = _doc("mo_khoa.json", {"sai": 0, "khoa_den": 0})
+    con = int(tt.get("khoa_den", 0) - time.time())
+    if con > 0:
+        return f"Đã nhập sai {SAI_TOI_DA} lần — khoá mở khoá thêm {con // 60 + 1} phút."
+    try:
+        _lay_khoa_dl(pin=str(pin or ""))
+    except Exception:
+        tt["sai"] = int(tt.get("sai", 0)) + 1
+        if tt["sai"] >= SAI_TOI_DA:
+            tt = {"sai": 0, "khoa_den": time.time() + KHOA_GIAY}
+            _ghi("mo_khoa.json", tt)
+            _nhat_ky("?", KHONG, "mo_khoa_sai_bi_khoa", "")
+            return f"Sai PIN {SAI_TOI_DA} lần liên tiếp — khoá mở khoá {KHOA_GIAY // 60} phút."
+        _ghi("mo_khoa.json", tt)
+        _nhat_ky("?", KHONG, "mo_khoa_sai", "")
+        return f"Sai PIN (còn {SAI_TOI_DA - tt['sai']} lần thử)."
+    _ghi("mo_khoa.json", {"sai": 0, "khoa_den": 0})
+    return ""
+
+
 def cap_ma_mot_lan(pin, pham_vi, gio=24):
     """Chủ sinh MÃ MỘT LẦN cho thợ (6 số). pham_vi: 'ma_du_an' hoặc 'ma_du_an:stt'. Thợ nhập mã để xin phiên."""
     _lay_khoa_dl(pin=pin)
@@ -227,6 +252,8 @@ def _phien_hop_le(thiet_bi_id, pham_vi):
     for p in _doc("phien.json", {"ds": []})["ds"]:
         if p.get("thiet_bi") != thiet_bi_id or p.get("thu_hoi") or time.time() >= p.get("het_luc", 0):
             continue
+        if not pham_vi:      # hỏi chung "máy này có phiên thợ nào còn sống không" (để hiện màn hình) — quyền làm việc vẫn xét theo từng phạm vi
+            return True
         pv = p.get("pham_vi", "")
         if pham_vi == pv or pham_vi.startswith(pv + ":") or pv == "*":
             return True

@@ -1099,6 +1099,11 @@ def qt_tao_tai_khoan(pin, thiet_bi_id, ten_may="Máy chủ"):
     return QT.tao_tai_khoan(pin, thiet_bi_id, ten_may)
 
 
+def qt_kiem_pin(pin):
+    import camlink_quantri as QT
+    return QT.kiem_pin(pin)
+
+
 def qt_quyen(thiet_bi_id, pham_vi=""):
     import camlink_quantri as QT
     return QT.quyen(thiet_bi_id, pham_vi)

@@ -98,7 +98,8 @@ class QuanTriActivity : Activity() {
         }
         if (pin == null) {
             nut("🔓 Mở khoá (nhập PIN)") { hoi("PIN chủ", "PIN", true) { p ->
-                try { core.callAttr("qt_xem_mat_khau", may(), "_", "_", p) } catch (_: Exception) {}
+                val kq = try { core.callAttr("qt_kiem_pin", p).toString() } catch (e: Exception) { "Không kiểm được PIN: ${e.message?.take(80)}" }
+                if (kq.isNotEmpty()) { bao(kq); return@hoi }      // PIN sai thì KHÔNG mở khoá
                 pin = p; Toast.makeText(this, "Đã mở khoá", Toast.LENGTH_SHORT).show(); ve() } }
             return
         }
