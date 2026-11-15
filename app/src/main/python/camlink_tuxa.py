@@ -79,6 +79,7 @@ def _ket(cam, muc, nguyen_nhan, viec, sua=None, nhan=""):
 
 def kiem_diem(stt, d, cd, anh_dir, ma, ho_so=None):
     dom = d["domain"]
+    cd = C.cd_diem(d, cd)      # user/pass nhập riêng cho điểm được ưu tiên
     cu, cp = cd.get("cam_user", "admin"), cd.get("cam_pw", "")
     so_file = max(int(d.get("so") or 0), 1)
     if d.get("so_thuc"):
@@ -484,7 +485,7 @@ def tu_sua_diem(p, d, cd, anh_dir, ma, ho_so, log):
             ok, tb = sua(d, c["so"], v, cd, log)
             nhat_ky.setdefault(c["http"], []).append(f"{TEN_SUA[v]} → {'XONG' if ok else 'CHƯA ĐƯỢC'}: {tb}")
     moi = kiem_diem(p["stt"], d, cd, anh_dir, ma, ho_so)
-    cu, cp = cd.get("cam_user", "admin"), cd.get("cam_pw", "")
+    cu, cp = C.cd_diem(d, cd).get("cam_user", "admin"), C.cd_diem(d, cd).get("cam_pw", "")
     sua_cau_hinh = False
     for c in moi["cam"]:
         if c["http"] not in nhat_ky or not c.get("cau_hinh"):
@@ -971,6 +972,7 @@ TEN_SUA = {"dat_port_http": "Đặt lại port web/video đúng cấu hình", "k
 def sua(d, so, viec, cd, log=print, gw_dung=""):
     """Trả (ok, thông báo). Modem: cần lệnh theo model modem (chờ mẫu VNPT)."""
     dom = d["domain"]
+    cd = C.cd_diem(d, cd)
     i = int(so) - 1
     http, rtsp = C.HTTP[i], C.RTSP[i]
     ov = C.Onvif(dom, http, cd.get("cam_user", "admin"), cd.get("cam_pw", ""))

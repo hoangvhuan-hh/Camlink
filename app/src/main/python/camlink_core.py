@@ -165,6 +165,8 @@ def nhap_excel(duong_dan, ten_file, log):
                 v["goc"] = {"so": v.get("so"), "bs": v.get("bs")}
                 v["so"], v["bs"] = dc.get("so", v.get("so")), dc.get("bs", v.get("bs"))
                 v["hieu_chinh"] = dc.get("hieu_chinh", [])
+            if dc.get("rieng"):      # nạp lại file không làm mất user/pass riêng đã nhập cho điểm
+                v["rieng"] = dc["rieng"]
         _ghi_du_an(ma, {"ten": ten, "diem": ds, "toa_do": toa_do, "da_xong": cu.get("da_xong", {}),
                         "ho_so": cu.get("ho_so", {})})
         canh = _diem_trung_vi_tri(ma, toa_do)
@@ -256,8 +258,10 @@ def chay(ma, stt, may_ip, gw, log):
     C.NHAT_KY.clear()
     C.CAN_MAU.clear()
     log(f"Dự án: {da['ten']}")
-    cd = C.doc_cai_dat()
-    C.chay(stt, cd["cam_user"], cd["cam_pw"], cd["modem_user"], cd["modem_pw"])
+    cd = C.cd_diem(da["diem"][stt], C.doc_cai_dat())      # user/pass nhập riêng cho điểm được ưu tiên hơn mặc định
+    if da["diem"][stt].get("rieng"):
+        log("Điểm này dùng user/pass RIÊNG do người dùng nhập (mặc định của hệ thống giữ nguyên).")
+    C.chay(stt, cd["cam_user"], cd["cam_pw"], cd.get("modem_user", "admin"), cd.get("modem_pw", "admin"))
     if any("ĐẠT" in l for l in C.NHAT_KY):
         da.setdefault("da_xong", {})[stt] = time.strftime("%d/%m %H:%M")
     if C.KQ_CUOI.get("stt") == stt:   # hồ sơ điểm: để sau này kiểm tra / sửa từ xa
@@ -1339,6 +1343,7 @@ def tom_tat_du_an():
                     "ten_mien": sum(1 for v in diem.values() if v.get("domain")),
                     "tk_ddns": sum(1 for v in diem.values() if v.get("domain") and v.get("u") and v.get("p")),
                     "da_xong": sum(1 for k in diem if da.get("da_xong", {}).get(k)),
+                    "rieng": sum(1 for v in diem.values() if v.get("rieng")),
                     "litemark": bool(da.get("kho_ddns") is not None and "kho_ddns" in da)})
     cd = C.doc_cai_dat()
     return json.dumps({"du_an": out, "cam_user": cd.get("cam_user", "admin"), "co_cam_pw": bool(cd.get("cam_pw")),
@@ -1412,10 +1417,61 @@ def luu_wifi(ten, mk):
     return ""
 
 
-def wifi_khop(ssid):
-    """Tên WiFi điện thoại đang vào có phải WiFi modem của hệ thống không."""
-    ten = C.doc_cai_dat().get("wifi_ten", "")
+def wifi_khop(ssid, ten=None):
+    """Tên WiFi điện thoại đang vào có phải WiFi modem (mặc định, hoặc tên truyền vào) không."""
+    ten = C.doc_cai_dat().get("wifi_ten", "") if ten is None else str(ten)
     ssid = str(ssid or "").strip('"')
     if not ten or not ssid:
         return False
     return ssid.startswith(ten[:-1]) if ten.endswith("*") else ssid == ten
+
+
+# ------------------------------------------------------------------ 2.7: user/pass RIÊNG theo điểm — ưu tiên hơn mặc định, không đổi mặc định
+def lay_tat_ca_mac_dinh():
+    """6 ô mặc định cả hệ thống: user cam, pass cam, user modem, pass modem, tên WiFi, mật khẩu WiFi."""
+    return lay_cai_dat() + lay_wifi()
+
+
+def luu_tat_ca_mac_dinh(cu, cp, mu, mp, wt, wm):
+    loi = luu_wifi(wt, wm)
+    if loi:
+        return loi
+    luu_cai_dat(cu, cp, mu, mp)
+    return ""
+
+
+def lay_rieng(ma, stt):
+    """Giá trị ĐANG DÙNG cho điểm (riêng nếu có, không thì mặc định), cùng thứ tự 6 ô, + ô thứ 7 = '1' nếu điểm có nhập riêng."""
+    d = _doc_du_an(ma)["diem"][str(stt)]
+    cd = C.cd_diem(d, C.doc_cai_dat())
+    return [cd.get("cam_user", "admin"), cd.get("cam_pw", ""), cd.get("modem_user", "admin"), cd.get("modem_pw", "admin"),
+            cd.get("wifi_ten", ""), cd.get("wifi_mk", ""), "1" if d.get("rieng") else ""]
+
+
+def luu_rieng(ma, stt, cu, cp, mu, mp, wt, wm):
+    """Lưu user/pass người dùng nhập cho RIÊNG điểm này. Ô nào trùng mặc định thì không lưu (điểm tiếp tục theo mặc định).
+    Mặc định của cả hệ thống KHÔNG bị đổi. Trả '' nếu xong, hoặc câu báo lỗi."""
+    wt, wm = str(wt or "").strip(), str(wm or "")
+    if wt and wm and len(wm) < 8:
+        return "Mật khẩu WiFi phải từ 8 ký tự (để trống nếu WiFi không đặt mật khẩu)."
+    da = _doc_du_an(ma)
+    d = da["diem"][str(stt)]
+    cd = C.doc_cai_dat()
+    mac = {"cam_user": cd.get("cam_user", "admin"), "cam_pw": cd.get("cam_pw", ""), "modem_user": cd.get("modem_user", "admin"),
+           "modem_pw": cd.get("modem_pw", "admin"), "wifi_ten": cd.get("wifi_ten", ""), "wifi_mk": cd.get("wifi_mk", "")}
+    moi = {"cam_user": str(cu or "").strip(), "cam_pw": str(cp or ""), "modem_user": str(mu or "").strip(), "modem_pw": str(mp or ""),
+           "wifi_ten": wt, "wifi_mk": wm}
+    rieng = {k: v for k, v in moi.items() if v != "" and v != mac[k]}
+    if rieng:
+        d["rieng"] = rieng
+    else:
+        d.pop("rieng", None)
+    _ghi_du_an(ma, da)
+    return ""
+
+
+def xoa_rieng(ma, stt):
+    da = _doc_du_an(ma)
+    da["diem"][str(stt)].pop("rieng", None)
+    _ghi_du_an(ma, da)
+    return ""

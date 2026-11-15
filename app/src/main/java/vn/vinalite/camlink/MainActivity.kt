@@ -254,12 +254,15 @@ class MainActivity : Activity() {
             else -> Pair("✖ LỖI", DO)
         }
         datTrangThai("$nhan — $viec", mau)
-        AlertDialog.Builder(this)
+        val b = AlertDialog.Builder(this)
             .setTitle("$nhan\n$viec")
             .setMessage(kq[1])
             .setPositiveButton("Gửi kết quả") { _, _ -> guiKetQua() }
             .setNegativeButton("Đóng", null)
-            .show()
+        val dc = diemCuoi
+        if (kq[0] != "DAT" && dc != null && viec.startsWith("CÀI TẠI CHỖ"))      // điểm này user/pass thực tế khác mặc định → nhập riêng rồi cài lại
+            b.setNeutralButton("User/pass riêng điểm này") { _, _ -> hopUserPass(dc.first, dc.second) { caiLai(dc.first, dc.second) } }
+        b.show()
     }
 
     // ---------------- Nhập file khảo sát ----------------
@@ -297,12 +300,19 @@ class MainActivity : Activity() {
     }
 
     // ---------------- User / pass ----------------
-    private fun hopCaiDat() {
-        val cu = core.callAttr("lay_cai_dat").asList().map { it.toString() }
+    private fun hopCaiDat() = hopUserPass(null, null)
+
+    /** Một hộp duy nhất cho user/pass cam, modem và WiFi modem.
+     *  ma == null: MẶC ĐỊNH cả hệ thống. Có ma/stt: nhập RIÊNG cho điểm đó — được ưu tiên, mặc định giữ nguyên. */
+    private fun hopUserPass(ma: String?, stt: String?, loi: String = "", nhap: List<String>? = null, xong: (() -> Unit)? = null) {
+        val rieng = ma != null && stt != null
+        val cu = nhap ?: try {
+            (if (rieng) core.callAttr("lay_rieng", ma, stt) else core.callAttr("lay_tat_ca_mac_dinh")).asList().map { it.toString() }
+        } catch (_: Exception) { core.callAttr("lay_cai_dat").asList().map { it.toString() } + listOf("", "") }
         val hop = LinearLayout(this)
         hop.orientation = LinearLayout.VERTICAL
         hop.setPadding(dp(20), dp(8), dp(20), 0)
-        val nhan = listOf("User cam", "Pass cam", "User modem", "Pass modem")
+        val nhan = listOf("User cam", "Pass cam", "User modem", "Pass modem", "Tên WiFi", "Pass WiFi")
         val o = nhan.mapIndexed { i, n ->
             val dong = LinearLayout(this)
             dong.orientation = LinearLayout.HORIZONTAL
@@ -314,24 +324,39 @@ class MainActivity : Activity() {
             tieuDeO.setTextColor(Color.parseColor("#0F5D8C"))
             dong.addView(tieuDeO, LinearLayout.LayoutParams(dp(112), LinearLayout.LayoutParams.WRAP_CONTENT))
             val e = EditText(this)
-            e.hint = "Nhập $n"
+            e.hint = if (i == 4) "WiFi của modem" else "Nhập $n"
             e.setText(cu.getOrElse(i) { "" })
             e.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
             dong.addView(e, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             hop.addView(dong)
             e
         }
-        AlertDialog.Builder(this)
-            .setTitle("Nhập một lần, app nhớ cho mọi dự án")
+        val tenDiem = if (rieng) core.callAttr("ten_diem", ma, stt).toString() else ""
+        val b = AlertDialog.Builder(this)
+            .setTitle(if (rieng) "Riêng cho điểm: $tenDiem" else "Mặc định cho cả hệ thống")
+            .setMessage(if (loi.isNotEmpty()) "⚠ $loi"
+                else if (rieng) "Chỉ áp dụng cho điểm này và được ưu tiên khi cài. Mặc định của cả hệ thống giữ nguyên."
+                else "Nhập một lần, dùng cho mọi điểm. Điểm nào thực tế khác thì tới nơi app sẽ hỏi nhập riêng cho điểm đó.")
             .setView(hop)
-            .setPositiveButton("Lưu") { _, _ ->
-                core.callAttr("luu_cai_dat", o[0].text.toString(), o[1].text.toString(),
-                    o[2].text.toString(), o[3].text.toString())
-                nhatKy.ghi("✔ Đã lưu user/pass.")
+            .setPositiveButton(if (rieng) "Lưu cho điểm này" else "Lưu") { _, _ ->
+                val v = o.map { it.text.toString() }
+                val kq = try {
+                    (if (rieng) core.callAttr("luu_rieng", ma, stt, v[0], v[1], v[2], v[3], v[4], v[5])
+                    else core.callAttr("luu_tat_ca_mac_dinh", v[0], v[1], v[2], v[3], v[4], v[5])).toString()
+                } catch (e: Exception) { e.message ?: "Không lưu được" }
+                if (kq.isNotEmpty()) { hopUserPass(ma, stt, kq, v, xong); return@setPositiveButton }
+                nhatKy.ghi(if (rieng) "✔ Đã lưu user/pass RIÊNG cho $tenDiem (mặc định giữ nguyên)." else "✔ Đã lưu user/pass mặc định.")
+                daXinWifi.clear()
                 capNhatTieuDe()
+                if (xong != null) { xong() } else { if (!rieng) xetTuDong() }
             }
             .setNegativeButton("Huỷ", null)
-            .show()
+        if (rieng && cu.getOrElse(6) { "" } == "1") b.setNeutralButton("Về mặc định") { _, _ ->
+            core.callAttr("xoa_rieng", ma, stt)
+            nhatKy.ghi("Điểm $tenDiem trở về dùng user/pass mặc định.")
+            capNhatTieuDe()
+        }
+        b.show()
     }
 
     // ---------------- Chạy ----------------
@@ -400,50 +425,64 @@ class MainActivity : Activity() {
         mangRieng = null
     }
 
+    /** WiFi dùng cho điểm: phần nhập riêng của điểm được ưu tiên, không có thì lấy mặc định. */
+    private fun wifiDiem(ma: String, stt: String): Pair<String, String> = try {
+        val r = core.callAttr("lay_rieng", ma, stt).asList().map { it.toString() }
+        Pair(r[4], r[5])
+    } catch (_: Exception) { wifiChung() }
+
     private fun xetTuDong() {
         if (!dangHien || !batTuDong() || dangChay.isNotEmpty() || dangXetTuDong || hopTuDong != null || cbRieng != null) return
         if (!coQuyenViTri()) return
+        if (!core.callAttr("co_du_lieu").toBoolean()) return
         val (may, gw) = mangWifi()
-        val (tenWifi, _) = wifiChung()
-        val vuaVaoTay = choWifiTay != null && gw.isNotEmpty() && gw != choWifiTay      // thợ vừa tự vào WiFi sau khi app báo
-        val dangOModem = may.isNotEmpty() && gw.isNotEmpty() &&
-            (tenWifi.isEmpty() || vuaVaoTay || try { core.callAttr("wifi_khop", ssidDangVao()).toBoolean() } catch (_: Exception) { false })
-        if (vuaVaoTay) choWifiTay = null
-        val tuVao = !dangOModem && tenWifi.isNotEmpty() && android.os.Build.VERSION.SDK_INT >= 29      // chưa ở WiFi modem → app tự vào
-        if (!dangOModem && !tuVao) return
-        val khoa = if (dangOModem) "$gw|$may" else "tu-vao"
-        if (dangOModem && !daXetTuDong.add(khoa)) return
+        val coWifi = may.isNotEmpty() && gw.isNotEmpty()
+        if (!coWifi && wifiChung().first.isEmpty()) return      // không ở WiFi nào và chưa nhập WiFi mặc định → chờ thợ vào WiFi
         dangXetTuDong = true
         layViTri { vt ->
             dangXetTuDong = false
-            if (vt == null) { daXetTuDong.remove(khoa); return@layViTri }
+            if (vt == null) return@layViTri
             viTriCuoi = vt
             val r = try { org.json.JSONObject(core.callAttr("tu_dong_xet", vt.latitude, vt.longitude).toString()) } catch (_: Exception) { return@layViTri }
             val ma = r.optString("ma"); val stt = r.optString("stt")
-            if (tuVao && ma.isNotEmpty() && !daXinWifi.add("$ma|$stt")) return@layViTri      // mỗi điểm chỉ tự xét một lần mỗi lượt mở app
+            if (ma.isEmpty() || dangChay.isNotEmpty() || !dangHien) return@layViTri
+            val diem = "$ma|$stt"
             if (!r.optBoolean("ok")) {
                 val daCai = r.optString("da_cai")
-                if (daCai.isNotEmpty() && dangChay.isEmpty()) {      // tới điểm đã cài: báo đã cài + tự mở hình các cam, không cài lại
+                if (daCai.isNotEmpty()) {      // tới điểm đã cài: báo đã cài + tự mở hình các cam, không cài lại
+                    if (!daXetTuDong.add("da-cai|$diem")) return@layViTri
                     val ten = core.callAttr("ten_diem", ma, stt).toString()
                     log.text = ""
                     nhatKy.ghi("✔ $ten — ĐÃ CÀI lúc $daCai. Đang lấy hình các cam qua tên miền…")
                     chayNen("ĐÃ CÀI $daCai · $ten — đang lấy hình", coTomTat = false) { bangChung(ma, stt, thuLai = false); null }
                     return@layViTri
                 }
-                if (ma.isNotEmpty() && r.optInt("m", 9999) <= 400)
+                if (r.optInt("m", 9999) <= 400 && daXetTuDong.add("ly-do|$diem"))
                     datTrangThai("Tới gần điểm nhưng chưa tự cài: ${r.optString("ly_do")}", XAM)
                 return@layViTri
             }
-            if (dangChay.isNotEmpty() || !dangHien) { daXetTuDong.remove(khoa); daXinWifi.remove("$ma|$stt"); return@layViTri }
             val ten = core.callAttr("ten_diem", ma, stt).toString()
-            if (tuVao) vaoWifiRoiCai(ma, stt, ten, r.optInt("m")) else demNguocCai(ma, stt, ten, r.optInt("m"), gw)
+            val (tenWifi, _) = wifiDiem(ma, stt)
+            val vuaVaoTay = choWifiTay != null && coWifi && gw != choWifiTay      // thợ vừa tự vào WiFi sau khi app báo
+            val dungWifi = coWifi && (tenWifi.isEmpty() || vuaVaoTay ||
+                try { core.callAttr("wifi_khop", ssidDangVao(), tenWifi).toBoolean() } catch (_: Exception) { false })
+            when {
+                dungWifi -> {
+                    if (vuaVaoTay) choWifiTay = null
+                    if (daXetTuDong.add("$gw|$may|$diem")) demNguocCai(ma, stt, ten, r.optInt("m"), gw)
+                }
+                tenWifi.isNotEmpty() && android.os.Build.VERSION.SDK_INT >= 29 -> {
+                    if (daXinWifi.add(diem)) vaoWifiRoiCai(ma, stt, ten, r.optInt("m"))      // mỗi điểm tự thử MỘT lần; thử lại chỉ khi người dùng nhập lại
+                }
+                else -> if (daXetTuDong.add("can-wifi|$diem")) datTrangThai("⚠ Vui lòng kết nối WiFi\n$ten — chưa cài", VANG)
+            }
         }
     }
 
     /** Tự vào WiFi modem (tên + mật khẩu dùng chung đã lưu) rồi cài. Kết nối này chỉ app dùng; cài xong tự nhả. */
     private fun vaoWifiRoiCai(ma: String, stt: String, ten: String, m: Int) {
         if (android.os.Build.VERSION.SDK_INT < 29) return
-        val (tenWifi, mk) = wifiChung()
+        val (tenWifi, mk) = wifiDiem(ma, stt)
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val b = android.net.wifi.WifiNetworkSpecifier.Builder()
         if (tenWifi.endsWith("*")) b.setSsidPattern(android.os.PatternMatcher(tenWifi.dropLast(1), android.os.PatternMatcher.PATTERN_PREFIX))
@@ -453,8 +492,8 @@ class MainActivity : Activity() {
             .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
             .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             .setNetworkSpecifier(b.build()).build()
-        datTrangThai("📶 Đang vào WiFi modem «$tenWifi»\n$ten · cách $m m", LAM)
-        nhatKy.ghi("Tới $ten (GPS cách $m m) → tự vào WiFi modem «$tenWifi»…")
+        datTrangThai("📶 Đang vào WiFi modem «$tenWifi»\n$ten", LAM)
+        nhatKy.ghi("Tới $ten → tự vào WiFi modem «$tenWifi» (thử 30 giây)…")
         val cb = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: android.net.Network) {
                 ui.postDelayed({
@@ -469,15 +508,7 @@ class MainActivity : Activity() {
                 ui.post {
                     if (cbRieng !== this) return@post
                     thaWifiRieng()
-                    choWifiTay = mangWifi().second      // thử đúng MỘT lần 30 giây rồi dừng — không tự thử lại
-                    datTrangThai("⚠ Vui lòng kết nối WiFi\n$ten — chưa cài", VANG)
-                    nhatKy.ghi("⚠ Sau 30 giây không vào được WiFi «$tenWifi» ở $ten (khác tên hoặc khác mật khẩu mặc định). Chờ kết nối WiFi bằng tay.")
-                    AlertDialog.Builder(this@MainActivity)
-                        .setTitle("Vui lòng kết nối WiFi")
-                        .setMessage("$ten\n\nApp không vào được WiFi mặc định «$tenWifi» sau 30 giây — điểm này WiFi khác tên hoặc khác mật khẩu.\n\nHãy kết nối WiFi modem của điểm này bằng tay. Kết nối xong quay lại app, app tự cài tiếp.")
-                        .setPositiveButton("Mở cài đặt WiFi") { _, _ -> runCatching { startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)) } }
-                        .setNegativeButton("Đóng", null)
-                        .show()
+                    baoWifiKhac(ma, stt, ten, m, tenWifi)
                 }
             }
             override fun onLost(network: android.net.Network) {
@@ -487,16 +518,39 @@ class MainActivity : Activity() {
         cbRieng = cb
         try { cm.requestNetwork(yc, cb, 30_000) } catch (e: Exception) {
             thaWifiRieng()
-            choWifiTay = mangWifi().second
-            datTrangThai("⚠ Vui lòng kết nối WiFi\n$ten — chưa cài", VANG)
+            baoWifiKhac(ma, stt, ten, m, tenWifi)
         }
+    }
+
+    /** Thử WiFi 30 giây không vào được → DỪNG (không tự thử lại), cảnh báo, để người dùng nhập lại riêng cho điểm hoặc tự vào WiFi. */
+    private fun baoWifiKhac(ma: String, stt: String, ten: String, m: Int, tenWifi: String) {
+        choWifiTay = mangWifi().second
+        datTrangThai("⚠ Vui lòng kết nối WiFi\n$ten — chưa cài", VANG)
+        nhatKy.ghi("⚠ Sau 30 giây không vào được WiFi «$tenWifi» ở $ten (khác tên hoặc khác mật khẩu). Đã dừng, chờ người dùng.")
+        AlertDialog.Builder(this)
+            .setTitle("Vui lòng kết nối WiFi")
+            .setMessage("$ten\n\nApp không vào được WiFi «$tenWifi» sau 30 giây — điểm này WiFi khác tên hoặc khác mật khẩu.\n\n• Nhập lại WiFi cho riêng điểm này: app vào WiFi đó và cài tiếp. Mặc định của cả hệ thống giữ nguyên.\n• Hoặc tự kết nối WiFi modem bằng tay rồi quay lại app, app tự cài tiếp.")
+            .setPositiveButton("Nhập lại cho điểm này") { _, _ ->
+                hopUserPass(ma, stt) { choWifiTay = null; vaoWifiRoiCai(ma, stt, ten, m) }
+            }
+            .setNeutralButton("Mở cài đặt WiFi") { _, _ -> runCatching { startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)) } }
+            .setNegativeButton("Đóng", null)
+            .show()
+    }
+
+    /** Cài lại điểm sau khi người dùng nhập user/pass riêng: chưa ở WiFi thì app tự vào WiFi của điểm trước. */
+    private fun caiLai(ma: String, stt: String) {
+        val ten = core.callAttr("ten_diem", ma, stt).toString()
+        if (mangWifi().first.isEmpty() && wifiDiem(ma, stt).first.isNotEmpty() && android.os.Build.VERSION.SDK_INT >= 29 && cbRieng == null)
+            vaoWifiRoiCai(ma, stt, ten, -1)
+        else chayDiem(ma, stt, ten)
     }
 
     private fun demNguocCai(ma: String, stt: String, ten: String, m: Int, gw: String) {
         var con = 8
         val hop = AlertDialog.Builder(this)
             .setTitle("Tự cài sau $con giây")
-            .setMessage("$ten\nCách điểm $m m · WiFi modem $gw\n\nApp tự tìm cam, đặt port, IP, DDNS và mở port modem theo file dự án.")
+            .setMessage("$ten\n" + (if (m >= 0) "Cách điểm $m m · " else "") + "WiFi modem $gw\n\nApp tự tìm cam, đặt port, IP, DDNS và mở port modem theo file dự án.")
             .setPositiveButton("Cài ngay", null)
             .setNegativeButton("Huỷ", null)
             .setCancelable(false)
@@ -518,33 +572,6 @@ class MainActivity : Activity() {
         }
         hop.show()
         ui.postDelayed(dem, 1000)
-    }
-
-    /** Nhập một lần tên + mật khẩu WiFi modem dùng chung cho cả hệ thống. */
-    private fun hopWifi(loi: String = "", cu: List<String>? = null) {
-        val w = cu ?: wifiChung().toList()
-        val hop = LinearLayout(this)
-        hop.orientation = LinearLayout.VERTICAL
-        hop.setPadding(dp(20), dp(8), dp(20), 0)
-        val o = listOf("Tên WiFi modem (vd: CAMERA_XA hoặc VNPT_*)", "Mật khẩu WiFi").mapIndexed { i, g ->
-            val e = EditText(this)
-            e.hint = g
-            e.setText(w[i])
-            e.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
-            hop.addView(e)
-            e
-        }
-        AlertDialog.Builder(this)
-            .setTitle("WiFi modem dùng chung")
-            .setMessage(if (loi.isNotEmpty()) "⚠ $loi" else "Nhập một lần. Tới điểm app tự vào WiFi này rồi tự cài.\nMỗi modem tên WiFi khác phần đuôi thì gõ phần đầu rồi thêm dấu * (máy sẽ hỏi chọn một lần).\nĐể trống tên = tắt tự vào WiFi.")
-            .setView(hop)
-            .setPositiveButton("Lưu") { _, _ ->
-                val v = o.map { it.text.toString() }
-                val kq = core.callAttr("luu_wifi", v[0], v[1]).toString()
-                if (kq.isNotEmpty()) hopWifi(kq, v) else { daXinWifi.clear(); lamMoiTrangChu(); xetTuDong() }
-            }
-            .setNegativeButton("Huỷ", null)
-            .show()
     }
 
     private fun coQuyenViTri() =
@@ -830,7 +857,10 @@ class MainActivity : Activity() {
         cm.bindProcessToNetwork(wifi)
     }
 
+    private var diemCuoi: Pair<String, String>? = null      // điểm vừa cài — để nhập user/pass riêng rồi cài lại khi chưa đạt
+
     private fun chayDiem(ma: String, stt: String, ten: String) {
+        diemCuoi = Pair(ma, stt)
         val (may, gw) = mangWifi()
         if (may.isEmpty()) {
             datTrangThai("✖ Chưa vào WiFi modem", DO)
@@ -1329,6 +1359,7 @@ class MainActivity : Activity() {
             dong(v, "Tên miền DDNS", du("ten_mien"), mau("ten_mien"))
             dong(v, "User/pass DDNS kèm tên miền", du("tk_ddns"), mau("tk_ddns"))
             if (d.optInt("toa_do") < n) v.addView(chu("Điểm thiếu toạ độ: tới nơi app sẽ hỏi chọn điểm bằng tay.", 12f, M_MO), lpDoc(tren = 6))
+            if (d.optInt("rieng") > 0) v.addView(chu("${d.optInt("rieng")} điểm đang dùng user/pass riêng (khác mặc định).", 12f, M_MO), lpDoc(tren = 6))
             if (d.optInt("ten_mien") < n) v.addView(chu("Điểm thiếu tên miền: lúc cài app hỏi nhập tên miền hoặc nạp file tên miền.", 12f, M_MO), lpDoc(tren = 4))
             t.addView(v, lpDoc(duoi = 10))
         }
@@ -1340,12 +1371,11 @@ class MainActivity : Activity() {
         dong(v, "Modem", q.optString("modem_user", "admin") + " / " + (if (q.optBoolean("modem_mac_dinh", true)) "admin (mặc định)" else "••••••"))
         dong(v, "DDNS", "theo từng dòng trong file")
         dong(v, "WiFi modem", q.optString("wifi_ten").ifEmpty { "chưa nhập — vào WiFi bằng tay" }, if (q.optString("wifi_ten").isEmpty()) M_MO else M_CHU)
-        v.addView(chu("Dùng chung cho mọi dự án, nhập một lần.", 12f, M_MO), lpDoc(tren = 6))
+        v.addView(chu("Dùng chung cho mọi điểm, nhập một lần. Điểm nào khác thì nhập riêng tại điểm — app ưu tiên phần nhập riêng, mặc định giữ nguyên.", 12f, M_MO), lpDoc(tren = 6))
         v.isClickable = true
         v.setOnClickListener { if (!ban()) hopCaiDat() }
         t.addView(v, lpDoc(duoi = 10))
-        t.addView(nutNho("🔑  Sửa user / pass") { hopCaiDat() }, lpDoc(duoi = 10))
-        t.addView(nutNho("📶  WiFi modem dùng chung") { hopWifi() }, lpDoc())
+        t.addView(nutNho("🔑  Sửa user / pass cam · modem · WiFi") { hopCaiDat() }, lpDoc())
 
         t.addView(nhan("3 · Tới điểm"))
         val c = the()

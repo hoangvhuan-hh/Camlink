@@ -597,6 +597,16 @@ def thu(cam_user="", cam_pw=""):
 
 
 # ------------------------------------------------------------------ cài đặt một lần + tự nhận điểm
+KHOA_RIENG = ("wifi_ten", "wifi_mk", "cam_user", "cam_pw", "modem_user", "modem_pw")
+
+
+def cd_diem(d, cd):
+    """User/pass dùng cho MỘT điểm: thứ người dùng nhập riêng cho điểm (d['rieng']) được ưu tiên, còn lại lấy mặc định. Không sửa mặc định."""
+    out = dict(cd or {})
+    out.update({k: v for k, v in ((d or {}).get("rieng") or {}).items() if k in KHOA_RIENG and v not in ("", None)})
+    return out
+
+
 def file_cai_dat():
     return os.path.join(thu_muc_ra(), "camlink_caidat.json")
 
