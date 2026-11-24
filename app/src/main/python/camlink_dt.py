@@ -366,6 +366,9 @@ def nen_tang(ip, port):
     ma, au, t = lay("/cgi-bin/magicBox.cgi?action=getDeviceType")
     if (ma == 401 and au) or t.startswith("type="):
         return "dahua"
+    ma, au, t = lay("/LAPI/V1.0/System/DeviceBasicInfo")
+    if "/LAPI/" in t:
+        return "unv"      # Uniview (LAPI) — chưa có lệnh DDNS, chờ mẫu thật
     return "khac"
 
 
@@ -615,11 +618,24 @@ def tu_thu_mau(cam_user, cam_pw):
 
 
 # ------------------------------------------------------------------ thu mẫu
+# Trang riêng của cam Uniview (UNV) — giao thức LAPI, chỉ ĐỌC (GET). Hãng khác trả 404, không ảnh hưởng.
+TRANG_UNV = ["/LAPI/V1.0/System/DeviceBasicInfo", "/LAPI/V1.0/System/DeviceInfo", "/LAPI/V1.0/System/Security/Activation",
+             "/LAPI/V1.0/Network/Interfaces", "/LAPI/V1.0/NetWork/Interfaces", "/LAPI/V1.0/Network/Ports", "/LAPI/V1.0/NetWork/Ports",
+             "/LAPI/V1.0/Network/DDNS", "/LAPI/V1.0/NetWork/DDNS", "/LAPI/V1.0/Network/DDNS/Capabilities", "/LAPI/V1.0/NetWork/DDNS/Capabilities",
+             "/LAPI/V1.0/Network/UPnP", "/LAPI/V1.0/NetWork/UPnP", "/LAPI/V1.0/System/Capabilities",
+             "/LAPI/V1.0/Channels/0/Media/Video/Streams/0/LiveStreamURL", "/index.htm", "/cgi-bin/main-cgi"]
+
+
 def thu(cam_user="", cam_pw=""):
     may = ip_may()
     gw = GW or ".".join(may.split(".")[:3]) + ".1"
     log(f"Quét mạng {gw} ...")
     tim = quet(gw.rsplit(".", 1)[0] + ".0/24", {may})
+    if not tim:
+        log(f"✖ Không thấy thiết bị nào trong mạng {gw.rsplit('.', 1)[0]}.x (đã thử port {', '.join(str(x) for x in PORT_QUET)}).")
+        log("  Kiểm tra: cam đã cấp nguồn và cắm dây vào modem chưa; điện thoại có đang ở đúng WiFi của modem đó không.")
+        return ""
+    log(f"Tìm thấy {len(tim)} thiết bị. Đang đọc từng thiết bị ...")
     zp = os.path.join(thu_muc_ra(), f"camlink_mau_{time.strftime('%Y%m%d_%H%M%S')}.zip")
     _cd = doc_cai_dat()
     tk_modem = (_cd.get("modem_user", "admin"), _cd.get("modem_pw", "admin"))
@@ -631,7 +647,7 @@ def thu(cam_user="", cam_pw=""):
                             "/upnpcfg.html", "/wancfg.html", "/login.html", "/login.asp", "/cgi-bin/login.asp", "/status.htm", "/index.asp",
                             "/cgi-bin/luci", "/html/index.html", "/js/main.js", "/getpage.gch?pid=1002"] if ip == gw else [])
             for p in ["/", "/ISAPI/System/deviceInfo", "/cgi-bin/magicBox.cgi?action=getDeviceType",
-                      "/onvif/device_service", "/doc/page/login.asp", "/rootDesc.xml", "/igd.xml"] + trang_modem:
+                      "/onvif/device_service", "/doc/page/login.asp", "/rootDesc.xml", "/igd.xml"] + (TRANG_UNV if ip != gw else []) + trang_modem:
                 try:
                     r = requests.get(goc + p, timeout=5, verify=False,
                                      auth=HTTPDigestAuth(cam_user, cam_pw) if cam_user and ip != gw else (tk_modem if ip == gw and p in trang_modem else None))

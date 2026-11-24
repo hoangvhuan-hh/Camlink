@@ -80,6 +80,7 @@ class MainActivity : Activity() {
         fun ghi(s: String) {
             ui.post {
                 log.append(s + "\n")
+                tvThuMau?.let { tv -> tv.append(s + "\n"); (tv.parent as? ScrollView)?.let { c -> c.post { c.fullScroll(ScrollView.FOCUS_DOWN) } } }
                 cuon.post { cuon.fullScroll(ScrollView.FOCUS_DOWN) }
                 val t = s.trim()
                 val buoc = when {
@@ -950,22 +951,43 @@ class MainActivity : Activity() {
         }
     }
 
+    private var tvThuMau: TextView? = null      // hộp tiến độ của "Thu mẫu thiết bị" — hiện ngay tại chỗ bấm (cả giao diện đồ hoạ lẫn chữ)
+
     private fun thuMau() {
         val (may, gw) = mangWifi()
         if (may.isEmpty()) {
+            datTrangThai("✖ Chưa vào WiFi modem", DO)
             nhatKy.ghi("✖ Điện thoại chưa vào WiFi của modem.")
+            AlertDialog.Builder(this).setTitle("Chưa vào WiFi modem")
+                .setMessage("Thu mẫu cần điện thoại ở cùng mạng với cam.\n\nVào WiFi của modem đang cắm cam, rồi bấm lại \"Thu mẫu thiết bị\".")
+                .setPositiveButton("Mở cài đặt WiFi") { _, _ -> try { startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)) } catch (e: Exception) {} }
+                .setNegativeButton("Đóng", null).show()
             return
         }
         log.text = ""
-        chayNen("Thu mẫu thiết bị trong WiFi $gw (chỉ đọc)", coTomTat = false) {
+        val tv = TextView(this)
+        tv.typeface = Typeface.MONOSPACE
+        tv.textSize = 12f
+        tv.setPadding(dp(16), dp(12), dp(16), dp(12))
+        tv.text = "Đang quét mạng $gw …\n"
+        val sv = ScrollView(this)
+        sv.addView(tv)
+        val hop = AlertDialog.Builder(this).setTitle("⏳ Đang thu mẫu thiết bị (chỉ đọc)").setView(sv)
+            .setPositiveButton("Ẩn (vẫn chạy)", null).setCancelable(false).show()
+        tvThuMau = tv
+        chayNen("Thu mẫu thiết bị trong WiFi $gw (chỉ đọc)", coTomTat = true) {
             ganWifi(true)
             val zp = try {
                 core.callAttr("thu_mau", may, gw, nhatKy)?.toString() ?: ""
             } finally {
                 ganWifi(false)
+                ui.post { tvThuMau = null; try { hop.dismiss() } catch (e: Exception) {} }
             }
-            if (zp.isNotEmpty() && File(zp).exists()) ui.post { guiFile(File(zp), "Gửi file mẫu thiết bị cho Claude") }
-            null
+            if (zp.isNotEmpty() && File(zp).exists()) {
+                ui.post { guiFile(File(zp), "Gửi file mẫu thiết bị cho Claude") }
+                listOf("DAT", "Đã thu xong file mẫu.\nBảng chia sẻ vừa mở → chọn Zalo/Gmail gửi cho Claude.\n(Lỡ đóng bảng chia sẻ thì bấm \"Gửi kết quả\".)")
+            } else
+                listOf("LOI", "Không thu được mẫu: không thấy thiết bị nào trong mạng $gw.\nKiểm tra cam đã cấp nguồn, đã cắm dây vào modem, và điện thoại đang ở đúng WiFi modem đó.")
         }
     }
 

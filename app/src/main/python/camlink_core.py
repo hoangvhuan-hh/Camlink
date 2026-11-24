@@ -298,7 +298,7 @@ def thu_mau(may_ip, gw, log):
     if may_ip:
         os.environ["CAMLINK_MAY"] = may_ip
     cd = C.doc_cai_dat()
-    return C.thu(cd.get("cam_user", ""), cd.get("cam_pw", ""))
+    return C.thu(cd.get("cam_user", ""), cd.get("cam_pw", "")) or ""
 
 
 def file_ket_qua_moi_nhat():
