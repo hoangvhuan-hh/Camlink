@@ -84,6 +84,15 @@ class SoDoActivity : Activity() {
         goc.addView(chu(j.optString("ten"), 15f))
         goc.addView(chu("Kiểm lúc ${j.optString("luc")} · cài tại chỗ $nTaiCho/$tong · xem được từ ngoài $nNgoai/$tong", 13f, mau = "#5B6776"))
 
+        val lyDo = j.optJSONArray("ly_do")      // lượt cài không vào được cam nào → nói rõ vì sao + việc cần làm
+        if (tong == 0 && lyDo != null && lyDo.length() > 0) {
+            val ld = the("#B42318")
+            ld.addView(chu("✖ CHƯA CÀI ĐƯỢC CAM NÀO — vì sao", 13f, true, "#B42318"))
+            for (i in 0 until lyDo.length()) ld.addView(chu("• " + lyDo.optString(i), 14f))
+            goc.addView(ld)
+            goc.addView(mui())
+        }
+
         // Internet / tên miền
         val tm = the("#0F5D8C")
         tm.addView(chu("🌐 INTERNET — tên miền", 13f, true, "#0F5D8C"))

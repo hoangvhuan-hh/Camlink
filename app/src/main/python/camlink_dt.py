@@ -46,6 +46,7 @@ def thu_muc_ra():
 NHAT_KY = []
 CAN_MAU = []
 KQ_CUOI = {}   # thiết bị app chưa biết cách điều khiển → tự thu mẫu cuối lượt
+LY_DO_0CAM = {}   # lượt cài ra 0 cam: {"stt", "ly_do": [câu lý do + việc cần làm]} — màn sơ đồ hiện ra
 
 
 def ten_file(s):
@@ -429,6 +430,9 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
         log("Quét mạng tìm cam ...")
         tim = quet(gw.rsplit(".", 1)[0] + ".0/24", {gw, may})
     cams = []
+    global LY_DO_0CAM
+    LY_DO_0CAM = {}
+    sai_pass, khong_onvif = [], []      # để khi ra 0 cam thì nói được VÌ SAO
     for ip in sorted(tim, key=lambda x: int(x.split(".")[-1])):
         if camlink_oryza.da_khai_bao(ip, tim[ip]) is False:      # cam MỚI chưa có mật khẩu → tự khai báo lần đầu bằng user/pass của hệ thống
             log(f"  Cam {ip}:{tim[ip]} còn MỚI (chưa khai báo lần đầu) → tự tạo mật khẩu quản trị theo user/pass cam đã lưu …")
@@ -445,13 +449,34 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
                 tt = ov.thong_tin()
             except Exception as e:
                 log(f"  {ip}:{tim[ip]} có ONVIF nhưng không đăng nhập được ({e}) → kiểm tra user/pass cam")
+                sai_pass.append((ip, tim[ip]))
                 continue
             cams.append((ip, tim[ip], ov, tt))
             log(f"  Cam {ip}:{tim[ip]} — {tt['hang']} {tt['model']}")
+        else:
+            khong_onvif.append((ip, tim[ip]))
     if not cams:
         CAN_MAU.append("cam")
-        log("✖ Không cam nào vào được. Nếu dòng trên báo 'không đăng nhập được' → sai user/pass cam, chạy lại. "
-            "Nếu không thấy cam nào → app tự lưu mẫu, gửi file zip cho Claude.")
+        ly_do = []
+        if not tim:
+            ly_do.append(f"Không thấy thiết bị nào trong mạng {gw.rsplit('.', 1)[0]}.x ngoài modem → cam chưa lên mạng. "
+                         "Kiểm nguồn cam, dây mạng cam–modem; điện thoại phải ở đúng WiFi modem của điểm.")
+        for ip, port in sai_pass:
+            ly_do.append(f"Cam {ip}:{port} có trả lời nhưng TỪ CHỐI user «{cam_user}» / mật khẩu cam đã lưu → "
+                         "sửa user/pass cam trong Cài đặt chung (hoặc nhập riêng cho điểm này) rồi cài lại.")
+        for ip, port in khong_onvif:
+            try:
+                nt = nen_tang(ip, port)
+            except Exception:
+                nt = "khac"
+            if nt == "unv":
+                ly_do.append(f"{ip}:{port} là cam UNV nhưng chưa cho app vào (ONVIF không trả lời) → cam mới chưa đặt mật khẩu lần đầu, hoặc ONVIF đang tắt. "
+                             f"App chưa tự kích hoạt được UNV: mở http://{ip}{'' if port == 80 else ':' + str(port)} bằng Chrome, đặt mật khẩu TRÙNG mật khẩu cam đã lưu trong app, rồi cài lại.")
+            else:
+                ly_do.append(f"{ip}:{port} có trong mạng nhưng app không nhận ra là cam (ONVIF không trả lời) → nếu đây là cam: bật ONVIF / kích hoạt cam trên web cam, hoặc bấm 'Thu mẫu thiết bị' gửi Claude.")
+        for l in ly_do:
+            log("✖ " + l)
+        LY_DO_0CAM = {"stt": stt, "ly_do": ly_do}
         tu_thu_mau(cam_user, cam_pw)
         return
     if len(cams) != d["so"]:

@@ -447,6 +447,8 @@ def bang_chung(ma, stt, log):
     kq.setdefault("ten", d["ten"])
     kq.setdefault("stt", stt)
     kq["du_an"] = da["ten"]
+    if getattr(C, "LY_DO_0CAM", {}).get("stt") == stt:      # lượt cài vừa rồi không vào được cam nào → nói rõ vì sao
+        kq["ly_do"] = C.LY_DO_0CAM.get("ly_do", [])
     kq.setdefault("cam", [{"so": i + 1, "ip": f"…{C.IP_TU + i}", "http": C.HTTP[i], "rtsp": C.RTSP[i],
                            "model": "", "mac": "", "ok": None, "ghi": ""} for i in range(d["so"])])
     C.log("")
@@ -1345,6 +1347,66 @@ def dat_ten_mien_tay(ma, stt, domain, u="", p=""):
     x.update(domain=dom, u=str(u or "").strip(), p=str(p or "").strip(), dom_nguon=f"nhập tay tại cột {time.strftime('%d/%m %H:%M')}")
     _ghi_du_an(ma, da)
     return ""
+
+
+def tach_tin_nhan_ddns(van_ban):
+    """Tách tin nhắn bên cấp gửi (Zalo…) thành các bộ [tên miền, user, pass]. Mỗi bộ: 1 dòng tên miền, 2 dòng kế là user và pass
+    (hoặc cùng một dòng, cách nhau bằng khoảng trắng / dấu phẩy). Bỏ qua tên người gửi, giờ gửi."""
+    la_mien = lambda t: re.fullmatch(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+", t) and re.search(r"\.[a-z]{2,}$", t)
+    tu = []
+    for dong in str(van_ban or "").replace("\r", "\n").split("\n"):
+        dong = dong.strip()
+        if not dong:
+            continue
+        cac = [x for x in re.split(r"[\s,;|]+", dong) if x]
+        co_mien = any(la_mien(re.sub(r"^[a-z]+://", "", x.lower()).split("/")[0]) for x in cac)
+        if not co_mien and (len(cac) > 1 or re.fullmatch(r"\d{1,2}[:h]\d{2}", dong)):
+            continue      # dòng có khoảng trắng mà không có tên miền = tên người gửi / lời nhắn; dòng giờ gửi
+        tu += cac
+    bo, i = [], 0
+    while i < len(tu):
+        t = re.sub(r"^[a-z]+://", "", tu[i].lower()).split("/")[0]
+        if la_mien(t):
+            sau = []
+            j = i + 1
+            while j < len(tu) and len(sau) < 2 and not la_mien(re.sub(r"^[a-z]+://", "", tu[j].lower()).split("/")[0]):
+                sau.append(tu[j])
+                j += 1
+            bo.append([t, sau[0] if sau else "", sau[1] if len(sau) > 1 else ""])
+            i = j
+        else:
+            i += 1
+    return bo
+
+
+def dan_ten_mien(ma, van_ban):
+    """Dán tin nhắn tên miền (không có file) → đưa vào KHO tên miền của dự án, giữ nguyên các dòng kho đã có. Trả JSON báo cáo."""
+    bo = tach_tin_nhan_ddns(van_ban)
+    if not bo:
+        return json.dumps({"them": 0, "trung": 0, "loi": "Không thấy tên miền nào trong nội dung dán (ví dụ đúng: ten-diem.ddns.net, dòng dưới là user, dòng dưới nữa là pass)."}, ensure_ascii=False)
+    da = _doc_du_an(ma)
+    kho = da.setdefault("kho_ddns", [])
+    da_co = {str(k.get("domain") or "").lower(): k for k in kho}
+    gan = {str(d.get("domain") or "").lower(): s for s, d in da["diem"].items() if d.get("domain")}
+    them, trung, thieu = [], 0, []
+    for dom, u, p in bo:
+        if dom in da_co:      # đã có trong kho: chỉ bổ sung user/pass nếu trước đó trống
+            k = da_co[dom]
+            if u and not k.get("u"):
+                k["u"] = u
+            if p and not k.get("p"):
+                k["p"] = p
+            trung += 1
+            continue
+        dong = {"no": str(len(kho) + 1), "ten": dom.split(".")[0].replace("-", " "), "domain": dom, "u": u, "p": p, "so": 0, "bs": 0,
+                "map": "", "toa_do": None, "dung": gan.get(dom, ""), "nguon": f"dán tin nhắn {time.strftime('%d/%m %H:%M')}"}
+        kho.append(dong)
+        da_co[dom] = dong
+        them.append(dom)
+        if not (u and p):
+            thieu.append(dom)
+    _ghi_du_an(ma, da)
+    return json.dumps({"them": len(them), "trung": trung, "ds": them, "thieu_pass": thieu, "loi": ""}, ensure_ascii=False)
 
 
 # ------------------------------------------------------------------ 2.12: "ĐÃ CÀI" tính theo SỰ THẬT, không chỉ theo lần cài bằng app này

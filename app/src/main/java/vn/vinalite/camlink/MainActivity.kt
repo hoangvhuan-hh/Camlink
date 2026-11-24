@@ -649,15 +649,29 @@ class MainActivity : Activity() {
         val ten = core.callAttr("ten_diem", ma, stt).toString()
         val ds = if (can) org.json.JSONArray(core.callAttr("ung_vien_ten_mien", ma, stt).toString()) else org.json.JSONArray()
         if (ds.length() == 0) {      // chưa nạp file tên miền, hoặc kho của bên cấp đã dùng hết
-            val hop = AlertDialog.Builder(this).setTitle("Điểm này chưa có tên miền DDNS")
-                .setMessage("$ten\n\n" + (if (can) "Kho tên miền của bên cấp đã dùng hết." else "Dự án chưa nạp file tên miền của bên cấp.") +
-                    " Không có tên miền thì app không đặt được DDNS lên cam và không kiểm tra từ xa được điểm này.\n\nChọn một cách:")
-                .setPositiveButton("Nhập tên miền") { _, _ -> nhapTenMien(ma, stt, m, canhBao, ten) }
-                .setNeutralButton("Nạp file tên miền") { _, _ -> choDdns = arrayOf(ma, stt, m.toString(), canhBao ?: ""); moFileDdns() }
-                .setNegativeButton("Cài không DDNS") { _, _ ->
-                    xacNhanCaiThat(ma, stt, m, listOfNotNull(canhBao, "Điểm chưa có tên miền: chỉ đặt port, IP cam và mở port modem. DDNS bỏ trống — có tên miền thì chạy lại điểm này.").joinToString("\n⚠ "))
-                }
-            hop.show()
+            val khung = LinearLayout(this)
+            khung.orientation = LinearLayout.VERTICAL
+            khung.setPadding(dp(20), dp(8), dp(20), dp(4))
+            val loiNhan = TextView(this)
+            loiNhan.textSize = 15f
+            loiNhan.text = "$ten\n\n" + (if (can) "Kho tên miền của dự án đã dùng hết." else "Dự án chưa có tên miền của bên cấp.") +
+                " Không có tên miền thì app không đặt được DDNS lên cam và không kiểm tra từ xa được điểm này.\n\nChọn một cách:"
+            khung.addView(loiNhan)
+            var hop: AlertDialog? = null
+            fun lua(chu: String, bam: () -> Unit) {
+                val b = Button(this)
+                b.text = chu
+                b.isAllCaps = false
+                b.setOnClickListener { hop?.dismiss(); bam() }
+                khung.addView(b, lpDoc(tren = 8))
+            }
+            lua("📋 Dán từ tin nhắn (Zalo…) — nhanh nhất") { danTenMien(ma, stt, m, canhBao) }
+            lua("📄 Nạp file tên miền (Excel)") { choDdns = arrayOf(ma, stt, m.toString(), canhBao ?: ""); moFileDdns() }
+            lua("⌨ Nhập tay tên miền cho điểm này") { nhapTenMien(ma, stt, m, canhBao, ten) }
+            lua("Cài không DDNS") {
+                xacNhanCaiThat(ma, stt, m, listOfNotNull(canhBao, "Điểm chưa có tên miền: chỉ đặt port, IP cam và mở port modem. DDNS bỏ trống — có tên miền thì chạy lại điểm này.").joinToString("\n⚠ "))
+            }
+            hop = AlertDialog.Builder(this).setTitle("Điểm này chưa có tên miền DDNS").setView(khung).setNegativeButton("Huỷ", null).show()
             return
         }
         val nhan = (0 until minOf(ds.length(), 8)).map { i ->
@@ -679,6 +693,44 @@ class MainActivity : Activity() {
             }
             .setNeutralButton("Cài không DDNS") { _, _ -> xacNhanCaiThat(ma, stt, m, canhBao) }
             .setNegativeButton("Huỷ", null).show()
+    }
+
+    /** Không có file: dán nguyên tin nhắn bên cấp gửi (tên miền / user / pass, bao nhiêu điểm cũng được) → vào kho tên miền của dự án. */
+    private fun danTenMien(ma: String, stt: String, m: Int, canhBao: String?, loi: String = "", cu: String? = null) {
+        val o = EditText(this)
+        o.hint = "ten-diem.ddns.net\nuser\npass\n(dán được nhiều điểm một lần)"
+        o.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+        o.minLines = 6
+        o.gravity = android.view.Gravity.TOP
+        val dem = try {      // có sẵn tin nhắn vừa copy thì điền luôn, khỏi bấm dán
+            val cb = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            cb.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString() ?: ""
+        } catch (e: Exception) { "" }
+        o.setText(cu ?: (if (Regex("[a-z0-9-]+\\.[a-z]{2,}", RegexOption.IGNORE_CASE).containsMatchIn(dem)) dem else ""))
+        val khung = LinearLayout(this)
+        khung.orientation = LinearLayout.VERTICAL
+        khung.setPadding(dp(20), dp(8), dp(20), 0)
+        khung.addView(o)
+        AlertDialog.Builder(this)
+            .setTitle("Dán tin nhắn tên miền")
+            .setMessage(if (loi.isEmpty()) "Copy nguyên tin nhắn bên cấp gửi rồi dán vào đây. Mỗi điểm: tên miền, dòng dưới là user, dòng dưới nữa là pass." else "⚠ $loi")
+            .setView(khung)
+            .setPositiveButton("Đưa vào dự án") { _, _ ->
+                val vb = o.text.toString()
+                val kq = try { org.json.JSONObject(core.callAttr("dan_ten_mien", ma, vb).toString()) }
+                         catch (e: Exception) { org.json.JSONObject().put("loi", "Lỗi: " + (e.message ?: e.toString())) }
+                val l = kq.optString("loi")
+                if (l.isNotEmpty()) { danTenMien(ma, stt, m, canhBao, l, vb); return@setPositiveButton }
+                val thieu = kq.optJSONArray("thieu_pass")?.length() ?: 0
+                val bao = "Đã thêm ${kq.optInt("them")} tên miền vào dự án" + (if (kq.optInt("trung") > 0) " · ${kq.optInt("trung")} tên miền đã có sẵn" else "") +
+                    (if (thieu > 0) " · ⚠ $thieu tên miền thiếu user/pass" else "")
+                nhatKy.ghi(bao + " (dán từ tin nhắn)")
+                android.widget.Toast.makeText(this, bao, android.widget.Toast.LENGTH_LONG).show()
+                capNhatTieuDe()
+                xacNhanCai(ma, stt, m, canhBao)      // quay lại đúng bước chọn tên miền cho điểm đang cài
+            }
+            .setNegativeButton("Quay lại") { _, _ -> xacNhanCai(ma, stt, m, canhBao) }
+            .show()
     }
 
     private var choDdns: Array<String>? = null      // điểm đang chờ nạp file tên miền: mã, stt, mét, cảnh báo
