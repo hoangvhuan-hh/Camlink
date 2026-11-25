@@ -1350,37 +1350,48 @@ def dat_ten_mien_tay(ma, stt, domain, u="", p=""):
 
 
 def tach_tin_nhan_ddns(van_ban):
-    """Tách tin nhắn bên cấp gửi (Zalo…) thành các bộ [tên miền, user, pass]. Mỗi bộ: 1 dòng tên miền, 2 dòng kế là user và pass
-    (hoặc cùng một dòng, cách nhau bằng khoảng trắng / dấu phẩy). Bỏ qua tên người gửi, giờ gửi."""
+    """Tách tin nhắn bên cấp gửi (Zalo…) thành các bộ [tên miền, user, pass, vị trí]. Mỗi bộ: 1 dòng tên miền, 2 dòng kế là user và pass
+    (hoặc cùng một dòng, cách nhau bằng khoảng trắng / dấu phẩy). Dòng toạ độ (10.123456, 107.123456) hoặc link Google Maps nằm
+    trong bộ nào thì là vị trí của tên miền đó. Bỏ qua tên người gửi, giờ gửi. vị trí = "" | "lat,lng" | link."""
+    mau_toa_do = r"(-?\d{1,2}\.\d{3,})\s*[,; ]\s*(-?\d{2,3}\.\d{3,})"
+    mau_link = r"https?://\S*(?:goo\.gl|google\.[a-z.]+/maps|maps\.app|maps\.google)\S*"
     la_mien = lambda t: re.fullmatch(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+", t) and re.search(r"\.[a-z]{2,}$", t)
-    tu = []
+    sach = lambda x: re.sub(r"^[a-z]+://", "", x.lower()).split("/")[0]
+    bo = []
     for dong in str(van_ban or "").replace("\r", "\n").split("\n"):
         dong = dong.strip()
         if not dong:
             continue
+        vi_tri = ""
+        m = re.search(mau_link, dong)
+        if m:
+            vi_tri, dong = m.group(0), dong.replace(m.group(0), " ").strip()
+        else:
+            m = re.search(mau_toa_do, dong)
+            if m:
+                vi_tri, dong = f"{m.group(1)},{m.group(2)}", dong.replace(m.group(0), " ").strip()
+        if vi_tri and bo and not bo[-1][3]:
+            bo[-1][3] = vi_tri
+        if not dong:
+            continue
         cac = [x for x in re.split(r"[\s,;|]+", dong) if x]
-        co_mien = any(la_mien(re.sub(r"^[a-z]+://", "", x.lower()).split("/")[0]) for x in cac)
+        co_mien = any(la_mien(sach(x)) for x in cac)
         if not co_mien and (len(cac) > 1 or re.fullmatch(r"\d{1,2}[:h]\d{2}", dong)):
             continue      # dòng có khoảng trắng mà không có tên miền = tên người gửi / lời nhắn; dòng giờ gửi
-        tu += cac
-    bo, i = [], 0
-    while i < len(tu):
-        t = re.sub(r"^[a-z]+://", "", tu[i].lower()).split("/")[0]
-        if la_mien(t):
-            sau = []
-            j = i + 1
-            while j < len(tu) and len(sau) < 2 and not la_mien(re.sub(r"^[a-z]+://", "", tu[j].lower()).split("/")[0]):
-                sau.append(tu[j])
-                j += 1
-            bo.append([t, sau[0] if sau else "", sau[1] if len(sau) > 1 else ""])
-            i = j
-        else:
-            i += 1
+        for x in cac:
+            if la_mien(sach(x)):
+                bo.append([sach(x), "", "", ""])
+            elif bo and not bo[-1][1]:
+                bo[-1][1] = x
+            elif bo and not bo[-1][2]:
+                bo[-1][2] = x
     return bo
 
 
 def dan_ten_mien(ma, van_ban):
-    """Dán tin nhắn tên miền (không có file) → đưa vào KHO tên miền của dự án, giữ nguyên các dòng kho đã có. Trả JSON báo cáo."""
+    """Dán tin nhắn tên miền (không có file) → đưa vào KHO tên miền của dự án, giữ nguyên các dòng kho đã có.
+    Dòng có toạ độ thì tự ghép với ghim của điểm (chỉ khi chắc: ≤ 50 m). Trả JSON báo cáo."""
+    import camlink_litemark as L
     bo = tach_tin_nhan_ddns(van_ban)
     if not bo:
         return json.dumps({"them": 0, "trung": 0, "loi": "Không thấy tên miền nào trong nội dung dán (ví dụ đúng: ten-diem.ddns.net, dòng dưới là user, dòng dưới nữa là pass)."}, ensure_ascii=False)
@@ -1388,25 +1399,94 @@ def dan_ten_mien(ma, van_ban):
     kho = da.setdefault("kho_ddns", [])
     da_co = {str(k.get("domain") or "").lower(): k for k in kho}
     gan = {str(d.get("domain") or "").lower(): s for s, d in da["diem"].items() if d.get("domain")}
-    them, trung, thieu = [], 0, []
-    for dom, u, p in bo:
-        if dom in da_co:      # đã có trong kho: chỉ bổ sung user/pass nếu trước đó trống
+    them, trung, thieu, co_td = [], 0, [], 0
+    for dom, u, p, vi_tri in bo:
+        td = None
+        m = re.fullmatch(r"(-?\d+\.\d+),(-?\d+\.\d+)", vi_tri or "")
+        if m:
+            td = [float(m.group(1)), float(m.group(2))]
+        elif vi_tri.startswith("http"):
+            try:
+                td = C.toa_do_tu_link(vi_tri)
+            except Exception:
+                td = None
+        if dom in da_co:      # đã có trong kho: chỉ bổ sung phần trước đó trống
             k = da_co[dom]
             if u and not k.get("u"):
                 k["u"] = u
             if p and not k.get("p"):
                 k["p"] = p
+            if td and not k.get("toa_do"):
+                k["toa_do"], k["map"] = td, vi_tri
             trung += 1
             continue
         dong = {"no": str(len(kho) + 1), "ten": dom.split(".")[0].replace("-", " "), "domain": dom, "u": u, "p": p, "so": 0, "bs": 0,
-                "map": "", "toa_do": None, "dung": gan.get(dom, ""), "nguon": f"dán tin nhắn {time.strftime('%d/%m %H:%M')}"}
+                "map": vi_tri, "toa_do": td, "dung": gan.get(dom, ""), "nguon": f"dán tin nhắn {time.strftime('%d/%m %H:%M')}"}
         kho.append(dong)
         da_co[dom] = dong
         them.append(dom)
+        co_td += 1 if td else 0
         if not (u and p):
             thieu.append(dom)
+    tu_gan = 0
+    if any(k.get("toa_do") for k in kho) and da.get("toa_do"):
+        truoc = sum(1 for d in da["diem"].values() if d.get("domain"))
+        da, _ = L.ghep_ddns(da, kho, lambda *_: None)
+        tu_gan = sum(1 for d in da["diem"].values() if d.get("domain")) - truoc
     _ghi_du_an(ma, da)
-    return json.dumps({"them": len(them), "trung": trung, "ds": them, "thieu_pass": thieu, "loi": ""}, ensure_ascii=False)
+    return json.dumps({"them": len(them), "trung": trung, "ds": them, "thieu_pass": thieu, "co_toa_do": co_td, "tu_gan": tu_gan, "loi": ""}, ensure_ascii=False)
+
+
+def thong_tin_ten_mien(ma, stt):
+    """Tên miền của điểm + nguồn gốc (để người dùng XÁC NHẬN trước khi cài) + số tên miền còn trống trong kho."""
+    da = _doc_du_an(ma)
+    d = da["diem"][str(stt)]
+    con = sum(1 for k in da.get("kho_ddns", []) if not k.get("dung"))
+    return json.dumps({"domain": d.get("domain", ""), "nguon": d.get("dom_nguon", ""), "con_trong": con}, ensure_ascii=False)
+
+
+def ten_mien_lech(ma, stt):
+    """Sau lượt cài: cam đang dùng tên miền khác tên miền app lưu cho điểm? Trả JSON {"cam", "app"} hoặc ''."""
+    k = getattr(C, "TM_LECH", {})
+    if str(k.get("stt")) != str(stt):
+        return ""
+    return json.dumps({"cam": k.get("cam", ""), "app": k.get("app", "")}, ensure_ascii=False)
+
+
+def nhan_ten_mien_cam(ma, stt):
+    """Người dùng chọn: lấy tên miền ĐANG CÓ TRÊN CAM làm tên miền của điểm (cam không bị đổi gì). Trả '' nếu xong, hoặc câu báo lỗi."""
+    k = getattr(C, "TM_LECH", {})
+    if str(k.get("stt")) != str(stt) or not k.get("cam"):
+        return "Không còn thông tin tên miền trên cam — cài lại điểm này để app đọc lại."
+    dom = k["cam"]
+    da = _doc_du_an(ma)
+    for s2, d2 in da["diem"].items():
+        if s2 != str(stt) and str(d2.get("domain") or "").lower() == dom:
+            return f"Tên miền {dom} đang gán cho điểm {s2}. {d2.get('ten', '')} trong app — hai điểm không thể chung một tên miền. Kiểm tra lại điểm {s2}."
+    x = da["diem"][str(stt)]
+    cu = str(x.get("domain") or "").lower()
+    u = p = ""
+    for dong in da.get("kho_ddns", []):
+        dm = str(dong.get("domain") or "").lower()
+        if dm == cu and str(dong.get("dung")) == str(stt):
+            dong["dung"] = ""                     # trả tên miền cũ về kho cho điểm khác dùng
+        if dm == dom:
+            dong["dung"] = str(stt)               # tên miền trên cam: đánh dấu đã dùng → loại khỏi các điểm khác
+            u, p = dong.get("u", ""), dong.get("p", "")
+    x.update(domain=dom, u=u, p=p, dom_nguon=f"lấy theo tên miền đang có trên cam {time.strftime('%d/%m %H:%M')}")
+    _ghi_du_an(ma, da)
+    C.TM_LECH = {}
+    return ""
+
+
+def dat_ghi_de_ddns():
+    """Người dùng chọn: ghi tên miền của điểm LÊN CAM (đè tên miền cam đang dùng) — áp dụng cho đúng lượt cài kế tiếp."""
+    C.GHI_DE_DDNS = True
+
+
+def bao_mat_modem():
+    """Màn hình canh modem: mất kết nối quá 2 phút → các vòng chờ trong lõi dừng sớm."""
+    C.DUNG_VI_MAT_MODEM = True
 
 
 # ------------------------------------------------------------------ 2.12: "ĐÃ CÀI" tính theo SỰ THẬT, không chỉ theo lần cài bằng app này

@@ -46,6 +46,9 @@ def thu_muc_ra():
 NHAT_KY = []
 CAN_MAU = []
 KQ_CUOI = {}   # thiết bị app chưa biết cách điều khiển → tự thu mẫu cuối lượt
+TM_LECH = {}          # cam đang dùng tên miền KHÁC tên miền app lưu cho điểm: {"stt", "cam", "app"} → app hỏi người dùng, không tự ghi đè
+GHI_DE_DDNS = False   # người dùng đã chọn "ghi tên miền của điểm lên cam" → lượt chạy kế ghi đè (dùng một lần)
+DUNG_VI_MAT_MODEM = False   # màn hình báo: mất kết nối modem quá 2 phút → dừng các vòng chờ
 LY_DO_0CAM = {}   # lượt cài ra 0 cam: {"stt", "ly_do": [câu lý do + việc cần làm]} — màn sơ đồ hiện ra
 
 
@@ -104,8 +107,24 @@ def cho_len(ip, port, giay=120):
     while time.time() < het:
         if mo(ip, port, 1):
             return True
+        if DUNG_VI_MAT_MODEM:
+            return False
         time.sleep(3)
     return False
+
+
+def ten_mien_tren_cam(nt, ip, port, user, pw):
+    """Chỉ ĐỌC: tên miền DDNS đang bật trên cam ('' nếu không có / hãng chưa đọc được)."""
+    try:
+        if nt == "unv":
+            import camlink_unv
+            return camlink_unv.doc_ddns(ip, port, user, pw)
+        if nt == "oryza":
+            d = camlink_oryza.doc_ddns_cam(ip, port, user, pw)
+            return str(d.get("ten_mien") or "").strip().lower() if d.get("bat") else ""
+    except Exception:
+        pass
+    return ""
 
 
 # ------------------------------------------------------------------ ONVIF (chuẩn chung camera IP)
@@ -430,8 +449,11 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
         log("Quét mạng tìm cam ...")
         tim = quet(gw.rsplit(".", 1)[0] + ".0/24", {gw, may})
     cams = []
-    global LY_DO_0CAM
+    global LY_DO_0CAM, TM_LECH, GHI_DE_DDNS, DUNG_VI_MAT_MODEM
     LY_DO_0CAM = {}
+    TM_LECH = {}
+    DUNG_VI_MAT_MODEM = False
+    ghi_de_ddns, GHI_DE_DDNS = GHI_DE_DDNS, False
     sai_pass, khong_onvif = [], []      # để khi ra 0 cam thì nói được VÌ SAO
     unv_tt = {}                         # ip → (trạng thái, câu báo) của bước khai báo cam Uniview
     for ip in sorted(tim, key=lambda x: int(x.split(".")[-1])):
@@ -513,6 +535,9 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
 
     ket_qua, luat = [], []
     for i, (ip, port, ov, tt) in enumerate(cams):
+        if DUNG_VI_MAT_MODEM:
+            log("✖ Dừng cài các cam còn lại: mất kết nối modem quá 2 phút (modem khởi động lại / rớt WiFi). Vào lại WiFi modem rồi cài lại điểm này.")
+            break
         ip_moi, http, rtsp = f"{gw.rsplit('.', 1)[0]}.{IP_TU + i}", HTTP[i], RTSP[i]
         log(f"-- Cam {i + 1}: {ip}:{port} → {ip_moi}  HTTP {http}  RTSP {rtsp}")
         kq = {"so": i + 1, "ip": ip_moi, "http": http, "rtsp": rtsp, "model": tt["model"], "ghi": []}
@@ -521,8 +546,17 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
             kq["mac"] = mac
             nt = nen_tang(ip, port)
             if i == 0:
+                tm_cam = ten_mien_tren_cam(nt, ip, port, cam_user, cam_pw)
+                tm_app = str(d.get("domain") or "").strip().lower()
                 try:
-                    if nt == "oryza":
+                    if tm_cam and tm_cam != tm_app and not ghi_de_ddns:
+                        # cam (cài tay / cài trước) đang dùng tên miền khác → KHÔNG tự ghi đè, để người dùng chọn sau lượt chạy
+                        TM_LECH = {"stt": stt, "cam": tm_cam, "app": tm_app}
+                        kq["ghi"].append(f"Cam đang dùng tên miền {tm_cam}, khác {tm_app or '(chưa có)'} của điểm — CHƯA ghi đè, chờ bạn chọn")
+                        log(f"   ⚠ {kq['ghi'][-1]}")
+                    elif not tm_app:
+                        kq["ghi"].append("DDNS bỏ trống (điểm chưa có tên miền)")
+                    elif nt == "oryza":
                         kq["ghi"].append(camlink_oryza.dat_ddns(ip, port, cam_user, cam_pw, d["domain"], d["u"], d["p"]))
                         log(f"   ✔ {kq['ghi'][-1]}")
                     elif ip == ip_moi and port == http:
@@ -583,6 +617,7 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
     mdm = None
     try:      # modem mới còn mật khẩu xuất xưởng → đổi sang mật khẩu của hệ thống (chỉ khi nhận ra đúng kiểu modem)
         import camlink_modem
+        log("   đăng nhập trang quản trị modem …")
         mdm = camlink_modem.chuan_bi(gw, modem_user, modem_pw, log, pass_modem_yeu)
         if mdm is None:
             log("   · Chưa vào được trang quản trị modem (khác kiểu, hoặc mật khẩu trên tem modem khác mật khẩu đã lưu) → mở port bằng UPnP; "
@@ -590,6 +625,7 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
             CAN_MAU.append("modem")
     except Exception as e:
         log(f"   · Trang quản trị modem: {str(e)[:80]}")
+    log("   dò UPnP trên modem …")
     igd = upnp_tim()
     if igd:
         dem = co_san = 0
@@ -629,6 +665,7 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
         if mdm is not None:
             dem = 0
             for ten, p, ip in luat:
+                log(f"   thêm luật mở port {p} → {ip} trên modem …")
                 try:
                     ok_n, tb_n = mdm.them_nat(ten, p, ip)
                 except Exception as e:

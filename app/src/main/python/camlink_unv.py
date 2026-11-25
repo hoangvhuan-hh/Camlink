@@ -147,6 +147,16 @@ def khai_bao_lan_dau(ip, port, cam_user, cam_pw, log=print):
         return "loi", USER_MAC_DINH, f"đổi mật khẩu lần đầu lỗi: {str(e)[:120]}"
 
 
+def doc_ddns(ip, port, user, pw):
+    """Chỉ ĐỌC: tên miền DDNS đang bật trên cam UNV ('' nếu chưa bật / chưa có)."""
+    c = Lapi(ip, port, user, pw)
+    d, cfg = c.doc("/LAPI/V1.0/NetWork/DDNS", "/LAPI/V1.0/Network/DDNS")
+    if not d or not isinstance(cfg, dict) or int(cfg.get("Enable", cfg.get("Enabled", 0)) or 0) != 1:
+        return ""
+    muc = next((x for x in (cfg.get("DDNSs") or []) if str(x.get("Type")) == str(cfg.get("UsedType"))), {})
+    return str(muc.get("DeviceDomain", "")).strip().lower()
+
+
 def dat_ddns(ip, port, user, pw, domain, ddns_user, ddns_pw):
     """Bật DDNS No-IP trên cam UNV và nhập tên miền + user/pass. Trả câu kết quả; lỗi thì raise RuntimeError."""
     c = Lapi(ip, port, user, pw)

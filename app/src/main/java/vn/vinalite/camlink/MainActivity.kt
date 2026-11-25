@@ -68,6 +68,11 @@ class MainActivity : Activity() {
     private val maViTri = 12
     private var viTriCuoi: Location? = null
     private var dangChay = ""
+    @Volatile private var buocDang = ""          // bước lõi đang làm (dòng nhật ký mới nhất) — hiện trên thanh trạng thái theo thời gian thực
+    @Volatile private var buocTu = 0L
+    @Volatile private var matModemTu = 0L        // > 0: đang KHÔNG thấy modem từ thời điểm này
+    @Volatile private var canhModemChay = false
+    @Volatile private var gwCanh = ""
 
     private val XANH = "#1D7A46"
     private val DO = "#B42318"
@@ -92,7 +97,13 @@ class MainActivity : Activity() {
                     t.startsWith("Đang lấy toạ độ") -> "lấy toạ độ các điểm"
                     else -> null
                 }
-                if (buoc != null && dangChay.isNotEmpty()) datTrangThai("⏳ $dangChay\nĐang: $buoc", LAM)
+                if (dangChay.isNotEmpty()) {
+                    val b = buoc ?: t.takeIf {
+                        it.isNotEmpty() && !it.startsWith("===") && !it.startsWith("BẢNG") && !it.startsWith("Bảng") && !it.startsWith("Cam ") &&
+                            !it.startsWith("cam") && !it.startsWith("Kiểm tra port") && !it.startsWith("Đã lưu") && !it.startsWith("Dự án:")
+                    }?.trimStart('·', '✔', '⚠', '✖', ' ')?.take(90)
+                    if (!b.isNullOrEmpty()) datBuoc(b)
+                }
             }
         }
     }
@@ -226,9 +237,89 @@ class MainActivity : Activity() {
     private fun khoaNut(khoa: Boolean) = ui.post { cacNut.forEach { it.isEnabled = !khoa } }
 
     /** Chạy việc nặng ở luồng nền; xong thì hiện HỘP KẾT QUẢ rõ ràng (đạt / chưa / lỗi). */
+    /** Ghi bước đang làm rồi vẽ lại thanh trạng thái (gọi trên luồng giao diện). */
+    private fun datBuoc(b: String) { buocDang = b; buocTu = System.currentTimeMillis(); veTrangThaiChay() }
+
+    /** Thanh trạng thái THỜI GIAN THỰC: bước đang làm + số giây; mất modem thì đỏ ngay. */
+    private fun veTrangThaiChay() {
+        if (dangChay.isEmpty()) return
+        val now = System.currentTimeMillis()
+        if (matModemTu > 0) {
+            datTrangThai("⛔ $dangChay\nKHÔNG THẤY MODEM $gwCanh (${(now - matModemTu) / 1000} giây) — modem đang khởi động lại hoặc rớt / sai WiFi. Đang chờ modem lên lại…", DO)
+            return
+        }
+        val giay = (now - buocTu) / 1000
+        datTrangThai("⏳ $dangChay\nĐang: " + (if (buocDang.isEmpty()) "bắt đầu…" else buocDang) + (if (giay >= 3) " · $giay giây" else ""), LAM)
+    }
+
+    private val nhipTrangThai = object : Runnable {
+        override fun run() { if (dangChay.isNotEmpty()) { veTrangThaiChay(); ui.postDelayed(this, 1000) } }
+    }
+
+    /** Modem còn trả lời không (nối thử cổng 80 / 443 / 53; bị từ chối cũng tính là còn sống). */
+    private fun modemSong(gw: String): Boolean {
+        for (p in intArrayOf(80, 443, 53)) {
+            try {
+                java.net.Socket().use { it.connect(java.net.InetSocketAddress(gw, p), 1500) }
+                return true
+            } catch (e: java.net.ConnectException) {
+                if ((e.message ?: "").contains("REFUSED", ignoreCase = true)) return true
+            } catch (e: Exception) { }
+        }
+        return false
+    }
+
+    /** Trước khi cài: modem chưa trả lời (vừa khởi động lại / sai WiFi) → báo đỏ, chờ tối đa [giay] giây, lên lại thì tự chạy tiếp. */
+    private fun choModem(gw: String, giay: Int): Boolean {
+        val het = System.currentTimeMillis() + giay * 1000L
+        while (true) {
+            if (modemSong(gw)) {
+                if (matModemTu > 0) { matModemTu = 0; nhatKy.ghi("✔ Modem $gw đã trả lời — bắt đầu cài.") }
+                return true
+            }
+            if (System.currentTimeMillis() >= het) { matModemTu = 0; return false }
+            if (matModemTu == 0L) {
+                matModemTu = System.currentTimeMillis()
+                nhatKy.ghi("⚠ Không thấy modem $gw — modem đang khởi động lại, hoặc điện thoại chưa vào đúng WiFi modem. Chờ tối đa $giay giây…")
+            }
+            Thread.sleep(2000)
+        }
+    }
+
+    /** Trong lúc cài: 5 giây kiểm modem một lần. Mất → thanh trạng thái đỏ; quá 2 phút → báo lõi dừng các bước chờ. */
+    private fun batCanhModem(gw: String) {
+        canhModemChay = true
+        thread {
+            var daBaoLoi = false
+            while (canhModemChay) {
+                try { Thread.sleep(5000) } catch (e: InterruptedException) { break }
+                if (!canhModemChay) break
+                val song = modemSong(gw) || modemSong(gw)
+                val now = System.currentTimeMillis()
+                if (!song) {
+                    if (matModemTu == 0L) {
+                        matModemTu = now
+                        nhatKy.ghi("⚠ Mất kết nối modem $gw lúc " + java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date()) + " (đang: $buocDang)")
+                    } else if (!daBaoLoi && now - matModemTu > 120_000) {
+                        daBaoLoi = true
+                        try { core.callAttr("bao_mat_modem") } catch (e: Exception) { }
+                        nhatKy.ghi("✖ Mất kết nối modem quá 2 phút — dừng các bước đang chờ. Vào lại WiFi modem rồi cài lại điểm này.")
+                    }
+                } else if (matModemTu > 0) {
+                    val mat = (now - matModemTu) / 1000
+                    matModemTu = 0
+                    nhatKy.ghi("✔ Modem đã lên lại sau $mat giây")
+                }
+            }
+        }
+    }
+
     private fun chayNen(viec: String, coTomTat: Boolean, lam: () -> List<String>?) {
         dangChay = viec
+        buocDang = ""; buocTu = System.currentTimeMillis(); matModemTu = 0
         datTrangThai("⏳ $viec\nĐang bắt đầu…", LAM)
+        ui.removeCallbacks(nhipTrangThai)
+        ui.postDelayed(nhipTrangThai, 1000)
         khoaNut(true)
         thread {
             var kq: List<String>? = null
@@ -695,6 +786,64 @@ class MainActivity : Activity() {
             .setNegativeButton("Huỷ", null).show()
     }
 
+    /** Đổi tên miền của điểm: chỉ liệt kê tên miền CHƯA dùng (gần ghim nhất trước); tên miền cũ được trả về kho. */
+    private fun doiTenMien(ma: String, stt: String, m: Int, canhBao: String?) {
+        val ten = core.callAttr("ten_diem", ma, stt).toString()
+        val ds = try { org.json.JSONArray(core.callAttr("ung_vien_ten_mien", ma, stt).toString()) } catch (e: Exception) { org.json.JSONArray() }
+        val nhan = ArrayList<String>()
+        for (i in 0 until ds.length()) {
+            val d = ds.getJSONObject(i)
+            val kc = d.optInt("kc", -1)
+            nhan.add(d.optString("domain") + (if (kc >= 0) "  ·  cách ghim $kc m" else ""))
+        }
+        val soTm = nhan.size
+        nhan.add("📋 Dán từ tin nhắn (thêm tên miền mới)")
+        nhan.add("⌨ Nhập tay tên miền")
+        AlertDialog.Builder(this)
+            .setTitle(if (soTm == 0) "Kho không còn tên miền chưa dùng" else "Chọn tên miền cho điểm (chỉ hiện tên miền chưa dùng)")
+            .setItems(nhan.toTypedArray()) { _, i ->
+                when {
+                    i < soTm -> {
+                        val d = ds.getJSONObject(i)
+                        try {
+                            core.callAttr("gan_ten_mien", ma, stt, d.optInt("i"))
+                            nhatKy.ghi("Đã đổi tên miền của $ten sang ${d.optString("domain")}")
+                        } catch (e: Exception) {
+                            android.widget.Toast.makeText(this, "Không đổi được: " + (e.message ?: ""), android.widget.Toast.LENGTH_LONG).show()
+                        }
+                        xacNhanCaiThat(ma, stt, m, canhBao)
+                    }
+                    i == soTm -> danTenMien(ma, stt, m, canhBao)
+                    else -> nhapTenMien(ma, stt, m, canhBao, ten)
+                }
+            }
+            .setNegativeButton("Quay lại") { _, _ -> xacNhanCaiThat(ma, stt, m, canhBao) }.show()
+    }
+
+    /** Sau lượt cài: cam (cài tay / cài trước) đang dùng tên miền khác tên miền app lưu cho điểm → người dùng chọn, app không tự ghi đè. */
+    private fun hoiTenMienLech(ma: String, stt: String, ten: String, lech: String) {
+        val j = try { org.json.JSONObject(lech) } catch (e: Exception) { return }
+        val cam = j.optString("cam")
+        val app = j.optString("app")
+        val hop = AlertDialog.Builder(this).setTitle("Cam đang dùng tên miền khác")
+            .setMessage("$ten\n\nTrên cam:  $cam\nTrong app: " + (if (app.isEmpty()) "(chưa có)" else app) +
+                "\n\nApp CHƯA đổi gì trên cam. Chọn tên miền đúng cho điểm này:")
+            .setPositiveButton("Lấy theo cam") { _, _ ->
+                val loi = try { core.callAttr("nhan_ten_mien_cam", ma, stt).toString() } catch (e: Exception) { e.message ?: "lỗi" }
+                if (loi.isEmpty()) {
+                    nhatKy.ghi("Đã lấy tên miền $cam (đang có trên cam) cho $ten")
+                    android.widget.Toast.makeText(this, "Điểm này dùng $cam. Bấm Kiểm tra từ xa để xem lại.", android.widget.Toast.LENGTH_LONG).show()
+                    capNhatTieuDe()
+                } else AlertDialog.Builder(this).setTitle("Chưa lấy được").setMessage(loi).setPositiveButton("Đóng", null).show()
+            }
+            .setNeutralButton("Để sau", null)
+        if (app.isNotEmpty()) hop.setNegativeButton("Ghi tên miền app lên cam") { _, _ ->
+            try { core.callAttr("dat_ghi_de_ddns") } catch (e: Exception) { }
+            chayDiem(ma, stt, ten)
+        }
+        hop.show()
+    }
+
     /** Không có file: dán nguyên tin nhắn bên cấp gửi (tên miền / user / pass, bao nhiêu điểm cũng được) → vào kho tên miền của dự án. */
     private fun danTenMien(ma: String, stt: String, m: Int, canhBao: String?, loi: String = "", cu: String? = null) {
         val o = EditText(this)
@@ -713,7 +862,7 @@ class MainActivity : Activity() {
         khung.addView(o)
         AlertDialog.Builder(this)
             .setTitle("Dán tin nhắn tên miền")
-            .setMessage(if (loi.isEmpty()) "Copy nguyên tin nhắn bên cấp gửi rồi dán vào đây. Mỗi điểm: tên miền, dòng dưới là user, dòng dưới nữa là pass." else "⚠ $loi")
+            .setMessage(if (loi.isEmpty()) "Copy nguyên tin nhắn bên cấp gửi rồi dán vào đây. Mỗi điểm: tên miền, dòng dưới là user, dòng dưới nữa là pass; có thêm dòng toạ độ / link bản đồ thì app tự ghép đúng điểm.\nChỉ có ẢNH CHỤP: mở ảnh, dùng chức năng trích chữ của máy (hoặc Google Lens) để sao chép chữ rồi dán vào đây." else "⚠ $loi")
             .setView(khung)
             .setPositiveButton("Đưa vào dự án") { _, _ ->
                 val vb = o.text.toString()
@@ -723,7 +872,8 @@ class MainActivity : Activity() {
                 if (l.isNotEmpty()) { danTenMien(ma, stt, m, canhBao, l, vb); return@setPositiveButton }
                 val thieu = kq.optJSONArray("thieu_pass")?.length() ?: 0
                 val bao = "Đã thêm ${kq.optInt("them")} tên miền vào dự án" + (if (kq.optInt("trung") > 0) " · ${kq.optInt("trung")} tên miền đã có sẵn" else "") +
-                    (if (thieu > 0) " · ⚠ $thieu tên miền thiếu user/pass" else "")
+                    (if (thieu > 0) " · ⚠ $thieu tên miền thiếu user/pass" else "") +
+                    (if (kq.optInt("tu_gan") > 0) " · tự ghép ${kq.optInt("tu_gan")} điểm theo toạ độ (sẽ hỏi xác nhận lúc cài)" else "")
                 nhatKy.ghi(bao + " (dán từ tin nhắn)")
                 android.widget.Toast.makeText(this, bao, android.widget.Toast.LENGTH_LONG).show()
                 capNhatTieuDe()
@@ -818,7 +968,12 @@ class MainActivity : Activity() {
         val tenMien = try { core.callAttr("ten_mien_diem", ma, stt).toString() } catch (_: Exception) { "?" }
         val noiDung = StringBuilder()
             .append("CHẾ ĐỘ: CÀI TẠI CHỖ\n").append(ten).append("\n").append(viTri).append("\n").append(mang).append("\n")
-            .append(if (tenMien.isEmpty()) "Tên miền: CHƯA CÓ — cài không DDNS" else if (tenMien == "?") "" else "Tên miền: $tenMien").append("\n")
+            .append(if (tenMien.isEmpty()) "Tên miền: CHƯA CÓ — cài không DDNS" else if (tenMien == "?") "" else "TÊN MIỀN SẼ DÙNG: $tenMien").append("\n")
+            .append(try {
+                val tm = org.json.JSONObject(core.callAttr("thong_tin_ten_mien", ma, stt).toString())
+                (if (tm.optString("nguon").isEmpty() || tenMien.isEmpty()) "" else "   ↳ " + tm.optString("nguon") + "\n") +
+                    (if (tm.optInt("con_trong") > 0) "   ↳ kho còn ${tm.optInt("con_trong")} tên miền chưa dùng — sai điểm thì bấm \"Việc khác…\" → Đổi tên miền\n" else "")
+            } catch (e: Exception) { "" })
             .append(try {
                 val tt = org.json.JSONObject(core.callAttr("thong_tin_cai", ma, stt).toString())
                 (if (tenMien.isEmpty() || tenMien == "?") "" else "Tài khoản DDNS: " + (if (tt.optString("u_ddns").isEmpty()) "file KHÔNG có user/pass cho tên miền này" else tt.optString("u_ddns") + " (theo file)") + "\n") +
@@ -830,10 +985,16 @@ class MainActivity : Activity() {
         noiDung.append("\nChỉ bấm BẮT ĐẦU khi đang đứng tại điểm này và điện thoại đã vào WiFi modem của điểm.")
         datTrangThai("📍 TẠI CHỖ — $ten", LAM)
         AlertDialog.Builder(this)
-            .setTitle("Kiểm tra trước khi cài")
+            .setTitle("Xác nhận trước khi cài")
             .setMessage(noiDung.toString())
-            .setPositiveButton("BẮT ĐẦU CÀI") { _, _ -> chayDiem(ma, stt, ten) }
-            .setNeutralButton("Chỉ kiểm tra từ xa") { _, _ -> kiemTraTuXa(ma, stt, ten) }
+            .setPositiveButton("ĐÚNG, BẮT ĐẦU CÀI") { _, _ -> chayDiem(ma, stt, ten) }
+            .setNeutralButton("Việc khác…") { _, _ ->
+                AlertDialog.Builder(this).setTitle(ten)
+                    .setItems(arrayOf("🔁 Đổi tên miền cho điểm này", "🔍 Chỉ kiểm tra từ xa (không cài)")) { _, i ->
+                        if (i == 0) doiTenMien(ma, stt, m, canhBao) else kiemTraTuXa(ma, stt, ten)
+                    }
+                    .setNegativeButton("Quay lại") { _, _ -> xacNhanCaiThat(ma, stt, m, canhBao) }.show()
+            }
             .setNegativeButton("Huỷ") { _, _ -> datTrangThai("Đã huỷ", XAM) }
             .show()
     }
@@ -939,17 +1100,26 @@ class MainActivity : Activity() {
         chayNen("CÀI TẠI CHỖ · $ten", coTomTat = true) {
             khoa.acquire()
             ganWifi(true)
+            gwCanh = gw
             val kq: List<String>
             try {
+                if (!choModem(gw, 120)) return@chayNen listOf("LOI", "Không thấy modem $gw sau 2 phút.\n• Modem đang khởi động lại: chờ đèn Internet sáng ổn định rồi cài lại.\n• Hoặc điện thoại chưa vào đúng WiFi modem của điểm này.")
+                batCanhModem(gw)
                 core.callAttr("chay", ma, stt, may, gw, nhatKy)
                 kq = core.callAttr("tom_tat").asList().map { it.toString() }
             } finally {
+                canhModemChay = false
+                matModemTu = 0
                 ganWifi(false)
                 khoa.release()
             }
-            ui.post { datTrangThai("⏳ $dangChay\nĐang: chứng minh qua tên miền (4G)", LAM) }
+            ui.post { datBuoc("chứng minh qua tên miền (4G)") }
             ui.post { thaWifiRieng() }      // cài xong: nhả WiFi modem app tự vào, điện thoại về mạng thường
             bangChung(ma, stt)
+            try {      // cam đang dùng tên miền khác tên miền của điểm trong app → hỏi người dùng, không tự ghi đè
+                val lech = core.callAttr("ten_mien_lech", ma, stt).toString()
+                if (lech.isNotEmpty()) ui.post { hoiTenMienLech(ma, stt, ten, lech) }
+            } catch (e: Exception) { }
             kq
         }
     }
