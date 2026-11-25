@@ -681,6 +681,19 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
         log("   ⚠ Mật khẩu modem đang lưu trong app còn mặc định/yếu — nếu modem đã đặt mật khẩu riêng thì nhập đúng vào app.")
 
     log("-- Kiểm tra")
+    wan_ngoai = False
+    if not wan:      # modem không cho đọc IP WAN (UPnP tắt, chưa vào được trang modem) → hỏi Internet "IP công cộng của mạng này là gì"
+        log("   hỏi IP công cộng của điểm …")
+        for u in ("https://api.ipify.org", "https://checkip.amazonaws.com", "https://ifconfig.me/ip"):
+            try:
+                t = requests.get(u, timeout=6).text.strip()
+                if re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", t):
+                    wan, wan_ngoai = t, True
+                    break
+            except requests.RequestException:
+                pass
+        if not wan:
+            log("   ⚠ Chưa biết IP công cộng của điểm (modem chưa có Internet?) → chưa đối chiếu được tên miền")
     if wan:
         a = ipaddress.ip_address(wan)
         if a.is_private or a in ipaddress.ip_network("100.64.0.0/10"):

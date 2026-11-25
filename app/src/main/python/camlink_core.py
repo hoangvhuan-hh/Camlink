@@ -457,7 +457,27 @@ def bang_chung(ma, stt, log):
         ip = socket.gethostbyname(dom)
     except OSError:
         ip = ""
+    # Tên miền phải trỏ ĐÚNG IP công cộng của điểm thì mới xem được từ ngoài. Vừa nhập DDNS xong, cam cần 1–5 phút báo IP lên No-IP
+    # → chờ và kiểm lại, không kết luận vội "modem chặn" khi tên miền còn trỏ IP cũ.
+    wan = str(kq.get("wan") or "")
+    chua_tro = False
+    if dom and wan and re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", wan) and ip != wan:
+        C.log(f"   {dom} đang trỏ {ip or '(chưa có IP)'}, IP của điểm là {wan} → chờ cam báo IP lên No-IP (tối đa 3 phút) …")
+        het = time.time() + 180
+        while time.time() < het and ip != wan:
+            time.sleep(15)
+            try:
+                ip = socket.gethostbyname(dom)
+            except OSError:
+                ip = ""
+            C.log(f"   chờ tên miền cập nhật: {dom} → {ip or '(chưa có IP)'} (cần {wan}, còn {max(0, int(het - time.time()))} giây)")
+        chua_tro = ip != wan
+        if chua_tro:
+            C.log(f"   ✖ Sau 3 phút {dom} vẫn trỏ {ip or '(chưa có IP)'}, chưa về IP của điểm {wan} → DDNS trên cam chưa cập nhật được")
+        else:
+            C.log(f"   ✔ {dom} đã trỏ đúng IP của điểm {wan}")
     kq["ip_ten_mien"] = ip
+    kq["ten_mien_chua_tro"] = chua_tro
     C.log(f"   {dom} → {ip or 'không phân giải được'}")
     anh_dir = os.path.join(GOC, "ketqua")
     for c in kq["cam"]:
@@ -467,6 +487,11 @@ def bang_chung(ma, stt, log):
         c["loi_ngoai"] = ""
         if not ip:
             c["loi_ngoai"] = "tên miền không phân giải được"
+            continue
+        if chua_tro:
+            c["loi_ngoai"] = (f"tên miền đang trỏ IP cũ {ip}, chưa về IP của điểm {wan} → KHÔNG phải do modem chặn. DDNS trên cam chưa báo được lên No-IP: "
+                              "chờ thêm 5–10 phút rồi bấm Kiểm tra từ xa; vẫn vậy thì user/pass No-IP của tên miền này sai hoặc tên miền bị khoá")
+            C.log(f"   ✖ Cam {c['so']}: {c['loi_ngoai']}")
             continue
         ov = C.Onvif(dom, c["http"], cd.get("cam_user", "admin"), cd.get("cam_pw", ""))
         try:
