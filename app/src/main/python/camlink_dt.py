@@ -679,6 +679,44 @@ def tu_thu_mau(cam_user, cam_pw):
         thu(cam_user, cam_pw)
 
 
+def _thu_modem(z, thu_muc, goc, tk):
+    """Chỉ ĐỌC: tệp JS của trang đăng nhập modem, thử đăng nhập ubus/LuCI bằng user/pass modem đã lưu, đọc cấu hình mở port."""
+    def ghi(ten, noi_dung):
+        t = noi_dung if isinstance(noi_dung, str) else json.dumps(noi_dung, ensure_ascii=False, indent=1)
+        if tk[1] and len(tk[1]) >= 4:
+            t = t.replace(tk[1], "***")
+        z.writestr(f"{thu_muc}/modem/{ten}", t[:400000])
+    hd = {"User-Agent": "Mozilla/5.0", "Referer": goc + "/"}
+    for f in ("login.js", "main.js", "index.js", "common.js", "menu.js", "home.html", "index.html", "main.html", "luci-static/resources/luci.js",
+              "cgi-bin/luci/admin/menu", "ubus"):
+        try:
+            r = requests.get(f"{goc}/{f}", timeout=8, headers=hd)
+            ghi(ten_file(f) + ".txt", f"{r.status_code}\n{dict(r.headers)}\n\n{r.text}")
+        except Exception as e:
+            ghi(ten_file(f) + ".LOI.txt", str(e)[:300])
+    import camlink_modem
+    o = camlink_modem.Owrt(goc.split("//")[1].split(":")[0], tk[0], tk[1], int(goc.rsplit(":", 1)[1]) if goc.count(":") > 1 else 80)
+    bc = {"nhan_ra_luci": o.nhan_ra()}
+    ma0, d0 = o._ubus("session", "login", {"username": tk[0], "password": tk[1], "timeout": 300}, sid="0" * 32)
+    bc["ubus_login_ma"] = ma0
+    bc["ubus_login_tra"] = ("có phiên" if isinstance(d0, dict) and d0.get("ubus_rpc_session") else d0)
+    bc["dang_nhap"] = o.dang_nhap()
+    bc["user_dung"] = o.user if bc["dang_nhap"] else ""
+    bc["buoc_ket"] = o.buoc
+    ghi("ubus_bao_cao.json", bc)
+    if bc["dang_nhap"]:
+        for ten, dt, lenh, ts in (("acl", "session", "access", {}), ("uci_cac_goi", "uci", "configs", {}), ("uci_firewall", "uci", "get", {"config": "firewall"}),
+                                  ("uci_network", "uci", "get", {"config": "network"}), ("uci_upnpd", "uci", "get", {"config": "upnpd"}),
+                                  ("board", "system", "board", {})):
+            ma, d = o._ubus(dt, lenh, ts)
+            ghi(f"ubus_{ten}.json", {"ma": ma, "du_lieu": d})
+        try:
+            r = requests.post(goc + "/ubus/", json={"jsonrpc": "2.0", "id": 1, "method": "list", "params": [o.sid, "*"]}, timeout=8)
+            ghi("ubus_list.json", r.text)
+        except Exception as e:
+            ghi("ubus_list.LOI.txt", str(e)[:300])
+
+
 # ------------------------------------------------------------------ thu mẫu
 # Trang riêng của cam Uniview (UNV) — giao thức LAPI, chỉ ĐỌC (GET). Hãng khác trả 404, không ảnh hưởng.
 TRANG_UNV = ["/LAPI/V1.0/System/DeviceBasicInfo", "/LAPI/V1.0/System/DeviceInfo", "/LAPI/V1.0/System/Security/Activation",
@@ -722,12 +760,17 @@ def thu(cam_user="", cam_pw=""):
                     if p == "/":
                         for src in re.findall(r'(?:src|href)=["\']([^"\']+\.(?:js|asp|html?|htm))', r.text, re.I)[:40]:
                             try:
-                                r2 = requests.get(requests.compat.urljoin(goc + "/", src), timeout=5)
+                                r2 = requests.get(requests.compat.urljoin(goc + "/", src), timeout=8, headers={"User-Agent": "Mozilla/5.0", "Referer": goc + "/"})
                                 z.writestr(f"{ip}_{port}/tai/{ten_file(src)}", r2.text[:500000])
-                            except requests.RequestException:
-                                pass
+                            except Exception as e_tai:      # ghi lại lỗi để biết vì sao thiếu tệp
+                                z.writestr(f"{ip}_{port}/tai/{ten_file(src)}.LOI.txt", str(e_tai)[:300])
                 except requests.RequestException:
                     pass
+            if ip == gw:      # modem: thu thêm phần đăng nhập + mở port (chỉ ĐỌC) để Claude viết lệnh cho đúng kiểu modem
+                try:
+                    _thu_modem(z, f"{ip}_{port}", goc, tk_modem)
+                except Exception as e_md:
+                    z.writestr(f"{ip}_{port}/modem_LOI.txt", str(e_md)[:300])
             ov = Onvif(ip, port, cam_user, cam_pw)
             if ov.co():
                 z.writestr(f"{ip}_{port}/onvif.txt", "ONVIF: có")
