@@ -91,11 +91,23 @@ class Owrt:
         self.goc = f"http://{host}:{port}" if int(port) != 80 else f"http://{host}"
         self.user, self.pw, self.cho = user or "admin", pw or "", cho
         self.sid, self.buoc = "", ""      # buoc: câu mô tả chỗ đang kẹt (ghi nhật ký)
+        # Mẫu thật 25/11: modem tự chuyển http → https (cổng 443) với chứng chỉ TỰ KÝ → phải bỏ kiểm chứng chỉ (thiết bị trong mạng LAN)
+        self.s = requests.Session()
+        self.s.verify = False
+        try:
+            requests.packages.urllib3.disable_warnings()
+        except Exception:
+            pass
 
     def nhan_ra(self):
         try:
-            r = requests.get(f"{self.goc}/cgi-bin/luci", timeout=self.cho, allow_redirects=False)
-            return "x-luci-login-required" in {k.lower() for k in r.headers} or "luci" in r.text[:3000].lower()
+            r = self.s.get(f"{self.goc}/cgi-bin/luci", timeout=self.cho)      # theo chuyển hướng sang https
+            la = "x-luci-login-required" in {k.lower() for k in r.headers} or "luci" in r.text[:3000].lower()
+            if la:
+                m = re.match(r"(https?://[^/]+)", r.url)
+                if m:
+                    self.goc = m.group(1)      # từ đây gọi thẳng địa chỉ modem thật sự trả lời (https)
+            return la
         except requests.RequestException:
             return False
 
@@ -104,7 +116,7 @@ class Owrt:
         than = {"jsonrpc": "2.0", "id": 1, "method": "call", "params": [sid or self.sid or "0" * 32, doi_tuong, lenh, ts or {}]}
         for duong in ("/ubus/", "/ubus", "/cgi-bin/luci/admin/ubus"):
             try:
-                r = requests.post(self.goc + duong, json=than, timeout=self.cho)
+                r = self.s.post(self.goc + duong, json=than, timeout=self.cho)
                 j = r.json()
             except (requests.RequestException, ValueError):
                 continue
@@ -130,7 +142,7 @@ class Owrt:
                 break
         for u in ung:      # 2) đăng nhập form LuCI → cookie sysauth chính là mã phiên ubus
             try:
-                r = requests.post(f"{self.goc}/cgi-bin/luci", data={"luci_username": u, "luci_password": pw}, timeout=self.cho, allow_redirects=False)
+                r = self.s.post(f"{self.goc}/cgi-bin/luci", data={"luci_username": u, "luci_password": pw}, timeout=self.cho, allow_redirects=False)
             except requests.RequestException:
                 break
             ck = next((v for k, v in r.cookies.items() if k.startswith("sysauth")), "")

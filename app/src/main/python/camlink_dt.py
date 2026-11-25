@@ -455,6 +455,9 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
                     cam_user = u_u
                 if tt_u == "moi":
                     time.sleep(3)
+                if tt_u not in ("san", "moi"):      # chưa có user/pass đúng → KHÔNG thử tiếp qua ONVIF (mỗi lần sai làm cam khoá lâu hơn)
+                    sai_pass.append((ip, tim[ip]))
+                    continue
         except Exception as e:
             log(f"  · UNV {ip}: {str(e)[:100]}")
         ov = Onvif(ip, tim[ip], cam_user, cam_pw)
@@ -478,7 +481,7 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
         for ip, port in list(sai_pass) + list(khong_onvif):      # cam Uniview: nói đúng theo kết quả bước khai báo
             if ip in unv_tt:
                 tt_u, tb_u = unv_tt[ip]
-                if tt_u in ("sai", "loi"):
+                if tt_u in ("sai", "loi", "khoa"):
                     ly_do.append(f"Cam UNV {ip}:{port} — {tb_u}.")
                 elif (ip, port) in khong_onvif:
                     ly_do.append(f"Cam UNV {ip}:{port} đăng nhập được nhưng ONVIF không trả lời → mở web cam http://{ip}{'' if port == 80 else ':' + str(port)}, "
@@ -690,7 +693,7 @@ def _thu_modem(z, thu_muc, goc, tk):
     for f in ("login.js", "main.js", "index.js", "common.js", "menu.js", "home.html", "index.html", "main.html", "luci-static/resources/luci.js",
               "cgi-bin/luci/admin/menu", "ubus"):
         try:
-            r = requests.get(f"{goc}/{f}", timeout=8, headers=hd)
+            r = requests.get(f"{goc}/{f}", timeout=8, headers=hd, verify=False)
             ghi(ten_file(f) + ".txt", f"{r.status_code}\n{dict(r.headers)}\n\n{r.text}")
         except Exception as e:
             ghi(ten_file(f) + ".LOI.txt", str(e)[:300])
@@ -711,7 +714,7 @@ def _thu_modem(z, thu_muc, goc, tk):
             ma, d = o._ubus(dt, lenh, ts)
             ghi(f"ubus_{ten}.json", {"ma": ma, "du_lieu": d})
         try:
-            r = requests.post(goc + "/ubus/", json={"jsonrpc": "2.0", "id": 1, "method": "list", "params": [o.sid, "*"]}, timeout=8)
+            r = o.s.post(o.goc + "/ubus/", json={"jsonrpc": "2.0", "id": 1, "method": "list", "params": [o.sid, "*"]}, timeout=8)
             ghi("ubus_list.json", r.text)
         except Exception as e:
             ghi("ubus_list.LOI.txt", str(e)[:300])
@@ -747,11 +750,20 @@ def thu(cam_user="", cam_pw=""):
             trang_modem = (["/info.html", "/main.html", "/menu.html", "/scvrtsrv.html", "/password.html", "/resetrouter.html", "/scacccntr.html",
                             "/upnpcfg.html", "/wancfg.html", "/login.html", "/login.asp", "/cgi-bin/login.asp", "/status.htm", "/index.asp",
                             "/cgi-bin/luci", "/html/index.html", "/js/main.js", "/getpage.gch?pid=1002"] if ip == gw else [])
+            kem_pass_cam = bool(cam_user) and ip != gw
+            if kem_pass_cam:
+                try:
+                    import camlink_unv
+                    if camlink_unv.la_unv(ip, port) and camlink_unv.Lapi(ip, port, cam_user, cam_pw).vao_duoc() is not True:
+                        kem_pass_cam = False      # cam UNV chưa nhận mật khẩu đã lưu → đọc không kèm mật khẩu, không gây khoá tài khoản
+                        z.writestr(f"{ip}_{port}/ghi_chu.txt", "Cam UNV không nhận user/pass cam đã lưu (hoặc đang khoá) → mẫu này đọc KHÔNG kèm mật khẩu.")
+                except Exception:
+                    pass
             for p in ["/", "/ISAPI/System/deviceInfo", "/cgi-bin/magicBox.cgi?action=getDeviceType",
                       "/onvif/device_service", "/doc/page/login.asp", "/rootDesc.xml", "/igd.xml"] + (TRANG_UNV if ip != gw else []) + trang_modem:
                 try:
                     r = requests.get(goc + p, timeout=5, verify=False,
-                                     auth=HTTPDigestAuth(cam_user, cam_pw) if cam_user and ip != gw else (tk_modem if ip == gw and p in trang_modem else None))
+                                     auth=HTTPDigestAuth(cam_user, cam_pw) if kem_pass_cam else (tk_modem if ip == gw and p in trang_modem else None))
                     than = r.text[:200000]
                     for bi_mat in (cam_pw, tk_modem[1]):      # file mẫu được gửi đi → che mật khẩu nếu trang có nhúng
                         if bi_mat and len(bi_mat) >= 4:
@@ -760,7 +772,7 @@ def thu(cam_user="", cam_pw=""):
                     if p == "/":
                         for src in re.findall(r'(?:src|href)=["\']([^"\']+\.(?:js|asp|html?|htm))', r.text, re.I)[:40]:
                             try:
-                                r2 = requests.get(requests.compat.urljoin(goc + "/", src), timeout=8, headers={"User-Agent": "Mozilla/5.0", "Referer": goc + "/"})
+                                r2 = requests.get(requests.compat.urljoin(r.url, src), timeout=8, verify=False, headers={"User-Agent": "Mozilla/5.0", "Referer": r.url})
                                 z.writestr(f"{ip}_{port}/tai/{ten_file(src)}", r2.text[:500000])
                             except Exception as e_tai:      # ghi lại lỗi để biết vì sao thiếu tệp
                                 z.writestr(f"{ip}_{port}/tai/{ten_file(src)}.LOI.txt", str(e_tai)[:300])
@@ -774,7 +786,7 @@ def thu(cam_user="", cam_pw=""):
             ov = Onvif(ip, port, cam_user, cam_pw)
             if ov.co():
                 z.writestr(f"{ip}_{port}/onvif.txt", "ONVIF: có")
-                if cam_user:
+                if cam_user and (kem_pass_cam or ip == gw):
                     try:
                         z.writestr(f"{ip}_{port}/onvif_info.txt", json.dumps(ov.thong_tin(), ensure_ascii=False))
                     except Exception as e:

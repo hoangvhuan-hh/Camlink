@@ -77,15 +77,16 @@ class Lapi:
         return None, ly_do
 
     def vao_duoc(self):
-        """True = đăng nhập đúng · False = cam từ chối user/pass · None = không rõ (cam không trả lời kiểu LAPI)."""
-        thay_401 = False
-        for d in ("/LAPI/V1.0/NetWork/Port", "/LAPI/V1.0/Network/Port", "/LAPI/V1.0/System/DeviceInfo", "/LAPI/V1.0/System/Time"):
-            http, ma, data, tho = self.goi("GET", d)
-            if http == 200 and ma == 0:
-                return True
-            if http == 401:
-                thay_401 = True
-        return False if thay_401 else None
+        """Thử ĐÚNG MỘT lệnh (cam UNV khoá tài khoản khi nhập sai nhiều lần — mẫu thật 25/11: StatusString "UserLocked").
+        True = đăng nhập đúng · False = cam từ chối user/pass · "khoa" = cam đang khoá đăng nhập · None = không rõ."""
+        http, ma, data, tho = self.goi("GET", "/LAPI/V1.0/NetWork/Port")
+        if "lock" in tho.lower():
+            return "khoa"
+        if http == 200 and ma == 0:
+            return True
+        if http == 401 or any(x in tho.lower() for x in ("unauthor", "not authorized", "password", "passwd", "auth")):
+            return False
+        return None
 
     def khoa_rsa(self):
         d, data = self.doc("/LAPI/V1.0/System/Security/RSA")
@@ -102,17 +103,25 @@ class Lapi:
 def khai_bao_lan_dau(ip, port, cam_user, cam_pw, log=print):
     """Cam UNV còn mật khẩu xuất xưởng (admin/123456) → đổi sang mật khẩu cam của hệ thống.
     Trả (trạng thái, user dùng được, câu báo). Trạng thái: 'san' đã vào được bằng user/pass đã lưu ·
-    'moi' vừa đổi mật khẩu xuất xưởng xong · 'sai' cam từ chối cả hai · 'loi' đổi mật khẩu không được."""
-    if Lapi(ip, port, cam_user, cam_pw).vao_duoc():
+    'moi' vừa đổi mật khẩu xuất xưởng xong · 'sai' cam từ chối · 'khoa' cam đang khoá đăng nhập · 'loi' việc khác.
+    Mỗi cặp user/pass chỉ thử MỘT lần (tối đa 3 lần sai) để không làm cam khoá tài khoản."""
+    CAU_KHOA = ("cam UNV đang KHOÁ đăng nhập vì bị nhập sai mật khẩu nhiều lần → chờ khoảng 10 phút hoặc tắt/bật nguồn cam rồi cài lại; "
+                "nếu cam này đã đặt mật khẩu riêng thì nhập đúng ở 'User/pass riêng điểm này'")
+    vao = Lapi(ip, port, cam_user, cam_pw).vao_duoc()
+    if vao is True:
         return "san", cam_user, "user/pass cam đã lưu vào được"
-    if cam_user != USER_MAC_DINH and Lapi(ip, port, USER_MAC_DINH, cam_pw).vao_duoc():
-        return "san", USER_MAC_DINH, f"cam vào được bằng user «{USER_MAC_DINH}» với mật khẩu đã lưu"
-    md = Lapi(ip, port, USER_MAC_DINH, PASS_MAC_DINH)
-    vao = md.vao_duoc()
+    if vao == "khoa":
+        return "khoa", cam_user, CAU_KHOA
     if vao is None:
-        return "loi", cam_user, ("cam UNV không trả lời các lệnh LAPI app biết (đời cam/firmware khác tài liệu) → "
+        return "loi", cam_user, ("cam UNV không trả lời lệnh LAPI app biết (đời cam/firmware khác) → "
                                  "bấm 'Thu mẫu thiết bị' gửi Claude; trước mắt đặt mật khẩu và DDNS bằng tay trên web cam")
-    if not vao:
+    md = Lapi(ip, port, USER_MAC_DINH, PASS_MAC_DINH)
+    vao = md.vao_duoc() if (cam_user, cam_pw) != (USER_MAC_DINH, PASS_MAC_DINH) else False
+    if vao == "khoa":
+        return "khoa", cam_user, CAU_KHOA
+    if vao is not True:
+        if cam_user != USER_MAC_DINH and Lapi(ip, port, USER_MAC_DINH, cam_pw).vao_duoc() is True:
+            return "san", USER_MAC_DINH, f"cam vào được bằng user «{USER_MAC_DINH}» với mật khẩu đã lưu"
         return "sai", cam_user, ("cam UNV từ chối cả user/pass đã lưu lẫn mật khẩu xuất xưởng (admin/123456) → cam đã bị đặt mật khẩu khác: "
                                   "nhập đúng user/pass cam cho điểm này, hoặc reset cam về xuất xưởng rồi cài lại")
     if cam_pw == PASS_MAC_DINH:
@@ -131,7 +140,7 @@ def khai_bao_lan_dau(ip, port, cam_user, cam_pw, log=print):
         if not (http == 200 and ma == 0):
             return "loi", USER_MAC_DINH, f"cam không nhận mật khẩu mới (HTTP {http}, mã {ma}: {tho[:100]}) — mật khẩu có thể chưa đủ mạnh theo yêu cầu của cam"
         time.sleep(2)
-        if Lapi(ip, port, USER_MAC_DINH, cam_pw).vao_duoc():
+        if Lapi(ip, port, USER_MAC_DINH, cam_pw).vao_duoc() is True:
             return "moi", USER_MAC_DINH, "cam UNV còn mật khẩu xuất xưởng → đã đổi sang mật khẩu cam của hệ thống"
         return "loi", USER_MAC_DINH, "đã gửi mật khẩu mới nhưng đăng nhập lại chưa được"
     except Exception as e:
