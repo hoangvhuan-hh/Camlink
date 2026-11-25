@@ -271,6 +271,16 @@ def chay(ma, stt, may_ip, gw, log):
                                            "web_modem": k.get("web_modem", 0),
                                            "cam": [{"so": c["so"], "ip": c["ip"], "mac": c.get("mac", ""),
                                                     "model": c.get("model", "")} for c in k.get("cam", [])]}
+        # Số cam của điểm theo SỰ THẬT vừa đếm tại chỗ: file/ghim ghi ít hơn (vd "0 cam") thì nâng lên, để Giám sát / Kiểm tra từ xa
+        # hiện đủ cam. Không tự GIẢM (cam có thể đang mất điện) — giảm thì người dùng sửa tay.
+        x_d = da["diem"][stt]
+        n_that = len(k.get("cam", []))
+        if n_that > int(x_d.get("so") or 0):
+            x_d.setdefault("goc", {"so": x_d.get("so"), "bs": x_d.get("bs")})
+            cu_so = int(x_d.get("so") or 0)
+            x_d["so"], x_d["so_thuc"] = n_that, n_that
+            x_d.setdefault("hieu_chinh", []).append({"luc": time.strftime("%d/%m/%Y %H:%M"), "ly_do": "đếm thực tế lúc cài tại chỗ", "cu": cu_so, "moi": n_that})
+            log(f"✎ Điểm {stt}: ghi nhận {n_that} cam thực tế (trước ghi {cu_so}) → Giám sát và Kiểm tra từ xa sẽ hiện đủ {n_that} cam.")
     _ghi_du_an(ma, da)
     try:   # ghi ngược tên miền + MAC về ghim LiteMark (lúc này đang trong WiFi modem: chỉ xếp hàng, gửi khi có 4G)
         import camlink_litemark as L
