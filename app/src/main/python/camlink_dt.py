@@ -367,9 +367,9 @@ def nen_tang(ip, port):
     ma, au, t = lay("/cgi-bin/magicBox.cgi?action=getDeviceType")
     if (ma == 401 and au) or t.startswith("type="):
         return "dahua"
-    ma, au, t = lay("/LAPI/V1.0/System/DeviceBasicInfo")
-    if "/LAPI/" in t:
-        return "unv"      # Uniview (LAPI) — chưa có lệnh DDNS, chờ mẫu thật
+    import camlink_unv
+    if camlink_unv.la_unv(ip, port):
+        return "unv"      # Uniview (LAPI) — xem camlink_unv.py
     return "khac"
 
 
@@ -433,6 +433,7 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
     global LY_DO_0CAM
     LY_DO_0CAM = {}
     sai_pass, khong_onvif = [], []      # để khi ra 0 cam thì nói được VÌ SAO
+    unv_tt = {}                         # ip → (trạng thái, câu báo) của bước khai báo cam Uniview
     for ip in sorted(tim, key=lambda x: int(x.split(".")[-1])):
         if camlink_oryza.da_khai_bao(ip, tim[ip]) is False:      # cam MỚI chưa có mật khẩu → tự khai báo lần đầu bằng user/pass của hệ thống
             log(f"  Cam {ip}:{tim[ip]} còn MỚI (chưa khai báo lần đầu) → tự tạo mật khẩu quản trị theo user/pass cam đã lưu …")
@@ -443,6 +444,19 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
                     log(f"  ⚠ Cam bắt buộc tên user quản trị là «{u_kb}» (khác «{cam_user}» đang lưu) → lần chạy này dùng «{u_kb}»; sửa User cam trong app cho khớp.")
                     cam_user = u_kb
                 time.sleep(3)
+        try:      # cam Uniview: còn mật khẩu xuất xưởng thì tự đổi sang mật khẩu cam của hệ thống (như khai báo lần đầu)
+            import camlink_unv
+            if ip != gw and camlink_unv.la_unv(ip, tim[ip]):
+                tt_u, u_u, tb_u = camlink_unv.khai_bao_lan_dau(ip, tim[ip], cam_user, cam_pw)
+                unv_tt[ip] = (tt_u, tb_u)
+                log(f"  {'✔' if tt_u in ('san', 'moi') else '✖'} Cam UNV {ip}:{tim[ip]}: {tb_u}")
+                if tt_u in ("san", "moi") and u_u != cam_user:
+                    log(f"  ⚠ Cam UNV dùng user quản trị «{u_u}» (khác «{cam_user}» đang lưu) → lần chạy này dùng «{u_u}»; sửa User cam trong app cho khớp.")
+                    cam_user = u_u
+                if tt_u == "moi":
+                    time.sleep(3)
+        except Exception as e:
+            log(f"  · UNV {ip}: {str(e)[:100]}")
         ov = Onvif(ip, tim[ip], cam_user, cam_pw)
         if ov.co():
             try:
@@ -461,6 +475,18 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
         if not tim:
             ly_do.append(f"Không thấy thiết bị nào trong mạng {gw.rsplit('.', 1)[0]}.x ngoài modem → cam chưa lên mạng. "
                          "Kiểm nguồn cam, dây mạng cam–modem; điện thoại phải ở đúng WiFi modem của điểm.")
+        for ip, port in list(sai_pass) + list(khong_onvif):      # cam Uniview: nói đúng theo kết quả bước khai báo
+            if ip in unv_tt:
+                tt_u, tb_u = unv_tt[ip]
+                if tt_u in ("sai", "loi"):
+                    ly_do.append(f"Cam UNV {ip}:{port} — {tb_u}.")
+                elif (ip, port) in khong_onvif:
+                    ly_do.append(f"Cam UNV {ip}:{port} đăng nhập được nhưng ONVIF không trả lời → mở web cam http://{ip}{'' if port == 80 else ':' + str(port)}, "
+                                 "vào Setup → Network → Port (hoặc mục ONVIF) bật ONVIF, rồi cài lại. Bấm 'Thu mẫu thiết bị' gửi Claude để app tự làm bước này.")
+                else:
+                    ly_do.append(f"Cam UNV {ip}:{port} đăng nhập trang web được nhưng ONVIF từ chối user «{cam_user}» → trên web cam vào mục ONVIF/User kiểm tra tài khoản ONVIF, rồi cài lại.")
+        sai_pass = [x for x in sai_pass if x[0] not in unv_tt]
+        khong_onvif = [x for x in khong_onvif if x[0] not in unv_tt]
         for ip, port in sai_pass:
             ly_do.append(f"Cam {ip}:{port} có trả lời nhưng TỪ CHỐI user «{cam_user}» / mật khẩu cam đã lưu → "
                          "sửa user/pass cam trong Cài đặt chung (hoặc nhập riêng cho điểm này) rồi cài lại.")
@@ -504,6 +530,10 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
                     elif nt == "dahua":
                         ddns_dahua(ip, port, cam_user, cam_pw, d["domain"], d["u"], d["p"])
                         kq["ghi"].append("DDNS đã nhập")
+                    elif nt == "unv":
+                        import camlink_unv
+                        kq["ghi"].append(camlink_unv.dat_ddns(ip, port, cam_user, cam_pw, d["domain"], d["u"], d["p"]))
+                        log(f"   ✔ {kq['ghi'][-1]}")
                     else:
                         raise RuntimeError("hãng này chưa có lệnh DDNS — bấm 'Thu mẫu thiết bị' gửi Claude")
                 except Exception as e:
@@ -518,9 +548,16 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
                 ket_qua.append(kq)
                 continue
             ov.dat_gw_dns(gw)
-            ov.dat_port(http, rtsp)
+            try:
+                ov.dat_port(http, rtsp)
+            except Exception as e_port:
+                if nt != "unv":
+                    raise
+                import camlink_unv      # cam Uniview: ONVIF không đổi được port → đổi qua LAPI
+                log(f"   · ONVIF không đổi được port ({str(e_port)[:60]}) → đổi qua LAPI của UNV")
+                camlink_unv.dat_port(ip, port, cam_user, cam_pw, http, rtsp)
             log(f"   port xong, chờ cam mở {ip}:{http} ...")
-            if not cho_len(ip, http, 60):
+            if not cho_len(ip, http, 150 if nt == "unv" else 60):
                 raise RuntimeError("cam không mở port HTTP mới")
             ov.port = http
             ov.dat_ip(token, ip_moi)
@@ -646,6 +683,7 @@ def tu_thu_mau(cam_user, cam_pw):
 # Trang riêng của cam Uniview (UNV) — giao thức LAPI, chỉ ĐỌC (GET). Hãng khác trả 404, không ảnh hưởng.
 TRANG_UNV = ["/LAPI/V1.0/System/DeviceBasicInfo", "/LAPI/V1.0/System/DeviceInfo", "/LAPI/V1.0/System/Security/Activation",
              "/LAPI/V1.0/Network/Interfaces", "/LAPI/V1.0/NetWork/Interfaces", "/LAPI/V1.0/Network/Ports", "/LAPI/V1.0/NetWork/Ports",
+             "/LAPI/V1.0/NetWork/Port", "/LAPI/V1.0/Network/Interfaces/1", "/LAPI/V1.0/System/Security/RSA", "/LAPI/V1.0/NetWork/HttpAuth",
              "/LAPI/V1.0/Network/DDNS", "/LAPI/V1.0/NetWork/DDNS", "/LAPI/V1.0/Network/DDNS/Capabilities", "/LAPI/V1.0/NetWork/DDNS/Capabilities",
              "/LAPI/V1.0/Network/UPnP", "/LAPI/V1.0/NetWork/UPnP", "/LAPI/V1.0/System/Capabilities",
              "/LAPI/V1.0/Channels/0/Media/Video/Streams/0/LiveStreamURL", "/index.htm", "/cgi-bin/main-cgi"]
