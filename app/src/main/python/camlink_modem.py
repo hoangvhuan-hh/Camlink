@@ -203,7 +203,7 @@ class VnptLuci:
       - các lệnh sau kèm "sessionKey=<khoá>"; đăng xuất: logout.cmd "status=user want to logout&user=…&sessionKey=…"
       - modem KHOÁ đăng nhập 3 phút sau 3 lần sai; một tài khoản chỉ đăng nhập được ở MỘT nơi ("user exist")
     → mỗi lượt chỉ thử đăng nhập MỘT lần, xong việc luôn đăng xuất.
-    Trang mở port là nat.html ("NAT Forwarding") — CHƯA có mẫu mã của trang này nên CHƯA có lệnh thêm luật; app thu mẫu trang đó."""
+    Trang mở port là nat.html ("NAT Forwarding" → Virtual Server): lệnh natvirtualserver.json, xem chú thích ở hàm them_nat."""
 
     def __init__(self, host, user, pw, port=80, cho=10):
         self.goc = f"http://{host}:{port}" if int(port) != 80 else f"http://{host}"
@@ -234,7 +234,13 @@ class VnptLuci:
                         headers={"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", "Referer": self.goc + "/"})
         t = re.sub(r"[\x00-\x19]+", "", r.text).replace(",}", "}")
         try:
-            return json.loads(t), r.text
+            j = json.loads(t)
+            if isinstance(j, str):      # mẫu thật: modem có lệnh trả JSON bọc trong một chuỗi
+                try:
+                    j = json.loads(j)
+                except ValueError:
+                    pass
+            return j, r.text
         except ValueError:
             return None, r.text
 
@@ -281,12 +287,77 @@ class VnptLuci:
     def lay(self, trang):
         return self.s.get(f"{self.goc}/{trang}", timeout=self.cho, headers={"Referer": self.goc + "/home.html"})
 
+    # ---- NAT Forwarding → Virtual Server (đọc từ nat.js của chính modem, mẫu thật 25/11/2026 11:09):
+    #   xem:  natvirtualserver.json  "sessionKey=K&action=get" → {"enblNat", "scVrtSrv": ["tên|cổng ngoài đầu|cổng ngoài cuối|giao thức|cổng trong đầu|cổng trong cuối|IP máy trong|WAN", …],
+    #                                                             "wanInterfaceInfoRoute": "tên/giao_diện|…", "glbEntryCt"}
+    #   thêm: natvirtualserver.json  "sessionKey=K&action=add&serviceName=<tên>&dstWanIf=<giao_diện>&srvAddr=<IP>&proto=1,&eStart=<p>,&eEnd=<p>,&iStart=<p>,&iEnd=<p>,"   (proto 1 = TCP)
+    def _bang_nat(self):
+        j, tho = self.hoi("natvirtualserver.json", "action=get")
+        if isinstance(j, str):      # modem có lúc trả JSON bọc trong chuỗi
+            try:
+                j = json.loads(j)
+            except ValueError:
+                j = None
+        if not isinstance(j, dict):
+            raise RuntimeError(f"modem không trả bảng mở port ({tho[:60]})")
+        return j
+
+    @staticmethod
+    def _tach(j):
+        """[(cổng ngoài đầu, cổng ngoài cuối, IP máy trong)] từ bảng của modem."""
+        out = []
+        for d in j.get("scVrtSrv") or []:
+            o = str(d).split("|")
+            try:
+                out.append((int(o[1]), int(o[2]), o[6]))
+            except (IndexError, ValueError):
+                pass
+        return out
+
     def luat(self):
-        return []
+        return [(a, ip) for a, b, ip in self._tach(self._bang_nat())]
 
     def them_nat(self, ten, port, ip):
-        return False, ("app ĐÃ đăng nhập được modem VNPT AX3000 nhưng chưa có lệnh thêm luật cho đời modem này "
-                       "(đang thu mẫu trang NAT Forwarding) → bấm 'Gửi kết quả' gửi Claude; trước mắt mở port tay")
+        port = int(port)
+        j = self._bang_nat()
+        if str(j.get("enblNat", "1")) != "1":
+            return False, "modem đang tắt NAT (đường WAN không phải kiểu định tuyến) → không mở port được trên modem này"
+        co = self._tach(j)
+        if any(a <= port <= b and x == ip for a, b, x in co):
+            return True, f"modem đã có luật {port} → {ip}"
+        if any(f"|{port}|" in str(d) and ip in str(d) for d in (j.get("scVrtSrv") or [])):
+            return True, f"modem đã có luật {port} → {ip}"
+        if any(a <= port <= b for a, b, x in co):
+            khac = next(x for a, b, x in co if a <= port <= b)
+            return False, f"port {port} trên modem đang trỏ về {khac} (không phải {ip}) → app không ghi đè; xoá luật cũ trên modem nếu nó sai"
+        try:
+            if int(j.get("glbEntryCt") or 0) >= 32:
+                return False, "modem đã đủ 32 luật mở port, không thêm được"
+        except ValueError:
+            pass
+        wan = [x.split("/") for x in str(j.get("wanInterfaceInfoRoute") or "").split("|") if "/" in x]
+        if not wan:
+            return False, "modem chưa có đường WAN định tuyến để gắn luật mở port (modem chưa lên Internet?)"
+        chon = next((w for w in wan if any(k in w[0].lower() for k in ("internet", "pppoe", "ipoe", "hsi"))), wan[-1])      # trang modem mặc định chọn dòng cuối
+        ten_sach = re.sub(r"[^A-Za-z0-9_]", "_", ten)[:32] or "camlink"
+        j2, tho = self.hoi("natvirtualserver.json", f"action=add&serviceName={ten_sach}&dstWanIf={chon[1]}&srvAddr={ip}"
+                                                    f"&proto=1,&eStart={port},&eEnd={port},&iStart={port},&iEnd={port},")
+        if isinstance(j2, str):
+            try:
+                j2 = json.loads(j2)
+            except ValueError:
+                j2 = None
+        st = str((j2 or {}).get("status", "")) if isinstance(j2, dict) else ""
+        try:
+            j3, tho3 = self.hoi("natvirtualserver.json", "action=get")
+            ok = isinstance(j3, dict) and any(a <= port <= b and x == ip for a, b, x in self._tach(j3))
+            if not ok and st == "OK" and f"|{port}|" in tho3.replace("\\", "") and ip in tho3:
+                ok = True      # modem báo OK và bảng có đúng cổng + IP (thứ tự cột khác dự kiến) → tính là đã thêm, không thêm trùng lần sau
+        except Exception:
+            ok = False
+        if ok:
+            return True, f"đã thêm luật mở port {port} → {ip} trên modem (WAN {chon[1]})"
+        return False, f"modem không nhận luật {port} → {ip} (trả lời: {st or tho[:60] or 'trống'})"
 
 
 def chuan_bi(gw, user, pw, log=print, yeu=None):

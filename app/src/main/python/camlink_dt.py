@@ -798,12 +798,12 @@ def _thu_modem(z, thu_muc, goc, tk):
                 except Exception as e:
                     ghi(f"trang_{ten_file(trang)}.LOI.txt", str(e)[:300])
             ghi("nat_cac_lenh.json", sorted(lenh))
-            cam_goi = ("cmd", "add", "del", "remove", "set", "save", "apply", "reset", "reboot", "restore", "update", "upgrade", "enable", "disable", "edit", "change", "logout", "login")
+            cam_goi = ("cmd", "send", "add", "del", "remove", "set", "save", "apply", "reset", "reboot", "restore", "update", "upgrade", "enable", "disable", "edit", "change", "logout", "login")
             for ten in sorted(lenh | {"support.json"}):      # chỉ gọi lệnh ĐỌC (.json, tên không mang nghĩa ghi/xoá/đổi)
                 if not ten.endswith(".json") or any(c in ten.lower() for c in cam_goi):
                     continue
                 try:
-                    j, tho = v.hoi(ten)
+                    j, tho = v.hoi(ten, "action=get")
                     ghi(f"doc_{ten_file(ten)}.txt", tho)
                 except Exception as e:
                     ghi(f"doc_{ten_file(ten)}.LOI.txt", str(e)[:300])
