@@ -93,6 +93,15 @@ class SoDoActivity : Activity() {
             goc.addView(mui())
         }
 
+        val viecCon = j.optJSONArray("viec_con")      // app làm tới đâu hay tới đó: còn việc nào phải làm tay thì nói đúng việc đó
+        if (viecCon != null && viecCon.length() > 0) {
+            val vc = the("#B54708")
+            vc.addView(chu("⚠ CÒN ${viecCon.length()} VIỆC PHẢI LÀM TAY", 13f, true, "#B54708"))
+            for (i in 0 until viecCon.length()) vc.addView(chu("${i + 1}. " + viecCon.optString(i), 14f))
+            goc.addView(vc)
+            goc.addView(mui())
+        }
+
         // Internet / tên miền
         val tm = the("#0F5D8C")
         tm.addView(chu("🌐 INTERNET — tên miền", 13f, true, "#0F5D8C"))

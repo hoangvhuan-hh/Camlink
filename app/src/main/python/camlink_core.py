@@ -219,6 +219,24 @@ def so_du_an():
     return len(_cac_du_an())
 
 
+def _chum_khoa(cd, cd0, loai):
+    """Khoá thử thêm cho cam / modem của một điểm, sau mật khẩu đang dùng cho điểm: [(user, pass, nhãn)].
+    Chỉ có khi điểm được nhập mật khẩu RIÊNG khác mặc định → thử thêm mật khẩu mặc định của hệ thống.
+    (Mật khẩu xuất xưởng của hãng do trình từng hãng tự thử. Không có danh sách mật khẩu nào khác — Huan chốt 25/11.)"""
+    u, p = cd.get(loai + "_user") or "admin", cd.get(loai + "_pw") or ""
+    u0, p0 = cd0.get(loai + "_user") or "admin", cd0.get(loai + "_pw") or ""
+    if p0 and (u0, p0) != (u, p):
+        return [(u0, p0, f"mật khẩu {'cam' if loai == 'cam' else 'modem'} mặc định của hệ thống")]
+    return []
+
+
+def viec_con(ma, stt):
+    """Sau lượt cài: các việc app chưa làm được (mỗi dòng một việc). Rỗng = app làm trọn."""
+    if C.KQ_CUOI.get("stt") != stt:
+        return ""
+    return "\n".join(f"{i}. {v}" for i, v in enumerate(C.KQ_CUOI.get("viec_con") or [], 1))
+
+
 def co_cai_dat():
     return "cam_pw" in C.doc_cai_dat()
 
@@ -282,14 +300,20 @@ def chay(ma, stt, may_ip, gw, log):
     cd = C.cd_diem(da["diem"][stt], C.doc_cai_dat())      # user/pass nhập riêng cho điểm được ưu tiên hơn mặc định
     if da["diem"][stt].get("rieng"):
         log("Điểm này dùng user/pass RIÊNG do người dùng nhập (mặc định của hệ thống giữ nguyên).")
+    cd0 = C.doc_cai_dat()
+    C.CHUM["cam"], C.CHUM["modem"] = _chum_khoa(cd, cd0, "cam"), _chum_khoa(cd, cd0, "modem")
     C.chay(stt, cd["cam_user"], cd["cam_pw"], cd.get("modem_user", "admin"), cd.get("modem_pw", "admin"))
+    for loai, kd in list(C.KHOA_DUNG.items()):      # thiết bị vào được bằng khoá dự phòng → ghi nhớ RIÊNG cho điểm (mặc định giữ nguyên)
+        r = da["diem"][stt].setdefault("rieng", {})
+        r[loai + "_user"], r[loai + "_pw"] = kd[0], kd[1]
+        log(f"✎ Điểm {stt}: {loai} vào được bằng mật khẩu mặc định của hệ thống (mật khẩu riêng của điểm không đúng) → đã sửa lại phần riêng của điểm (kiểm tra / sửa từ xa sau này dùng đúng mật khẩu đó).")
     if any("ĐẠT" in l for l in C.NHAT_KY):
         da.setdefault("da_xong", {})[stt] = time.strftime("%d/%m %H:%M")
     if C.KQ_CUOI.get("stt") == stt:   # hồ sơ điểm: để sau này kiểm tra / sửa từ xa
         k = C.KQ_CUOI
         da.setdefault("ho_so", {})[stt] = {"luc": time.strftime("%d/%m/%Y %H:%M"), "wan": k.get("wan", ""),
                                            "gw": k.get("gw", ""), "upnp": k.get("upnp"), "luat": k.get("luat", []),
-                                           "web_modem": k.get("web_modem", 0),
+                                           "web_modem": k.get("web_modem", 0), "viec_con": k.get("viec_con", []),
                                            "cam": [{"so": c["so"], "ip": c["ip"], "mac": c.get("mac", ""),
                                                     "model": c.get("model", "")} for c in k.get("cam", [])]}
         # Số cam của điểm theo SỰ THẬT vừa đếm tại chỗ: file/ghim ghi ít hơn (vd "0 cam") thì nâng lên, để Giám sát / Kiểm tra từ xa

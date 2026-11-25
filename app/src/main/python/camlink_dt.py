@@ -49,6 +49,9 @@ KQ_CUOI = {}   # thiết bị app chưa biết cách điều khiển → tự th
 TM_LECH = {}          # cam đang dùng tên miền KHÁC tên miền app lưu cho điểm: {"stt", "cam", "app"} → app hỏi người dùng, không tự ghi đè
 GHI_DE_DDNS = False   # người dùng đã chọn "ghi tên miền của điểm lên cam" → lượt chạy kế ghi đè (dùng một lần)
 DUNG_VI_MAT_MODEM = False   # màn hình báo: mất kết nối modem quá 2 phút → dừng các vòng chờ
+CHUM = {"cam": [], "modem": []}   # CHÙM KHOÁ dự phòng do core nạp trước mỗi lượt cài: [(user, pass, nhãn)] — thử lần lượt sau mật khẩu đã lưu
+KHOA_DUNG = {}    # lượt cài vừa rồi vào được bằng khoá DỰ PHÒNG nào: {"cam": (user, pass), "modem": (user, pass)} → core ghi nhớ riêng cho điểm
+VIEC_CON = []     # lượt cài vừa rồi: những việc app CHƯA làm được, người dùng phải làm tay (mỗi việc một câu)
 LY_DO_0CAM = {}   # lượt cài ra 0 cam: {"stt", "ly_do": [câu lý do + việc cần làm]} — màn sơ đồ hiện ra
 
 
@@ -100,6 +103,15 @@ def quet(mang, bo_qua):
         if hp:
             tim.setdefault(hp[0], hp[1])
     return tim
+
+
+def cho_khoa(giay, cau):
+    """Thiết bị đang khoá đăng nhập → chờ có đếm ngược trên nhật ký/thanh trạng thái rồi mới thử tiếp. Mất modem quá 2 phút thì thôi chờ."""
+    con = int(giay)
+    while con > 0 and not DUNG_VI_MAT_MODEM:
+        log(f"   ⏳ {cau} — còn {con} giây")
+        time.sleep(min(15, con))
+        con -= 15
 
 
 def cho_len(ip, port, giay=120):
@@ -450,6 +462,9 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
         tim = quet(gw.rsplit(".", 1)[0] + ".0/24", {gw, may})
     cams = []
     global LY_DO_0CAM, TM_LECH, GHI_DE_DDNS, DUNG_VI_MAT_MODEM
+    KHOA_DUNG.clear()
+    del VIEC_CON[:]
+    khoa_cam = {}                       # ip → (user, pass) cam này vào được bằng khoá dự phòng
     LY_DO_0CAM = {}
     TM_LECH = {}
     DUNG_VI_MAT_MODEM = False
@@ -469,10 +484,12 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
         try:      # cam Uniview: còn mật khẩu xuất xưởng thì tự đổi sang mật khẩu cam của hệ thống (như khai báo lần đầu)
             import camlink_unv
             if ip != gw and camlink_unv.la_unv(ip, tim[ip]):
-                tt_u, u_u, tb_u = camlink_unv.khai_bao_lan_dau(ip, tim[ip], cam_user, cam_pw)
+                tt_u, u_u, tb_u = camlink_unv.khai_bao_lan_dau(ip, tim[ip], cam_user, cam_pw, log, CHUM["cam"], cho_khoa)
                 unv_tt[ip] = (tt_u, tb_u)
                 log(f"  {'✔' if tt_u in ('san', 'moi') else '✖'} Cam UNV {ip}:{tim[ip]}: {tb_u}")
-                if tt_u in ("san", "moi") and u_u != cam_user:
+                if tt_u == "san" and camlink_unv.KHOA_VAO:
+                    khoa_cam[ip] = (camlink_unv.KHOA_VAO["user"], camlink_unv.KHOA_VAO["pw"])
+                elif tt_u in ("san", "moi") and u_u != cam_user:
                     log(f"  ⚠ Cam UNV dùng user quản trị «{u_u}» (khác «{cam_user}» đang lưu) → lần chạy này dùng «{u_u}»; sửa User cam trong app cho khớp.")
                     cam_user = u_u
                 if tt_u == "moi":
@@ -482,14 +499,28 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
                     continue
         except Exception as e:
             log(f"  · UNV {ip}: {str(e)[:100]}")
-        ov = Onvif(ip, tim[ip], cam_user, cam_pw)
+        ov = Onvif(ip, tim[ip], *khoa_cam.get(ip, (cam_user, cam_pw)))
         if ov.co():
             try:
                 tt = ov.thong_tin()
             except Exception as e:
-                log(f"  {ip}:{tim[ip]} có ONVIF nhưng không đăng nhập được ({e}) → kiểm tra user/pass cam")
-                sai_pass.append((ip, tim[ip]))
-                continue
+                tt = None
+                da_thu = ["mật khẩu cam đã lưu ✖"]
+                if ip not in unv_tt:      # CHÙM KHOÁ: cam từ chối mật khẩu đã lưu → thử lần lượt tối đa 2 mật khẩu dự phòng rồi mới kết luận
+                    for u2, p2, nhan in [x for x in CHUM["cam"] if x[1] and (x[0], x[1]) != (cam_user, cam_pw)][:2]:
+                        ov2 = Onvif(ip, tim[ip], u2, p2)
+                        try:
+                            tt = ov2.thong_tin()
+                        except Exception:
+                            da_thu.append(nhan + " ✖")
+                            continue
+                        ov, khoa_cam[ip] = ov2, (u2, p2)
+                        log(f"  ✔ Cam {ip}:{tim[ip]} vào được bằng {nhan} (khác mật khẩu cam đã lưu) — giữ nguyên mật khẩu này trên cam, ghi nhớ riêng cho điểm")
+                        break
+                if tt is None:
+                    log(f"  {ip}:{tim[ip]} có ONVIF nhưng không đăng nhập được ({e}); đã thử: {', '.join(da_thu)} → kiểm tra user/pass cam")
+                    sai_pass.append((ip, tim[ip]))
+                    continue
             cams.append((ip, tim[ip], ov, tt))
             log(f"  Cam {ip}:{tim[ip]} — {tt['hang']} {tt['model']}")
         else:
@@ -532,6 +563,14 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
         return
     if len(cams) != d["so"]:
         log(f"⚠ Tìm thấy {len(cams)} cam, file ghi {d['so']} cam")
+    cam_goc = (cam_user, cam_pw)
+    for ip, port in sai_pass:      # cam này app không vào được nhưng các cam khác vẫn cài tiếp
+        VIEC_CON.append(f"Cam {ip}:{port} TỪ CHỐI mọi mật khẩu app có (mật khẩu hệ thống + mật khẩu xuất xưởng của hãng) → cam đã bị đặt mật khẩu khác: sửa Pass cam cho đúng hoặc reset cam rồi cài lại điểm (các cam khác đã cài xong).")
+    dung = {khoa_cam.get(c[0], cam_goc) for c in cams}
+    if len(dung) == 1 and dung != {cam_goc}:
+        KHOA_DUNG["cam"] = next(iter(dung))
+    elif len(dung) > 1:
+        VIEC_CON.append("Các cam trong điểm đang dùng mật khẩu KHÁC NHAU → kiểm tra từ xa sau này chỉ vào được một phần; nên đặt lại cho cùng một mật khẩu.")
 
     ket_qua, luat = [], []
     for i, (ip, port, ov, tt) in enumerate(cams):
@@ -539,6 +578,7 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
             log("✖ Dừng cài các cam còn lại: mất kết nối modem quá 2 phút (modem khởi động lại / rớt WiFi). Vào lại WiFi modem rồi cài lại điểm này.")
             break
         ip_moi, http, rtsp = f"{gw.rsplit('.', 1)[0]}.{IP_TU + i}", HTTP[i], RTSP[i]
+        cam_user, cam_pw = khoa_cam.get(ip, cam_goc)      # cam nào vào bằng khoá dự phòng thì các bước sau dùng đúng khoá đó
         log(f"-- Cam {i + 1}: {ip}:{port} → {ip_moi}  HTTP {http}  RTSP {rtsp}")
         kq = {"so": i + 1, "ip": ip_moi, "http": http, "rtsp": rtsp, "model": tt["model"], "ghi": []}
         try:
@@ -626,19 +666,27 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
             kq["ghi"].append(f"LỖI: {e}")
             log(f"   ✖ Cam {i + 1}: {e}")
         ket_qua.append(kq)
+    cam_user, cam_pw = cam_goc
+    for k in ket_qua:
+        if not k.get("ok"):
+            VIEC_CON.append(f"Cam {k['so']} ({k['ip']}) chưa đạt: {'; '.join(k['ghi'])[:160]}")
 
     log("-- Modem: mở port")
+    da_mo = 0
     wan = None
     web_modem = 0
     mdm = None
     try:      # modem mới còn mật khẩu xuất xưởng → đổi sang mật khẩu của hệ thống (chỉ khi nhận ra đúng kiểu modem)
         import camlink_modem
         log("   đăng nhập trang quản trị modem …")
-        mdm = camlink_modem.chuan_bi(gw, modem_user, modem_pw, log, pass_modem_yeu)
+        mdm = camlink_modem.chuan_bi(gw, modem_user, modem_pw, log, pass_modem_yeu, CHUM["modem"], cho_khoa)
         if mdm is None:
-            log("   · Chưa vào được trang quản trị modem (khác kiểu, hoặc mật khẩu trên tem modem khác mật khẩu đã lưu) → mở port bằng UPnP; "
-                "muốn app quản modem thì nhập đúng mật khẩu modem ở 'User/pass riêng điểm này'.")
+            log("   · Chưa vào được trang quản trị modem (khác kiểu, hoặc mật khẩu trên tem modem khác các mật khẩu app có) → thử mở port bằng UPnP; "
+                "muốn app quản modem thì sửa Pass modem trong app cho đúng (xem tem modem).")
             CAN_MAU.append("modem")
+        elif (getattr(mdm, "user", ""), getattr(mdm, "pw", "")) in [(u, p) for u, p, _ in CHUM["modem"]] \
+                and (mdm.user, mdm.pw) != (modem_user, modem_pw):
+            KHOA_DUNG["modem"] = (mdm.user, mdm.pw)
     except Exception as e:
         log(f"   · Trang quản trị modem: {str(e)[:80]}")
     log("   dò UPnP trên modem …")
@@ -654,8 +702,21 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
             elif "718" in t or "Conflict" in t:
                 co_san += 1   # modem đã có luật cho port này (vd tạo tay) → giữ nguyên
         tong = dem + co_san
+        da_mo = tong
         log(f"   {'✔' if tong == len(luat) else '⚠'} Mở {tong}/{len(luat)} luật"
             + (f" ({co_san} luật modem đã có sẵn, giữ nguyên)" if co_san else "") + " qua UPnP")
+        if tong < len(luat) and mdm is not None:      # UPnP mở thiếu → không bỏ cuộc: mở phần còn lại qua trang quản trị modem
+            log("   UPnP mở chưa đủ → mở tiếp qua trang quản trị modem …")
+            da_mo = 0
+            for ten, p, ip in luat:
+                try:
+                    ok_n, tb_n = mdm.them_nat(ten, p, ip)
+                except Exception as e:
+                    ok_n, tb_n = False, str(e)[:80]
+                da_mo += 1 if ok_n else 0
+                if not ok_n:
+                    log(f"   ✖ {tb_n}")
+            log(f"   {'✔' if da_mo == len(luat) else '⚠'} Sau khi mở tiếp qua trang quản trị modem: {da_mo}/{len(luat)} luật")
         ma, t = upnp_goi(igd, "GetExternalIPAddress", {})
         m = re.search(r"<NewExternalIPAddress>(.*?)<", t)
         wan = m and m.group(1)
@@ -689,6 +750,7 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
                 dem += 1 if ok_n else 0
                 if not ok_n:
                     log(f"   ✖ {tb_n}")
+            da_mo = dem
             log(f"   {'✔' if dem == len(luat) else '⚠'} Modem tắt UPnP → mở {dem}/{len(luat)} luật qua trang quản trị modem")
             if dem < len(luat):
                 CAN_MAU.append("modem")
@@ -700,6 +762,14 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
             mdm.dang_xuat()
     except Exception:
         pass
+    if luat and da_mo < len(luat):      # cam đã cài xong, chỉ còn đúng việc này
+        try:
+            thu = ", ".join(camlink_modem.DA_THU) or "chưa thử được"
+        except Exception:
+            thu = ""
+        VIEC_CON.append(f"MỞ PORT TRÊN MODEM (mới mở {da_mo}/{len(luat)}): " + ("app đã vào được modem nhưng modem không nhận lệnh" if mdm is not None
+                        else f"app chưa vào được trang quản trị modem (đã thử: {thu})") + " → vào trang modem "
+                        f"http://{gw} mục NAT / Virtual Server, thêm: " + "; ".join(f"{p} → {ip}" for _, p, ip in luat) + " (TCP, ngoài = trong).")
     if not igd and pass_modem_yeu(modem_user, modem_pw):      # không in mật khẩu ra nhật ký (nhật ký được gửi qua Zalo/Gmail)
         log("   ⚠ Mật khẩu modem đang lưu trong app còn mặc định/yếu — nếu modem đã đặt mật khẩu riêng thì nhập đúng vào app.")
 
@@ -730,7 +800,7 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
             log(f"   {'✔' if ip_dom == wan else '⚠'} {d['domain']} → {ip_dom} (cần {wan}; DDNS có thể mất 1–5 phút)")
     global KQ_CUOI
     KQ_CUOI = {"stt": stt, "ten": d["ten"], "domain": d["domain"], "gw": gw, "wan": wan or "", "web_modem": web_modem,
-               "upnp": bool(igd), "luat": [{"ten": t, "port": p, "ip": ip} for t, p, ip in luat],
+               "upnp": bool(igd), "luat": [{"ten": t, "port": p, "ip": ip} for t, p, ip in luat], "viec_con": list(VIEC_CON),
                "cam": [{"so": k["so"], "ip": k["ip"], "http": k["http"], "rtsp": k["rtsp"], "model": k.get("model", ""),
                         "mac": k.get("mac", ""), "ok": bool(k.get("ok")), "ghi": "; ".join(k["ghi"])} for k in ket_qua]}
     log("")
@@ -741,6 +811,12 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
     for ten, p, ip in luat:
         log(f"   {ten:<10} {p:<6} → {ip}")
     log(f" Kiểm tra port: {d['domain']}  " + ", ".join(str(p) for _, p, _ in luat))
+    if VIEC_CON:
+        log(f"VIỆC CÒN PHẢI LÀM TAY ({len(VIEC_CON)}):")
+        for i_v, v_c in enumerate(VIEC_CON, 1):
+            log(f" {i_v}. {v_c}")
+    else:
+        log("✔ App đã làm trọn các bước của điểm này, không còn việc phải làm tay.")
     f = os.path.join(thu_muc_ra(), f"camlink_diem{stt}_{time.strftime('%H%M')}.txt")
     with open(f, "w", encoding="utf-8") as fh:
         fh.write("\n".join(NHAT_KY))

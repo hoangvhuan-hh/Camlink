@@ -9,6 +9,7 @@ NGUYÊN TẮC AN TOÀN: chỉ ra lệnh khi trang của modem ĐÚNG dấu hiệ
 (app vẫn mở port bằng UPnP như cũ). Chưa có modem thật để kiểm — lần chạy đầu ở hiện trường app tự thu mẫu nếu modem khác kiểu."""
 import json
 import re
+import time
 import requests
 
 MAT_KHAU_XUAT_XUONG = [("admin", "admin")]      # thử tối đa vài cặp để không làm modem khoá đăng nhập
@@ -245,25 +246,33 @@ class VnptLuci:
             return None, r.text
 
     def dang_nhap(self):
-        """MỘT lần thử. True nếu vào được."""
+        """MỘT lần thử. True nếu vào được. Hỏng thì self.loai: 'mang' | 'la' | 'noi_khac' | 'quyen' | 'sai'; self.khoa_giay: modem đang khoá bao lâu."""
+        self.loai, self.khoa_giay = "", 0
         try:
             j, tho = self._post("login.cmd", f"user={self.user}&pass={self.pw.replace('&', chr(0x7F), 1)}")
         except requests.RequestException as e:
-            self.buoc = f"modem không trả lời lệnh đăng nhập ({str(e)[:60]})"
+            self.loai, self.buoc = "mang", f"modem không trả lời lệnh đăng nhập ({str(e)[:60]})"
             return False
         if not isinstance(j, dict):
-            self.buoc = f"modem trả lời lạ khi đăng nhập: {tho[:80]}"
+            self.loai, self.buoc = "la", f"modem trả lời lạ khi đăng nhập: {tho[:80]}"
             return False
         st = str(j.get("status", ""))
         if st == "OK" and j.get("sessionKey"):
             self.key, self.lan_dau = str(j["sessionKey"]), str(j.get("firstlog")) == "1"
             return True
         if st == "user exist":
+            self.loai = "noi_khac"
             self.buoc = "tài khoản modem này đang đăng nhập ở nơi khác (trình duyệt trên điện thoại / máy tính) → đăng xuất trang modem ở đó rồi cài lại"
         elif "permission" in st:
+            self.loai = "quyen"
             self.buoc = f"modem không cho tài khoản «{self.user}» đăng nhập ({st})"
         else:
+            self.loai = "sai"
             sai, khoa = str(j.get("numberLogin", "")), str(j.get("timeoutLogin", ""))
+            try:
+                self.khoa_giay = max(0, int(float(khoa or 0)))
+            except ValueError:
+                self.khoa_giay = 0
             self.buoc = (f"modem không nhận user «{self.user}» / mật khẩu modem đã lưu (trả lời: {st or '?'}"
                          + (f"; đã sai {sai}/3 lần" if sai and sai != "0" else "") + (f"; đang khoá {khoa} giây" if khoa and khoa not in ("0", "") else "")
                          + ") → nhập đúng user/pass modem; sai 3 lần modem khoá 3 phút")
@@ -360,27 +369,106 @@ class VnptLuci:
         return False, f"modem không nhận luật {port} → {ip} (trả lời: {st or tho[:60] or 'trống'})"
 
 
-def chuan_bi(gw, user, pw, log=print, yeu=None):
-    """Lúc cài điểm: modem còn mật khẩu xuất xưởng thì đổi sang mật khẩu của hệ thống. Trả đối tượng modem đã đăng nhập, hoặc None.
+DA_THU = []        # nhãn các khoá đã thử ở lượt gần nhất (không chứa mật khẩu) — để báo "đã thử những gì"
+CHO_KHOA_TOI_DA = 2      # số lần chịu chờ modem hết khoá trong một lượt cài (mỗi lần ~3 phút)
+
+
+def _chum(user, pw, them):
+    """[(user, pass, nhãn)] theo thứ tự thử, bỏ trùng, bỏ rỗng."""
+    ds, thay = [], set()
+    for u, p, nhan in [(user, pw, "mật khẩu modem đã lưu")] + list(them or []) + [(u0, p0, "mật khẩu xuất xưởng của modem") for u0, p0 in MAT_KHAU_XUAT_XUONG]:
+        u = u or user or "admin"
+        if p in (None, "") or (u, p) in thay:
+            continue
+        thay.add((u, p))
+        ds.append((u, p, nhan))
+    return ds
+
+
+def _cho_mac_dinh(giay, cau, log):
+    con = int(giay)
+    while con > 0:
+        log(f"   ⏳ {cau} — còn {con} giây")
+        time.sleep(min(15, con))
+        con -= 15
+
+
+def chuan_bi(gw, user, pw, log=print, yeu=None, them=None, cho=None):
+    """Lúc cài điểm: vào trang quản trị modem bằng CHÙM KHOÁ (mật khẩu đã lưu → các mật khẩu dự phòng `them` = [(user, pass, nhãn)]);
+    modem còn mật khẩu xuất xưởng thì đổi sang mật khẩu của hệ thống. Trả đối tượng modem đã đăng nhập, hoặc None.
+    Thử hết chùm mới được nói "không vào được"; modem khoá đăng nhập thì CHỜ hết khoá rồi thử tiếp (cho(giây, câu) do nơi gọi đưa).
     yeu(user, pw) → True nếu mật khẩu hệ thống còn yếu (khi đó không đổi)."""
+    del DA_THU[:]
+    ds = _chum(user, pw, them)
+    cho = cho or (lambda giay, cau: _cho_mac_dinh(giay, cau, log))
     m = Bcm(gw, user, pw)
     if m.vao_duoc():
         log("   ✔ Đăng nhập trang quản trị modem bằng mật khẩu đã lưu")
         return m
     v = VnptLuci(gw, user, pw)
-    if v.nhan_ra():      # modem VNPT AX3000 GPON ONT: đăng nhập đúng kiểu của nó, chỉ thử MỘT lần (sai 3 lần modem khoá 3 phút)
-        if v.dang_nhap():
-            log(f"   ✔ Đăng nhập modem VNPT AX3000 bằng user «{v.user}» và mật khẩu đã lưu" + (" (modem báo đây là lần đăng nhập đầu)" if v.lan_dau else ""))
-            return v
-        log(f"   ✖ Modem VNPT AX3000: {v.buoc}.")
+    if v.nhan_ra():      # modem VNPT AX3000 GPON ONT: sai 3 lần modem khoá 3 phút → thử lần lượt, bị khoá thì chờ rồi thử tiếp
+        lan_cho, i, da_sai, thu_lai = 0, 0, 0, False
+        while i < len(ds):
+            u, p, nhan = ds[i]
+            v.user, v.pw = u, p
+            if v.dang_nhap():
+                DA_THU.append(nhan + " ✔")
+                log(f"   ✔ Đăng nhập modem VNPT AX3000 bằng user «{u}» và {nhan}" + (" (modem báo đây là lần đăng nhập đầu)" if v.lan_dau else ""))
+                if "xuất xưởng" in nhan:
+                    log("   ⚠ Modem còn mật khẩu XUẤT XƯỞNG. App chưa có mẫu trang đổi mật khẩu của modem này nên CHƯA tự đổi sang mật khẩu hệ thống "
+                        "— vẫn mở port bình thường; đổi mật khẩu modem bằng tay, hoặc bấm 'Thu mẫu thiết bị' gửi Claude.")
+                return v
+            if v.loai in ("noi_khac", "quyen", "mang", "la"):      # không phải chuyện sai mật khẩu → thử khoá khác cũng vô ích
+                DA_THU.append(nhan + " (chưa thử được)")
+                log(f"   ✖ Modem VNPT AX3000: {v.buoc}.")
+                return None
+            if v.khoa_giay > 0 and da_sai == 0 and not thu_lai:
+                # ngay lần thử ĐẦU modem đã báo đang khoá (ai đó nhập sai trước) → lần thử này chưa chắc được xét: chờ hết khoá rồi thử LẠI đúng khoá này
+                lan_cho += 1
+                cho(v.khoa_giay + 5, f"modem đang khoá đăng nhập {v.khoa_giay} giây — chờ hết khoá rồi thử {nhan}")
+                thu_lai = True
+                continue
+            thu_lai = False
+            da_sai += 1
+            DA_THU.append(nhan + " ✖")
+            if i + 1 < len(ds):
+                log(f"   · modem không nhận {nhan} — thử tiếp {ds[i + 1][2]}")
+                if v.khoa_giay > 0:      # lần sai vừa rồi làm modem khoá → chờ hết khoá mới thử khoá kế
+                    if lan_cho >= CHO_KHOA_TOI_DA:
+                        con = [n2 for _, _, n2 in ds[i + 1:]]
+                        log(f"   ✖ Modem VNPT AX3000 khoá đăng nhập liên tục. Chưa thử được: {', '.join(con)}.")
+                        DA_THU.extend(n2 + " (chưa thử được)" for n2 in con)
+                        return None
+                    lan_cho += 1
+                    cho(v.khoa_giay + 5, f"modem khoá đăng nhập {v.khoa_giay} giây — chờ hết khoá rồi thử {ds[i + 1][2]}")
+            i += 1
+        log(f"   ✖ Modem VNPT AX3000: đã thử HẾT {len(ds)} khoá ({', '.join(DA_THU)}) đều không vào được "
+            "→ mật khẩu modem đã bị đổi thành mật khẩu khác: sửa Pass modem trong app cho đúng (xem tem dưới đáy modem) rồi cài lại.")
         return None
     o = Owrt(gw, user, pw)
-    if o.nhan_ra():      # modem nền OpenWrt/LuCI (VNPT AX3000 GPON ONT…): chỉ đăng nhập bằng mật khẩu đã lưu, không đổi mật khẩu
-        if o.dang_nhap():
-            log(f"   ✔ Đăng nhập modem (kiểu OpenWrt/LuCI) bằng user «{o.user}» và mật khẩu đã lưu")
-            return o
-        log(f"   ✖ Modem kiểu OpenWrt/LuCI (VNPT AX3000…): {o.buoc} → nhập đúng user/pass modem ở 'User/pass riêng điểm này' rồi cài lại.")
+    if o.nhan_ra():      # modem nền OpenWrt/LuCI: thử lần lượt tối đa 3 khoá, không đổi mật khẩu
+        for u, p, nhan in ds[:3]:
+            o.user, o.pw = u, p
+            if o.dang_nhap():
+                DA_THU.append(nhan + " ✔")
+                log(f"   ✔ Đăng nhập modem (kiểu OpenWrt/LuCI) bằng user «{u}» và {nhan}")
+                return o
+            DA_THU.append(nhan + " ✖")
+        log(f"   ✖ Modem kiểu OpenWrt/LuCI: {o.buoc}; đã thử: {', '.join(DA_THU)} → sửa Pass modem trong app cho đúng rồi cài lại.")
         return None
+    DA_THU.append("mật khẩu modem đã lưu ✖")
+    try:
+        la_bcm = requests.get(m.goc + "/scvrtsrv.html", timeout=m.cho).status_code == 401
+    except requests.RequestException:
+        la_bcm = False
+    if la_bcm:           # modem nền Broadcom (hỏi mật khẩu kiểu Basic): thử thêm tối đa 3 khoá dự phòng
+        for u, p, nhan in [x for x in ds[1:] if "xuất xưởng" not in x[2]][:2]:
+            m1 = Bcm(gw, u, p)
+            if m1.vao_duoc():
+                DA_THU.append(nhan + " ✔")
+                log(f"   ✔ Đăng nhập trang quản trị modem bằng user «{u}» và {nhan}")
+                return m1
+            DA_THU.append(nhan + " ✖")
     for u0, p0 in MAT_KHAU_XUAT_XUONG:
         if (u0, p0) == (user, pw):
             continue
@@ -397,5 +485,7 @@ def chuan_bi(gw, user, pw, log=print, yeu=None):
         except Exception as e:
             ok, tb = False, f"đổi mật khẩu modem lỗi: {str(e)[:80]}"
         log(f"   {'✔' if ok else '✖'} Modem còn mật khẩu xuất xưởng → {tb}")
+        DA_THU.append("mật khẩu xuất xưởng ✔")
         return m0
+    DA_THU.append("mật khẩu xuất xưởng ✖")
     return None

@@ -100,18 +100,40 @@ class Lapi:
         return base64.b64encode(ban_ma).decode(), {"RSAPublicKeyE": e, "RSAPublicKeyN": n}
 
 
-def khai_bao_lan_dau(ip, port, cam_user, cam_pw, log=print):
+DA_THU = []          # nhãn các khoá đã thử với cam gần nhất (không chứa mật khẩu)
+KHOA_VAO = {}        # cam vào được bằng khoá DỰ PHÒNG nào: {user, pw, nhan}
+CHO_KHOA = 300       # cam khoá đăng nhập: chờ 5 phút rồi thử lại một lần
+
+
+def khai_bao_lan_dau(ip, port, cam_user, cam_pw, log=print, them=None, cho=None):
     """Cam UNV còn mật khẩu xuất xưởng (admin/123456) → đổi sang mật khẩu cam của hệ thống.
     Trả (trạng thái, user dùng được, câu báo). Trạng thái: 'san' đã vào được bằng user/pass đã lưu ·
     'moi' vừa đổi mật khẩu xuất xưởng xong · 'sai' cam từ chối · 'khoa' cam đang khoá đăng nhập · 'loi' việc khác.
     Mỗi cặp user/pass chỉ thử MỘT lần (tối đa 3 lần sai) để không làm cam khoá tài khoản."""
     CAU_KHOA = ("cam UNV đang KHOÁ đăng nhập vì bị nhập sai mật khẩu nhiều lần → chờ khoảng 10 phút hoặc tắt/bật nguồn cam rồi cài lại; "
                 "nếu cam này đã đặt mật khẩu riêng thì nhập đúng ở 'User/pass riêng điểm này'")
+    del DA_THU[:]
+    KHOA_VAO.clear()
     vao = Lapi(ip, port, cam_user, cam_pw).vao_duoc()
+    DA_THU.append("mật khẩu cam đã lưu " + ("✔" if vao is True else "✖"))
     if vao is True:
         return "san", cam_user, "user/pass cam đã lưu vào được"
+    if vao == "khoa" and cho:      # cam đang khoá: chờ MỘT lần rồi thử lại đúng khoá này (lần thử lúc đang khoá chưa chắc được xét)
+        cho(CHO_KHOA, "cam UNV đang khoá đăng nhập (sai mật khẩu nhiều lần) — chờ hết khoá rồi thử tiếp")
+        vao = Lapi(ip, port, cam_user, cam_pw).vao_duoc()
+        if vao is True:
+            return "san", cam_user, "user/pass cam đã lưu vào được (sau khi chờ cam hết khoá)"
     if vao == "khoa":
         return "khoa", cam_user, CAU_KHOA
+    # điểm có mật khẩu RIÊNG mà không vào được → thử mật khẩu mặc định của hệ thống trước khi thử xuất xưởng
+    for u2, p2, nhan in [x for x in (them or []) if x[1] and (x[0], x[1]) not in ((cam_user, cam_pw), (USER_MAC_DINH, PASS_MAC_DINH))][:2]:
+        v2 = Lapi(ip, port, u2, p2).vao_duoc()
+        DA_THU.append(nhan + (" ✔" if v2 is True else " ✖"))
+        if v2 is True:
+            KHOA_VAO.update(user=u2, pw=p2, nhan=nhan)
+            return "san", u2, f"cam vào được bằng {nhan} (khác mật khẩu cam đã lưu) — giữ nguyên mật khẩu này trên cam, ghi nhớ riêng cho điểm"
+        if v2 == "khoa":
+            return "khoa", cam_user, CAU_KHOA
     if vao is None:
         return "loi", cam_user, ("cam UNV không trả lời lệnh LAPI app biết (đời cam/firmware khác) → "
                                  "bấm 'Thu mẫu thiết bị' gửi Claude; trước mắt đặt mật khẩu và DDNS bằng tay trên web cam")
@@ -119,11 +141,13 @@ def khai_bao_lan_dau(ip, port, cam_user, cam_pw, log=print):
     vao = md.vao_duoc() if (cam_user, cam_pw) != (USER_MAC_DINH, PASS_MAC_DINH) else False
     if vao == "khoa":
         return "khoa", cam_user, CAU_KHOA
+    if (cam_user, cam_pw) != (USER_MAC_DINH, PASS_MAC_DINH):
+        DA_THU.append("mật khẩu xuất xưởng " + ("✔" if vao is True else "✖"))
     if vao is not True:
         if cam_user != USER_MAC_DINH and Lapi(ip, port, USER_MAC_DINH, cam_pw).vao_duoc() is True:
             return "san", USER_MAC_DINH, f"cam vào được bằng user «{USER_MAC_DINH}» với mật khẩu đã lưu"
-        return "sai", cam_user, ("cam UNV từ chối cả user/pass đã lưu lẫn mật khẩu xuất xưởng (admin/123456) → cam đã bị đặt mật khẩu khác: "
-                                  "nhập đúng user/pass cam cho điểm này, hoặc reset cam về xuất xưởng rồi cài lại")
+        return "sai", cam_user, (f"cam UNV từ chối TẤT CẢ khoá đã thử ({', '.join(DA_THU)}) → cam đã bị đặt mật khẩu khác: "
+                                  "sửa Pass cam trong app cho đúng (hoặc nhập riêng cho điểm này), hoặc reset cam về xuất xưởng rồi cài lại")
     if cam_pw == PASS_MAC_DINH:
         return "san", USER_MAC_DINH, "cam đang dùng mật khẩu xuất xưởng, trùng mật khẩu đã lưu"
     try:
