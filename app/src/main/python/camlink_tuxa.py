@@ -669,7 +669,8 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True, nhanh=Fal
         for p in ls_truoc["diem"]:
             # chỉ chép lại kết quả ĐO THẬT dưới 30 phút (trước đây chép nối mãi → điểm đạt có thể xanh hàng giờ dù cam đã rớt)
             if (p["cam"] and all(c["muc"] == XANH for c in p["cam"]) and p["stt"] in diem and p["domain"] == diem[p["stt"]]["domain"]
-                    and time.time() - float(p.get("do_luc") or 0) < 1800):
+                    and time.time() - float(p.get("do_luc") or 0) < 1800
+                    and len(p["cam"]) >= max(1, int(diem[p["stt"]].get("so") or 0))):   # số cam của điểm tăng lên → phải quét lại cho đủ ô
                 tai_su_dung[p["stt"]] = p
     quet_ds = [k for k in ds if k not in tai_su_dung]
     if tai_su_dung:
