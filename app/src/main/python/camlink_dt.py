@@ -602,6 +602,22 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
             if not cho_len(ip_moi, http, 120):
                 raise RuntimeError(f"cam không lên lại ở {ip_moi}:{http}")
             kq["ok"] = mo(ip_moi, rtsp, 3)
+            if not kq["ok"] and nt == "unv":
+                # Cam UNV chỉ đổi port RTSP sau khi KHỞI ĐỘNG LẠI (mẫu thật 25/11: cam 2 đổi HTTP 8081 xong nhưng RTSP 5541 chưa mở)
+                try:
+                    import camlink_unv
+                    log(f"   RTSP {rtsp} chưa mở → đặt lại port qua LAPI và khởi động lại cam UNV (chờ tối đa 150 giây) …")
+                    camlink_unv.dat_port(ip_moi, http, cam_user, cam_pw, http, rtsp)
+                    time.sleep(5)
+                    if mo(ip_moi, http, 2) and not mo(ip_moi, rtsp, 2):      # cam không tự khởi động lại → ra lệnh khởi động lại
+                        Onvif(ip_moi, http, cam_user, cam_pw).khoi_dong()
+                        time.sleep(8)
+                    cho_len(ip_moi, http, 150)
+                    cho_len(ip_moi, rtsp, 30)
+                    kq["ok"] = mo(ip_moi, rtsp, 3)
+                    log(f"   {'✔' if kq['ok'] else '✖'} sau khi khởi động lại: RTSP {rtsp} {'đã mở' if kq['ok'] else 'vẫn chưa mở'}")
+                except Exception as e_r:
+                    log(f"   ⚠ Đặt lại port RTSP cho cam UNV lỗi: {str(e_r)[:80]}")
             kq["ghi"].append("RTSP mở" if kq["ok"] else f"RTSP {rtsp} chưa mở")
             luat += [(f"cam{i + 1}", http, ip_moi), (f"cam{i + 1}_rtsp", rtsp, ip_moi)]
             log(f"   ✔ Cam {i + 1} xong")
