@@ -756,6 +756,7 @@ class MainActivity : Activity() {
                 b.setOnClickListener { hop?.dismiss(); bam() }
                 khung.addView(b, lpDoc(tren = 8))
             }
+            if (can) lua("📚 Xem tất cả tên miền của dự án — chọn / chuyển cho điểm này") { tatCaTenMien(ma, stt, m, canhBao) }
             lua("📋 Dán từ tin nhắn (Zalo…) — nhanh nhất") { danTenMien(ma, stt, m, canhBao) }
             lua("📄 Nạp file tên miền (Excel)") { choDdns = arrayOf(ma, stt, m.toString(), canhBao ?: ""); moFileDdns() }
             lua("⌨ Nhập tay tên miền cho điểm này") { nhapTenMien(ma, stt, m, canhBao, ten) }
@@ -799,6 +800,7 @@ class MainActivity : Activity() {
         val soTm = nhan.size
         nhan.add("📋 Dán từ tin nhắn (thêm tên miền mới)")
         nhan.add("⌨ Nhập tay tên miền")
+        nhan.add("📚 Xem tất cả tên miền (kể cả đang dùng ở điểm khác)")
         AlertDialog.Builder(this)
             .setTitle(if (soTm == 0) "Kho không còn tên miền chưa dùng" else "Chọn tên miền cho điểm (chỉ hiện tên miền chưa dùng)")
             .setItems(nhan.toTypedArray()) { _, i ->
@@ -814,10 +816,53 @@ class MainActivity : Activity() {
                         xacNhanCaiThat(ma, stt, m, canhBao)
                     }
                     i == soTm -> danTenMien(ma, stt, m, canhBao)
-                    else -> nhapTenMien(ma, stt, m, canhBao, ten)
+                    i == soTm + 1 -> nhapTenMien(ma, stt, m, canhBao, ten)
+                    else -> tatCaTenMien(ma, stt, m, canhBao)
                 }
             }
             .setNegativeButton("Quay lại") { _, _ -> xacNhanCaiThat(ma, stt, m, canhBao) }.show()
+    }
+
+    /** MỌI tên miền của dự án, ghi rõ đang ở điểm nào. Chọn tên miền trống → gán ngay; chọn tên miền đang ở điểm khác → hỏi rồi chuyển.
+     *  Chọn xong đi thẳng tới hộp xác nhận cài (không quay vòng lại hộp "chưa có tên miền"). */
+    private fun tatCaTenMien(ma: String, stt: String, m: Int, canhBao: String?) {
+        val ds = try { org.json.JSONArray(core.callAttr("tat_ca_ten_mien", ma, stt).toString()) } catch (e: Exception) { org.json.JSONArray() }
+        if (ds.length() == 0) {
+            AlertDialog.Builder(this).setTitle("Dự án chưa có tên miền nào").setMessage("Dán tin nhắn hoặc nạp file tên miền trước.")
+                .setPositiveButton("Quay lại") { _, _ -> xacNhanCai(ma, stt, m, canhBao) }.show()
+            return
+        }
+        val nhan = (0 until ds.length()).map { i ->
+            val d = ds.getJSONObject(i)
+            val giu = d.optString("giu")
+            d.optString("domain") + "\n   " + when {
+                giu.isEmpty() -> "✅ chưa dùng"
+                giu == stt -> "● đang là tên miền của điểm này"
+                else -> "⛔ đang ở điểm $giu" + (if (d.optString("ten_giu").isNotEmpty()) " (${d.optString("ten_giu")})" else "") + (if (d.optBoolean("da_cai")) " — điểm đó ĐÃ CÀI" else " — điểm đó chưa cài")
+            }
+        }
+        val chot = { i: Int ->
+            try {
+                val dom = core.callAttr("chuyen_ten_mien", ma, stt, ds.getJSONObject(i).optInt("i")).toString()
+                nhatKy.ghi("Đã chọn tên miền $dom cho điểm $stt")
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(this, "Không gán được: " + (e.message ?: ""), android.widget.Toast.LENGTH_LONG).show()
+            }
+            capNhatTieuDe()
+            xacNhanCaiThat(ma, stt, m, canhBao)
+        }
+        AlertDialog.Builder(this).setTitle("Tất cả tên miền của dự án — chọn cho điểm $stt")
+            .setItems(nhan.toTypedArray()) { _, i ->
+                val d = ds.getJSONObject(i)
+                val giu = d.optString("giu")
+                if (giu.isEmpty() || giu == stt) chot(i)
+                else AlertDialog.Builder(this).setTitle("Tên miền đang ở điểm $giu")
+                    .setMessage("${d.optString("domain")} đang gán cho điểm $giu" + (if (d.optBoolean("da_cai")) " và điểm đó ĐÃ CÀI cam với tên miền này" else "") +
+                        ".\n\nChuyển sang điểm $stt thì điểm $giu thành \"chưa có tên miền\" trong app (cam ở điểm $giu không bị đổi gì).\n\nChỉ chuyển khi chắc tên miền này thuộc điểm $stt.")
+                    .setPositiveButton("Chuyển sang điểm $stt") { _, _ -> chot(i) }
+                    .setNegativeButton("Không") { _, _ -> tatCaTenMien(ma, stt, m, canhBao) }.show()
+            }
+            .setNegativeButton("Quay lại") { _, _ -> xacNhanCai(ma, stt, m, canhBao) }.show()
     }
 
     /** Sau lượt cài: cam (cài tay / cài trước) đang dùng tên miền khác tên miền app lưu cho điểm → người dùng chọn, app không tự ghi đè. */
@@ -877,7 +922,10 @@ class MainActivity : Activity() {
                 nhatKy.ghi(bao + " (dán từ tin nhắn)")
                 android.widget.Toast.makeText(this, bao, android.widget.Toast.LENGTH_LONG).show()
                 capNhatTieuDe()
-                xacNhanCai(ma, stt, m, canhBao)      // quay lại đúng bước chọn tên miền cho điểm đang cài
+                if (kq.optInt("them") == 0) {      // toàn tên miền đã có sẵn → không quay vòng về hộp cũ: mở danh sách để chọn / chuyển
+                    android.widget.Toast.makeText(this, "Các tên miền vừa dán đã có sẵn trong dự án. Chọn trong danh sách.", android.widget.Toast.LENGTH_LONG).show()
+                    tatCaTenMien(ma, stt, m, canhBao)
+                } else xacNhanCai(ma, stt, m, canhBao)      // quay lại đúng bước chọn tên miền cho điểm đang cài
             }
             .setNegativeButton("Quay lại") { _, _ -> xacNhanCai(ma, stt, m, canhBao) }
             .show()

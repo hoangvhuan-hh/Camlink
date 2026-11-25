@@ -728,12 +728,67 @@ def lm_nap_ddns(ma, duong_dan, log):
 def can_chon_ten_mien(ma, stt):
     """Điểm chưa có tên miền mà dự án có kho tên miền → app phải cho chọn trước khi cài."""
     da = _doc_du_an(ma)
+    if _dong_bo_kho(da):
+        _ghi_du_an(ma, da)
     return (not da["diem"][str(stt)].get("domain")) and bool(da.get("kho_ddns"))
+
+
+def _dong_bo_kho(da):
+    """Dấu "đã dùng" của từng tên miền trong kho phải theo SỰ THẬT: điểm nào đang mang tên miền đó.
+    (Dấu cũ có thể sót lại sau khi đổi / nhập tay / lấy theo cam → kho báo "dùng hết" trong khi vẫn còn tên miền trống.)
+    Trả True nếu có sửa."""
+    giu = {str(d.get("domain") or "").lower(): s for s, d in da["diem"].items() if d.get("domain")}
+    doi = False
+    for k in da.get("kho_ddns", []):
+        dung = giu.get(str(k.get("domain") or "").lower(), "")
+        if str(k.get("dung") or "") != dung:
+            k["dung"] = dung
+            doi = True
+    return doi
 
 
 def ung_vien_ten_mien(ma, stt):
     import camlink_litemark as L
-    return json.dumps(L.ung_vien_ten_mien(_doc_du_an(ma), stt), ensure_ascii=False)
+    da = _doc_du_an(ma)
+    if _dong_bo_kho(da):
+        _ghi_du_an(ma, da)
+    return json.dumps(L.ung_vien_ten_mien(da, stt), ensure_ascii=False)
+
+
+def tat_ca_ten_mien(ma, stt):
+    """MỌI tên miền trong kho của dự án, kể cả đã dùng: tên miền nào đang ở điểm nào (để người dùng tự chọn / chuyển, không bị kẹt)."""
+    da = _doc_du_an(ma)
+    if _dong_bo_kho(da):
+        _ghi_du_an(ma, da)
+    out = []
+    for i, k in enumerate(da.get("kho_ddns", [])):
+        giu = str(k.get("dung") or "")
+        da_cai = ""
+        if giu and giu != str(stt):
+            try:
+                da_cai = diem_da_cai(da, giu) or ""
+            except Exception:
+                da_cai = ""
+        out.append({"i": i, "domain": k.get("domain", ""), "giu": giu, "ten_giu": (da["diem"].get(giu) or {}).get("ten", "") if giu else "",
+                    "da_cai": bool(da_cai), "co_pass": bool(k.get("u") and k.get("p"))})
+    return json.dumps(out, ensure_ascii=False)
+
+
+def chuyen_ten_mien(ma, stt, i):
+    """Người dùng chọn một tên miền trong kho cho điểm này, kể cả khi đang gán cho điểm khác (điểm kia sẽ thành 'chưa có tên miền').
+    Trả tên miền."""
+    import camlink_litemark as L
+    da = _doc_du_an(ma)
+    _dong_bo_kho(da)
+    k = da["kho_ddns"][int(i)]
+    giu = str(k.get("dung") or "")
+    if giu and giu != str(stt):
+        x = da["diem"][giu]
+        x.update(domain="", u="", p="", dom_nguon=f"tên miền {k.get('domain')} đã chuyển sang điểm {stt} lúc {time.strftime('%d/%m %H:%M')}")
+        k["dung"] = ""
+    dom = L.gan_ten_mien(da, stt, int(i), "người dùng chọn")
+    _ghi_du_an(ma, da)
+    return dom
 
 
 def gan_ten_mien(ma, stt, i):
