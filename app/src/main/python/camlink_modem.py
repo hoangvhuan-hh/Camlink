@@ -7,6 +7,7 @@ giao diện "Advanced Setup → NAT → Virtual Servers" = nền firmware Broadc
   - khởi động lại: rebootinfo.cgi?sessionKey=
 NGUYÊN TẮC AN TOÀN: chỉ ra lệnh khi trang của modem ĐÚNG dấu hiệu nền này; việc nào cũng kiểm lại kết quả; không đúng kiểu thì đứng yên
 (app vẫn mở port bằng UPnP như cũ). Chưa có modem thật để kiểm — lần chạy đầu ở hiện trường app tự thu mẫu nếu modem khác kiểu."""
+import json
 import re
 import requests
 
@@ -193,6 +194,101 @@ class Owrt:
         return ok, (f"đã thêm luật mở port {port} → {ip}" if ok else f"đã gửi luật {port} → {ip} nhưng đọc lại không thấy")
 
 
+class VnptLuci:
+    """Modem VNPT "AX3000 Wireless Dual-Band GPON ONT" — giao diện riêng của VNPT chạy trên /cgi-bin/luci/ (HTTPS, chứng chỉ tự ký).
+    ĐỌC TỪ MẪU THẬT 25/11/2026 (login.js + jquery.min.js của chính modem ở Tà Lài mở rộng):
+      - mọi lệnh: POST /cgi-bin/luci/<tên>, thân dạng chữ thô "khoá=giá trị&…" (không mã hoá %), trả JSON
+      - đăng nhập: login.cmd, thân "user=<user>&pass=<pass>" (dấu & đầu tiên trong pass đổi thành ký tự 0x7F)
+                   → {"status": "OK", "sessionKey": …, "firstlog": "0"|"1", "numberLogin", "timeoutLogin"}
+      - các lệnh sau kèm "sessionKey=<khoá>"; đăng xuất: logout.cmd "status=user want to logout&user=…&sessionKey=…"
+      - modem KHOÁ đăng nhập 3 phút sau 3 lần sai; một tài khoản chỉ đăng nhập được ở MỘT nơi ("user exist")
+    → mỗi lượt chỉ thử đăng nhập MỘT lần, xong việc luôn đăng xuất.
+    Trang mở port là nat.html ("NAT Forwarding") — CHƯA có mẫu mã của trang này nên CHƯA có lệnh thêm luật; app thu mẫu trang đó."""
+
+    def __init__(self, host, user, pw, port=80, cho=10):
+        self.goc = f"http://{host}:{port}" if int(port) != 80 else f"http://{host}"
+        self.user, self.pw, self.cho = user or "admin", pw or "", cho
+        self.key, self.buoc, self.lan_dau = "", "", False
+        self.s = requests.Session()
+        self.s.verify = False
+        try:
+            requests.packages.urllib3.disable_warnings()
+        except Exception:
+            pass
+
+    def nhan_ra(self):
+        try:
+            r = self.s.get(self.goc + "/", timeout=self.cho)
+        except requests.RequestException:
+            return False
+        t = r.text[:6000]
+        la = "login.js" in t and ("GPON ONT" in t or "vnpt" in t.lower())
+        if la:
+            m = re.match(r"(https?://[^/]+)", r.url)
+            if m:
+                self.goc = m.group(1)
+        return la
+
+    def _post(self, ten, than=""):
+        r = self.s.post(f"{self.goc}/cgi-bin/luci/{ten}", data=than.encode("latin-1", "replace"), timeout=self.cho,
+                        headers={"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", "Referer": self.goc + "/"})
+        t = re.sub(r"[\x00-\x19]+", "", r.text).replace(",}", "}")
+        try:
+            return json.loads(t), r.text
+        except ValueError:
+            return None, r.text
+
+    def dang_nhap(self):
+        """MỘT lần thử. True nếu vào được."""
+        try:
+            j, tho = self._post("login.cmd", f"user={self.user}&pass={self.pw.replace('&', chr(0x7F), 1)}")
+        except requests.RequestException as e:
+            self.buoc = f"modem không trả lời lệnh đăng nhập ({str(e)[:60]})"
+            return False
+        if not isinstance(j, dict):
+            self.buoc = f"modem trả lời lạ khi đăng nhập: {tho[:80]}"
+            return False
+        st = str(j.get("status", ""))
+        if st == "OK" and j.get("sessionKey"):
+            self.key, self.lan_dau = str(j["sessionKey"]), str(j.get("firstlog")) == "1"
+            return True
+        if st == "user exist":
+            self.buoc = "tài khoản modem này đang đăng nhập ở nơi khác (trình duyệt trên điện thoại / máy tính) → đăng xuất trang modem ở đó rồi cài lại"
+        elif "permission" in st:
+            self.buoc = f"modem không cho tài khoản «{self.user}» đăng nhập ({st})"
+        else:
+            sai, khoa = str(j.get("numberLogin", "")), str(j.get("timeoutLogin", ""))
+            self.buoc = (f"modem không nhận user «{self.user}» / mật khẩu modem đã lưu (trả lời: {st or '?'}"
+                         + (f"; đã sai {sai}/3 lần" if sai and sai != "0" else "") + (f"; đang khoá {khoa} giây" if khoa and khoa not in ("0", "") else "")
+                         + ") → nhập đúng user/pass modem; sai 3 lần modem khoá 3 phút")
+        return False
+
+    def vao_duoc(self, pw=None):
+        return self.nhan_ra() and self.dang_nhap()
+
+    def dang_xuat(self):
+        if not self.key:
+            return
+        try:
+            self._post("logout.cmd", f"status=user want to logout&user={self.user}&sessionKey={self.key}")
+        except Exception:
+            pass
+        self.key = ""
+
+    def hoi(self, ten, them=""):
+        return self._post(ten, "sessionKey=" + self.key + (("&" + them) if them else ""))
+
+    def lay(self, trang):
+        return self.s.get(f"{self.goc}/{trang}", timeout=self.cho, headers={"Referer": self.goc + "/home.html"})
+
+    def luat(self):
+        return []
+
+    def them_nat(self, ten, port, ip):
+        return False, ("app ĐÃ đăng nhập được modem VNPT AX3000 nhưng chưa có lệnh thêm luật cho đời modem này "
+                       "(đang thu mẫu trang NAT Forwarding) → bấm 'Gửi kết quả' gửi Claude; trước mắt mở port tay")
+
+
 def chuan_bi(gw, user, pw, log=print, yeu=None):
     """Lúc cài điểm: modem còn mật khẩu xuất xưởng thì đổi sang mật khẩu của hệ thống. Trả đối tượng modem đã đăng nhập, hoặc None.
     yeu(user, pw) → True nếu mật khẩu hệ thống còn yếu (khi đó không đổi)."""
@@ -200,6 +296,13 @@ def chuan_bi(gw, user, pw, log=print, yeu=None):
     if m.vao_duoc():
         log("   ✔ Đăng nhập trang quản trị modem bằng mật khẩu đã lưu")
         return m
+    v = VnptLuci(gw, user, pw)
+    if v.nhan_ra():      # modem VNPT AX3000 GPON ONT: đăng nhập đúng kiểu của nó, chỉ thử MỘT lần (sai 3 lần modem khoá 3 phút)
+        if v.dang_nhap():
+            log(f"   ✔ Đăng nhập modem VNPT AX3000 bằng user «{v.user}» và mật khẩu đã lưu" + (" (modem báo đây là lần đăng nhập đầu)" if v.lan_dau else ""))
+            return v
+        log(f"   ✖ Modem VNPT AX3000: {v.buoc}.")
+        return None
     o = Owrt(gw, user, pw)
     if o.nhan_ra():      # modem nền OpenWrt/LuCI (VNPT AX3000 GPON ONT…): chỉ đăng nhập bằng mật khẩu đã lưu, không đổi mật khẩu
         if o.dang_nhap():

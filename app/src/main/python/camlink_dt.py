@@ -690,9 +690,16 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
                 if not ok_n:
                     log(f"   ✖ {tb_n}")
             log(f"   {'✔' if dem == len(luat) else '⚠'} Modem tắt UPnP → mở {dem}/{len(luat)} luật qua trang quản trị modem")
+            if dem < len(luat):
+                CAN_MAU.append("modem")
         else:
             log("   ⚠ Modem tắt UPnP → tạm mở port tay theo bảng dưới (Virtual Servers)")
             CAN_MAU.append("modem")
+    try:      # modem chỉ cho một nơi đăng nhập một lúc → app xong việc phải đăng xuất, kẻo người dùng không vào được trang modem
+        if mdm is not None and hasattr(mdm, "dang_xuat"):
+            mdm.dang_xuat()
+    except Exception:
+        pass
     if not igd and pass_modem_yeu(modem_user, modem_pw):      # không in mật khẩu ra nhật ký (nhật ký được gửi qua Zalo/Gmail)
         log("   ⚠ Mật khẩu modem đang lưu trong app còn mặc định/yếu — nếu modem đã đặt mật khẩu riêng thì nhập đúng vào app.")
 
@@ -749,12 +756,62 @@ def tu_thu_mau(cam_user, cam_pw):
 
 
 def _thu_modem(z, thu_muc, goc, tk):
-    """Chỉ ĐỌC: tệp JS của trang đăng nhập modem, thử đăng nhập ubus/LuCI bằng user/pass modem đã lưu, đọc cấu hình mở port."""
+    """Chỉ ĐỌC: mã trang đăng nhập modem, đăng nhập bằng user/pass modem đã lưu (MỘT lần), đọc trang mở port + mã của trang đó, rồi đăng xuất."""
+    import camlink_modem
+
     def ghi(ten, noi_dung):
         t = noi_dung if isinstance(noi_dung, str) else json.dumps(noi_dung, ensure_ascii=False, indent=1)
         if tk[1] and len(tk[1]) >= 4:
             t = t.replace(tk[1], "***")
-        z.writestr(f"{thu_muc}/modem/{ten}", t[:400000])
+        z.writestr(f"{thu_muc}/modem/{ten}", t[:600000])
+
+    may = goc.split("//")[1].split(":")[0]
+    cong = int(goc.rsplit(":", 1)[1]) if goc.count(":") > 1 else 80
+    v = camlink_modem.VnptLuci(may, tk[0], tk[1], cong)
+    if v.nhan_ra():      # ---- modem VNPT AX3000 GPON ONT
+        bc = {"kieu": "VNPT AX3000 (luci riêng)", "goc": v.goc}
+        bc["dang_nhap"] = v.dang_nhap()
+        bc["buoc_ket"], bc["lan_dau"] = v.buoc, v.lan_dau
+        ghi("vnpt_bao_cao.json", bc)
+        if not bc["dang_nhap"]:
+            return
+        try:
+            da_lay, lenh = set(), set()
+            # KHÔNG lấy trang WAN / WiFi (có mật khẩu PPPoE, WiFi) — chỉ trang mở port, bảo mật, tổng quan
+            for trang in ("nat.html", "security.html", "access_control.html", "summary.html"):
+                try:
+                    r = v.lay(trang)
+                    ghi(f"trang_{ten_file(trang)}.txt", f"{r.status_code}\n\n{r.text}")
+                    for src in re.findall(r'(?:src|href)=["\']([^"\']+\.js)', r.text, re.I):
+                        if src in da_lay or "jquery" in src or "bootstrap" in src:
+                            continue
+                        da_lay.add(src)
+                        try:
+                            r2 = v.lay(src.lstrip("/"))
+                            ghi(f"js_{ten_file(src)}.txt", r2.text)
+                            if trang == "nat.html":
+                                lenh.update(re.findall(r'send_http_request\(\s*["\']([A-Za-z0-9_./-]+)["\']', r2.text))
+                        except Exception as e:
+                            ghi(f"js_{ten_file(src)}.LOI.txt", str(e)[:300])
+                    if trang == "nat.html":
+                        lenh.update(re.findall(r'send_http_request\(\s*["\']([A-Za-z0-9_./-]+)["\']', r.text))
+                except Exception as e:
+                    ghi(f"trang_{ten_file(trang)}.LOI.txt", str(e)[:300])
+            ghi("nat_cac_lenh.json", sorted(lenh))
+            cam_goi = ("cmd", "add", "del", "remove", "set", "save", "apply", "reset", "reboot", "restore", "update", "upgrade", "enable", "disable", "edit", "change", "logout", "login")
+            for ten in sorted(lenh | {"support.json"}):      # chỉ gọi lệnh ĐỌC (.json, tên không mang nghĩa ghi/xoá/đổi)
+                if not ten.endswith(".json") or any(c in ten.lower() for c in cam_goi):
+                    continue
+                try:
+                    j, tho = v.hoi(ten)
+                    ghi(f"doc_{ten_file(ten)}.txt", tho)
+                except Exception as e:
+                    ghi(f"doc_{ten_file(ten)}.LOI.txt", str(e)[:300])
+        finally:
+            v.dang_xuat()
+        return
+
+    # ---- modem khác: lấy các tệp phổ biến + dò ubus/LuCI chuẩn OpenWrt
     hd = {"User-Agent": "Mozilla/5.0", "Referer": goc + "/"}
     for f in ("login.js", "main.js", "index.js", "common.js", "menu.js", "home.html", "index.html", "main.html", "luci-static/resources/luci.js",
               "cgi-bin/luci/admin/menu", "ubus"):
@@ -763,27 +820,18 @@ def _thu_modem(z, thu_muc, goc, tk):
             ghi(ten_file(f) + ".txt", f"{r.status_code}\n{dict(r.headers)}\n\n{r.text}")
         except Exception as e:
             ghi(ten_file(f) + ".LOI.txt", str(e)[:300])
-    import camlink_modem
-    o = camlink_modem.Owrt(goc.split("//")[1].split(":")[0], tk[0], tk[1], int(goc.rsplit(":", 1)[1]) if goc.count(":") > 1 else 80)
+    o = camlink_modem.Owrt(may, tk[0], tk[1], cong)
     bc = {"nhan_ra_luci": o.nhan_ra()}
-    ma0, d0 = o._ubus("session", "login", {"username": tk[0], "password": tk[1], "timeout": 300}, sid="0" * 32)
-    bc["ubus_login_ma"] = ma0
-    bc["ubus_login_tra"] = ("có phiên" if isinstance(d0, dict) and d0.get("ubus_rpc_session") else d0)
-    bc["dang_nhap"] = o.dang_nhap()
-    bc["user_dung"] = o.user if bc["dang_nhap"] else ""
-    bc["buoc_ket"] = o.buoc
+    if bc["nhan_ra_luci"]:
+        bc["dang_nhap"] = o.dang_nhap()
+        bc["user_dung"] = o.user if bc["dang_nhap"] else ""
+        bc["buoc_ket"] = o.buoc
     ghi("ubus_bao_cao.json", bc)
-    if bc["dang_nhap"]:
+    if bc.get("dang_nhap"):
         for ten, dt, lenh, ts in (("acl", "session", "access", {}), ("uci_cac_goi", "uci", "configs", {}), ("uci_firewall", "uci", "get", {"config": "firewall"}),
-                                  ("uci_network", "uci", "get", {"config": "network"}), ("uci_upnpd", "uci", "get", {"config": "upnpd"}),
-                                  ("board", "system", "board", {})):
+                                  ("uci_upnpd", "uci", "get", {"config": "upnpd"}), ("board", "system", "board", {})):
             ma, d = o._ubus(dt, lenh, ts)
             ghi(f"ubus_{ten}.json", {"ma": ma, "du_lieu": d})
-        try:
-            r = o.s.post(o.goc + "/ubus/", json={"jsonrpc": "2.0", "id": 1, "method": "list", "params": [o.sid, "*"]}, timeout=8)
-            ghi("ubus_list.json", r.text)
-        except Exception as e:
-            ghi("ubus_list.LOI.txt", str(e)[:300])
 
 
 # ------------------------------------------------------------------ thu mẫu
