@@ -87,7 +87,28 @@ def _cac_du_an():
 
 def _doc_du_an(ma):
     with open(os.path.join(_thu_muc_du_an(), ma + ".json"), encoding="utf-8") as f:
-        return json.load(f)
+        da = json.load(f)
+    _so_cam_theo_ho_so(da)
+    return da
+
+
+def _so_cam_theo_ho_so(da):
+    """Số cam của điểm không được ÍT hơn số cam app đã tự tay cài tại điểm đó (hồ sơ lúc cài). Dự án lấy từ ghim LiteMark ghi "0 cam"
+    → lưới Giám sát chỉ vẽ 1 ô dù điểm có 2 cam. Chỉ nâng lên, không giảm; giá trị gốc của file giữ ở "goc"."""
+    try:
+        for stt, hs in (da.get("ho_so") or {}).items():
+            d = (da.get("diem") or {}).get(stt)
+            n = len((hs or {}).get("cam") or [])
+            if d is None or n <= int(d.get("so") or 0):
+                continue
+            cu = int(d.get("so") or 0)
+            d.setdefault("goc", {"so": d.get("so"), "bs": d.get("bs")})
+            d["so"], d["so_thuc"] = n, n
+            ds = d.setdefault("hieu_chinh", [])
+            if not any(h.get("ly_do") == "theo hồ sơ lúc cài tại chỗ" and h.get("moi") == n for h in ds):
+                ds.append({"luc": str((hs or {}).get("luc", "")), "ly_do": "theo hồ sơ lúc cài tại chỗ", "cu": cu, "moi": n})
+    except Exception:
+        pass
 
 
 def _ghi_du_an(ma, da):
