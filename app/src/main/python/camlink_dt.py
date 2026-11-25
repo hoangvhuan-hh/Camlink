@@ -798,9 +798,30 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
             except OSError:
                 ip_dom = None
             log(f"   {'✔' if ip_dom == wan else '⚠'} {d['domain']} → {ip_dom} (cần {wan}; DDNS có thể mất 1–5 phút)")
+    # BÁO CÁO TỪNG VIỆC (Huan chốt 25/11): việc nào hoàn tất báo ĐÃ HOÀN TẤT, việc nào chưa báo CHƯA kèm lý do
+    bao_cao = []
+    for k in ket_qua:
+        ghi = "; ".join(k["ghi"])
+        bao_cao.append({"viec": f"Cam {k['so']}: đăng nhập, IP {k['ip']}, HTTP {k['http']}, RTSP {k['rtsp']}", "xong": bool(k.get("ok")), "ly_do": "" if k.get("ok") else ghi[:200]})
+    if ket_qua:
+        g0 = ket_qua[0]["ghi"]
+        hong = next((x for x in g0 if "DDNS CHƯA" in x or "CHƯA ghi đè" in x or "DDNS bỏ trống" in x or x.startswith("LỖI")), "")
+        bao_cao.append({"viec": f"Tên miền DDNS {d.get('domain') or '(chưa có)'} trên cam 1", "xong": not hong, "ly_do": hong[:200]})
+    for ip, port in sai_pass:
+        bao_cao.append({"viec": f"Cam {ip}:{port}", "xong": False,
+                        "ly_do": (unv_tt.get(ip) or ("", "cam từ chối user/pass cam đã lưu trong app"))[1][:220]})
+    try:
+        thu_m = ", ".join(camlink_modem.DA_THU)
+    except Exception:
+        thu_m = ""
+    bao_cao.append({"viec": "Đăng nhập trang quản trị modem", "xong": mdm is not None,
+                    "ly_do": "" if mdm is not None else ("modem không nhận: " + thu_m if thu_m else "app chưa nhận ra kiểu modem này")})
+    if luat:
+        bao_cao.append({"viec": f"Mở {len(luat)} port trên modem (" + ", ".join(str(p) for _, p, _ in luat) + ")", "xong": da_mo >= len(luat),
+                        "ly_do": "" if da_mo >= len(luat) else f"mới mở {da_mo}/{len(luat)} — " + ("chưa đăng nhập được modem" if mdm is None else "modem không nhận lệnh thêm luật")})
     global KQ_CUOI
     KQ_CUOI = {"stt": stt, "ten": d["ten"], "domain": d["domain"], "gw": gw, "wan": wan or "", "web_modem": web_modem,
-               "upnp": bool(igd), "luat": [{"ten": t, "port": p, "ip": ip} for t, p, ip in luat], "viec_con": list(VIEC_CON),
+               "upnp": bool(igd), "luat": [{"ten": t, "port": p, "ip": ip} for t, p, ip in luat], "viec_con": list(VIEC_CON), "bao_cao": bao_cao,
                "cam": [{"so": k["so"], "ip": k["ip"], "http": k["http"], "rtsp": k["rtsp"], "model": k.get("model", ""),
                         "mac": k.get("mac", ""), "ok": bool(k.get("ok")), "ghi": "; ".join(k["ghi"])} for k in ket_qua]}
     log("")
@@ -811,6 +832,9 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
     for ten, p, ip in luat:
         log(f"   {ten:<10} {p:<6} → {ip}")
     log(f" Kiểm tra port: {d['domain']}  " + ", ".join(str(p) for _, p, _ in luat))
+    log("BÁO CÁO TỪNG VIỆC:")
+    for b_c in bao_cao:
+        log(f" {'✔ ĐÃ HOÀN TẤT' if b_c['xong'] else '✖ CHƯA'} — {b_c['viec']}" + ("" if b_c["xong"] else f" — lý do: {b_c['ly_do']}"))
     if VIEC_CON:
         log(f"VIỆC CÒN PHẢI LÀM TAY ({len(VIEC_CON)}):")
         for i_v, v_c in enumerate(VIEC_CON, 1):

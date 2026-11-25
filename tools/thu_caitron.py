@@ -183,7 +183,7 @@ kt("L1: cam 1 → .200 HTTP 8080 RTSP 554; cam 2 → .201 HTTP 8081 RTSP 5541", 
 kt("L1: DDNS No-IP nhập lên cam 1 (đúng tên miền, user, pass)", c1.ddns["Enable"] == 1 and c1.ddns["DDNSs"][1]["DeviceDomain"] == "diem-thu.ddns.net" and c1.ddns["DDNSs"][1]["UserName"] == "ddnsuser" and c1.ddns_pw == "ddnspass")
 kt("L1: modem có đủ 4 luật mở port đúng IP", luat_modem() == [(554, "127.0.7.200"), (5541, "127.0.7.201"), (8080, "127.0.7.200"), (8081, "127.0.7.201")])
 kt("L1: modem chỉ nhận 1 lần đăng nhập (không thử thừa)", Modem.lan == 1)
-kt("L1: không còn việc phải làm tay", k.get("viec_con") == [] and any("làm trọn" in l for l in nk))
+kt("L1: báo cáo từng việc: tất cả ĐÃ HOÀN TẤT", k.get("viec_con") == [] and len(k["bao_cao"]) == 5 and all(b["xong"] for b in k["bao_cao"]))
 
 # ---------- Lượt 2: cài LẠI điểm đã cài đúng → nhận ra đã đúng, giữ nguyên, không thêm luật trùng
 del nk[:]; Modem.lan = 0
@@ -198,13 +198,19 @@ C.chay("1", "admin", HE_THONG, "admin", HE_THONG); k = C.KQ_CUOI
 vc = k.get("viec_con") or []
 kt("L3: cam 1 vẫn được xử lý xong dù cam 2 và modem hỏng", len(k["cam"]) == 1 and k["cam"][0]["ok"])
 kt("L3: cam 2 — đã thử cả mật khẩu hệ thống lẫn xuất xưởng rồi mới kết luận", any("mật khẩu cam đã lưu ✖" in l and "mật khẩu xuất xưởng ✖" in l for l in nk))
-kt("L3: modem — thử đúng 2 khoá (hệ thống + xuất xưởng), không làm modem khoá", Modem.lan == 2 and not Modem.khoa)
+kt("L3: modem — chưa được cấp mật khẩu xuất xưởng nên chỉ thử mật khẩu hệ thống (không đoán), không làm modem khoá", Modem.lan == 1 and not Modem.khoa)
+bc = {b["viec"].split(":")[0].split(" (")[0]: b for b in k["bao_cao"]}
+kt("L3: báo cáo từng việc — cam 1 + DDNS hoàn tất; cam 2, đăng nhập modem, mở port CHƯA kèm lý do",
+   bc["Cam 1"]["xong"] and not bc["Đăng nhập trang quản trị modem"]["xong"] and bc["Đăng nhập trang quản trị modem"]["ly_do"]
+   and sum(1 for b in k["bao_cao"] if not b["xong"] and b["ly_do"]) == 3)
 kt("L3: báo đúng 2 việc còn phải làm tay (cam 2 + mở port modem, kèm bảng port)", len(vc) == 2 and any("127.0.7.201" in v for v in vc) and any("MỞ PORT TRÊN MODEM" in v and "8080 → 127.0.7.200" in v for v in vc))
 
-# ---------- Lượt 4: modem còn mật khẩu XUẤT XƯỞNG (admin/admin) → vào bằng khoá thứ 2, vẫn mở đủ port
-del nk[:]; Modem.lan, Modem.pw, Modem.nat, Modem.sai = 0, "admin", [], 0
+# ---------- Lượt 4: Huan cấp mật khẩu xuất xưởng của modem (nạp vào bảng) → modem còn xuất xưởng thì vào bằng khoá thứ 2, mở đủ port
+import camlink_modem as M
+M.XUAT_XUONG_DA_BIET["vnpt_ax3000"] = [("admin", "XuatXuong#1")]
+del nk[:]; Modem.lan, Modem.pw, Modem.nat, Modem.sai = 0, "XuatXuong#1", [], 0
 c2.pw["admin"] = HE_THONG
 C.chay("1", "admin", HE_THONG, "admin", HE_THONG); k = C.KQ_CUOI
-kt("L4: modem xuất xưởng → vào được ở lần thử thứ 2, mở đủ 4 luật", Modem.lan == 2 and len(Modem.nat) == 4)
-kt("L4: 2 cam đạt, không còn việc tay", len(k["cam"]) == 2 and all(c["ok"] for c in k["cam"]) and k.get("viec_con") == [])
-print(f"\n✓ 2.12.16 cài trọn chuỗi (cam UNV + modem VNPT AX3000 giả lập): {dat}/{dat} đạt")
+kt("L4: modem xuất xưởng (mật khẩu được cấp) → vào được ở lần thử thứ 2, mở đủ 4 luật", Modem.lan == 2 and len(Modem.nat) == 4)
+kt("L4: 2 cam đạt, báo cáo: tất cả việc đã hoàn tất", len(k["cam"]) == 2 and all(c["ok"] for c in k["cam"]) and k.get("viec_con") == [] and all(b["xong"] for b in k["bao_cao"]))
+print(f"\n✓ 2.12.17 cài trọn chuỗi (cam UNV + modem VNPT AX3000 giả lập): {dat}/{dat} đạt")

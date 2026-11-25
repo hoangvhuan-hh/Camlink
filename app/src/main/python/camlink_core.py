@@ -313,7 +313,7 @@ def chay(ma, stt, may_ip, gw, log):
         k = C.KQ_CUOI
         da.setdefault("ho_so", {})[stt] = {"luc": time.strftime("%d/%m/%Y %H:%M"), "wan": k.get("wan", ""),
                                            "gw": k.get("gw", ""), "upnp": k.get("upnp"), "luat": k.get("luat", []),
-                                           "web_modem": k.get("web_modem", 0), "viec_con": k.get("viec_con", []),
+                                           "web_modem": k.get("web_modem", 0), "viec_con": k.get("viec_con", []), "bao_cao": k.get("bao_cao", []),
                                            "cam": [{"so": c["so"], "ip": c["ip"], "mac": c.get("mac", ""),
                                                     "model": c.get("model", "")} for c in k.get("cam", [])]}
         # Số cam của điểm theo SỰ THẬT vừa đếm tại chỗ: file/ghim ghi ít hơn (vd "0 cam") thì nâng lên, để Giám sát / Kiểm tra từ xa

@@ -93,12 +93,18 @@ class SoDoActivity : Activity() {
             goc.addView(mui())
         }
 
-        val viecCon = j.optJSONArray("viec_con")      // app làm tới đâu hay tới đó: còn việc nào phải làm tay thì nói đúng việc đó
-        if (viecCon != null && viecCon.length() > 0) {
-            val vc = the("#B54708")
-            vc.addView(chu("⚠ CÒN ${viecCon.length()} VIỆC PHẢI LÀM TAY", 13f, true, "#B54708"))
-            for (i in 0 until viecCon.length()) vc.addView(chu("${i + 1}. " + viecCon.optString(i), 14f))
-            goc.addView(vc)
+        val baoCao = j.optJSONArray("bao_cao")      // Huan chốt 25/11: việc nào hoàn tất báo ĐÃ HOÀN TẤT, việc nào chưa báo CHƯA kèm lý do
+        if (baoCao != null && baoCao.length() > 0) {
+            val chua = (0 until baoCao.length()).count { !baoCao.getJSONObject(it).optBoolean("xong") }
+            val mauBc = if (chua == 0) "#067647" else "#B54708"
+            val bc = the(mauBc)
+            bc.addView(chu(if (chua == 0) "✔ BÁO CÁO: ĐÃ HOÀN TẤT TẤT CẢ ${baoCao.length()} VIỆC" else "BÁO CÁO: ${baoCao.length() - chua} việc hoàn tất · $chua việc CHƯA", 13f, true, mauBc))
+            for (i in 0 until baoCao.length()) {
+                val b = baoCao.getJSONObject(i)
+                if (b.optBoolean("xong")) bc.addView(chu("✔ " + b.optString("viec") + " — đã hoàn tất", 14f))
+                else bc.addView(chu("✖ " + b.optString("viec") + " — CHƯA. Lý do: " + b.optString("ly_do"), 14f, false, "#B42318"))
+            }
+            goc.addView(bc)
             goc.addView(mui())
         }
 

@@ -373,10 +373,17 @@ DA_THU = []        # nhãn các khoá đã thử ở lượt gần nhất (khôn
 CHO_KHOA_TOI_DA = 2      # số lần chịu chờ modem hết khoá trong một lượt cài (mỗi lần ~3 phút)
 
 
-def _chum(user, pw, them):
+# Mật khẩu xuất xưởng theo DÒNG MODEM — CHỈ ghi khi nhà cung cấp / Huan đưa hoặc có tài liệu của hãng. KHÔNG đoán (Huan chốt 25/11).
+XUAT_XUONG_DA_BIET = {
+    "vnpt_ax3000": [],      # chưa được cấp → app chỉ thử mật khẩu hệ thống
+    "owrt": [],
+}
+
+
+def _chum(user, pw, them, xuat_xuong=None):
     """[(user, pass, nhãn)] theo thứ tự thử, bỏ trùng, bỏ rỗng."""
     ds, thay = [], set()
-    for u, p, nhan in [(user, pw, "mật khẩu modem đã lưu")] + list(them or []) + [(u0, p0, "mật khẩu xuất xưởng của modem") for u0, p0 in MAT_KHAU_XUAT_XUONG]:
+    for u, p, nhan in [(user, pw, "mật khẩu modem đã lưu")] + list(them or []) + [(u0, p0, "mật khẩu xuất xưởng của modem") for u0, p0 in (xuat_xuong or [])]:
         u = u or user or "admin"
         if p in (None, "") or (u, p) in thay:
             continue
@@ -400,6 +407,7 @@ def chuan_bi(gw, user, pw, log=print, yeu=None, them=None, cho=None):
     yeu(user, pw) → True nếu mật khẩu hệ thống còn yếu (khi đó không đổi)."""
     del DA_THU[:]
     ds = _chum(user, pw, them)
+    ds_vnpt, ds_owrt = _chum(user, pw, them, XUAT_XUONG_DA_BIET["vnpt_ax3000"]), _chum(user, pw, them, XUAT_XUONG_DA_BIET["owrt"])
     cho = cho or (lambda giay, cau: _cho_mac_dinh(giay, cau, log))
     m = Bcm(gw, user, pw)
     if m.vao_duoc():
@@ -408,8 +416,8 @@ def chuan_bi(gw, user, pw, log=print, yeu=None, them=None, cho=None):
     v = VnptLuci(gw, user, pw)
     if v.nhan_ra():      # modem VNPT AX3000 GPON ONT: sai 3 lần modem khoá 3 phút → thử lần lượt, bị khoá thì chờ rồi thử tiếp
         lan_cho, i, da_sai, thu_lai = 0, 0, 0, False
-        while i < len(ds):
-            u, p, nhan = ds[i]
+        while i < len(ds_vnpt):
+            u, p, nhan = ds_vnpt[i]
             v.user, v.pw = u, p
             if v.dang_nhap():
                 DA_THU.append(nhan + " ✔")
@@ -431,23 +439,23 @@ def chuan_bi(gw, user, pw, log=print, yeu=None, them=None, cho=None):
             thu_lai = False
             da_sai += 1
             DA_THU.append(nhan + " ✖")
-            if i + 1 < len(ds):
-                log(f"   · modem không nhận {nhan} — thử tiếp {ds[i + 1][2]}")
+            if i + 1 < len(ds_vnpt):
+                log(f"   · modem không nhận {nhan} — thử tiếp {ds_vnpt[i + 1][2]}")
                 if v.khoa_giay > 0:      # lần sai vừa rồi làm modem khoá → chờ hết khoá mới thử khoá kế
                     if lan_cho >= CHO_KHOA_TOI_DA:
-                        con = [n2 for _, _, n2 in ds[i + 1:]]
+                        con = [n2 for _, _, n2 in ds_vnpt[i + 1:]]
                         log(f"   ✖ Modem VNPT AX3000 khoá đăng nhập liên tục. Chưa thử được: {', '.join(con)}.")
                         DA_THU.extend(n2 + " (chưa thử được)" for n2 in con)
                         return None
                     lan_cho += 1
-                    cho(v.khoa_giay + 5, f"modem khoá đăng nhập {v.khoa_giay} giây — chờ hết khoá rồi thử {ds[i + 1][2]}")
+                    cho(v.khoa_giay + 5, f"modem khoá đăng nhập {v.khoa_giay} giây — chờ hết khoá rồi thử {ds_vnpt[i + 1][2]}")
             i += 1
-        log(f"   ✖ Modem VNPT AX3000: đã thử HẾT {len(ds)} khoá ({', '.join(DA_THU)}) đều không vào được "
-            "→ mật khẩu modem đã bị đổi thành mật khẩu khác: sửa Pass modem trong app cho đúng (xem tem dưới đáy modem) rồi cài lại.")
+        log(f"   ✖ Modem VNPT AX3000: đã thử HẾT {len(ds_vnpt)} khoá ({', '.join(DA_THU)}) đều không vào được "
+            "→ Pass modem trong app chưa đúng với modem này: sửa lại cho đúng rồi cài lại.")
         return None
     o = Owrt(gw, user, pw)
     if o.nhan_ra():      # modem nền OpenWrt/LuCI: thử lần lượt tối đa 3 khoá, không đổi mật khẩu
-        for u, p, nhan in ds[:3]:
+        for u, p, nhan in ds_owrt[:3]:
             o.user, o.pw = u, p
             if o.dang_nhap():
                 DA_THU.append(nhan + " ✔")
