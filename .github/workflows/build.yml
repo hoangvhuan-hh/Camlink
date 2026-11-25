@@ -34,6 +34,8 @@ jobs:
       - name: Publish APK to branch apk
         run: |
           mkdir -p /tmp/out && cp app/build/outputs/apk/debug/app-debug.apk /tmp/out/CamLink.apk
+          VER=$(grep -oE 'versionName = "[^"]+"' app/build.gradle.kts | cut -d'"' -f2)
+          cp app/build/outputs/apk/debug/app-debug.apk "/tmp/out/CamLink-${VER}.apk"
           cd /tmp/out && git init -q && git checkout -q -b apk
           git config user.name "camlink-ci" && git config user.email "ci@users.noreply.github.com"
           echo "${GITHUB_SHA}" > version.txt
