@@ -302,6 +302,10 @@ def chay(ma, stt, may_ip, gw, log):
         log("Điểm này dùng user/pass RIÊNG do người dùng nhập (mặc định của hệ thống giữ nguyên).")
     cd0 = C.doc_cai_dat()
     C.CHUM["cam"], C.CHUM["modem"] = _chum_khoa(cd, cd0, "cam"), _chum_khoa(cd, cd0, "modem")
+    do = [b for b in (da.get("ho_so", {}).get(stt, {}).get("bao_cao") or []) if not b.get("xong")]
+    if do:      # Huan chốt 25/11: lần cài kế tiếp chỉ đi sửa việc CHƯA xong; việc đã xong kiểm nhanh thấy còn đúng thì giữ nguyên
+        log(f"Lần trước còn dở {len(do)} việc: " + ", ".join(b.get("ngan") or b.get("viec", "") for b in do)
+            + " → lần này chỉ xử lý các việc đó; việc đã xong giữ nguyên.")
     C.chay(stt, cd["cam_user"], cd["cam_pw"], cd.get("modem_user", "admin"), cd.get("modem_pw", "admin"))
     for loai, kd in list(C.KHOA_DUNG.items()):      # thiết bị vào được bằng khoá dự phòng → ghi nhớ RIÊNG cho điểm (mặc định giữ nguyên)
         r = da["diem"][stt].setdefault("rieng", {})

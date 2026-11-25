@@ -19,7 +19,7 @@ class Cam:
         self.ddns = {"Enable": 0, "UsedType": 0, "Number": 2, "DDNSs": [
             {"Type": 0, "TypeName": "DynDNS", "ServerName": "members.dyndns.org", "UserName": "", "DeviceDomain": ""},
             {"Type": 1, "TypeName": "NO-IP", "ServerName": "dynupdate.no-ip.com", "UserName": "", "DeviceDomain": ""}]}
-        self.ddns_pw, self.sv, self.rs, self.gw = None, None, None, ""
+        self.ddns_pw, self.sv, self.rs, self.gw, self.ddns_ghi = None, None, None, "", 0
         self.mo()
 
     def mo(self):
@@ -110,6 +110,7 @@ class Cam:
             self.pw["admin"] = rsa.decrypt(base64.b64decode(body["Passwd"]), priv).decode(); return dat()
         if p == "/LAPI/V1.0/NetWork/DDNS":
             if cach == "PUT":
+                self.ddns_ghi += 1
                 for x in body["DDNSs"]:
                     if "PassWord" in x: self.ddns_pw = rsa.decrypt(base64.b64decode(x.pop("PassWord")), priv).decode()
                 body.pop("RSAPublicKey", None); self.ddns = body
@@ -156,7 +157,8 @@ C.upnp_tim = lambda: None                      # modem VNPT AX3000 thật: UPnP 
 C.pass_modem_yeu = lambda u, p: False
 os.environ["CAMLINK_MAY"] = "127.0.7.9"; C.GW = GW
 C.PHU_LY.clear(); C.PHU_LY["1"] = {"ten": "Điểm thử", "domain": "diem-thu.ddns.net", "u": "ddnsuser", "p": "ddnspass", "so": 2}
-nk = []; C.LOG_CB = nk.append
+nk, PT = [], []
+C.LOG_CB = lambda x: PT.append(int(x[8:].split("|")[0])) if x.startswith("TIEN_DO ") else nk.append(x)
 dat = 0
 
 
@@ -183,13 +185,16 @@ kt("L1: cam 1 → .200 HTTP 8080 RTSP 554; cam 2 → .201 HTTP 8081 RTSP 5541", 
 kt("L1: DDNS No-IP nhập lên cam 1 (đúng tên miền, user, pass)", c1.ddns["Enable"] == 1 and c1.ddns["DDNSs"][1]["DeviceDomain"] == "diem-thu.ddns.net" and c1.ddns["DDNSs"][1]["UserName"] == "ddnsuser" and c1.ddns_pw == "ddnspass")
 kt("L1: modem có đủ 4 luật mở port đúng IP", luat_modem() == [(554, "127.0.7.200"), (5541, "127.0.7.201"), (8080, "127.0.7.200"), (8081, "127.0.7.201")])
 kt("L1: modem chỉ nhận 1 lần đăng nhập (không thử thừa)", Modem.lan == 1)
+kt("L1: % tiến độ tăng dần 5 → 92, đủ mốc quét / từng cam / modem / kiểm tra, không lẫn vào nhật ký",
+   PT == sorted(PT) and PT[0] == 5 and PT[-1] == 92 and len(PT) >= 12 and not any("TIEN_DO" in str(l) for l in C.NHAT_KY))
 kt("L1: báo cáo từng việc: tất cả ĐÃ HOÀN TẤT", k.get("viec_con") == [] and len(k["bao_cao"]) == 5 and all(b["xong"] for b in k["bao_cao"]))
 
 # ---------- Lượt 2: cài LẠI điểm đã cài đúng → nhận ra đã đúng, giữ nguyên, không thêm luật trùng
 del nk[:]; Modem.lan = 0
 C.chay("1", "admin", HE_THONG, "admin", HE_THONG); k = C.KQ_CUOI
-kt("L2: 2 cam báo 'đã đúng sẵn — giữ nguyên'", sum("đã đúng sẵn" in l for l in nk) == 2 and all(c["ok"] for c in k["cam"]))
+kt("L2: 2 cam báo 'đã đúng sẵn — giữ nguyên'", sum("đã đúng sẵn (IP" in l for l in nk) == 2 and all(c["ok"] for c in k["cam"]))
 kt("L2: modem vẫn đúng 4 luật (không thêm trùng), không còn việc tay", len(Modem.nat) == 4 and k.get("viec_con") == [])
+kt("L2: việc đã xong không làm lại — DDNS trên cam 1 chỉ ghi đúng 1 lần (ở lượt 1)", c1.ddns_ghi == 1 and any("DDNS đã đúng sẵn" in c["ghi"] for c in k["cam"]))
 
 # ---------- Lượt 3: cam 2 bị đặt mật khẩu LẠ + modem mật khẩu LẠ → cam 1 vẫn xong, báo đúng 2 việc còn lại
 del nk[:]; Modem.lan, Modem.pw, Modem.nat = 0, "TemModem#99", []
@@ -213,4 +218,12 @@ c2.pw["admin"] = HE_THONG
 C.chay("1", "admin", HE_THONG, "admin", HE_THONG); k = C.KQ_CUOI
 kt("L4: modem xuất xưởng (mật khẩu được cấp) → vào được ở lần thử thứ 2, mở đủ 4 luật", Modem.lan == 2 and len(Modem.nat) == 4)
 kt("L4: 2 cam đạt, báo cáo: tất cả việc đã hoàn tất", len(k["cam"]) == 2 and all(c["ok"] for c in k["cam"]) and k.get("viec_con") == [] and all(b["xong"] for b in k["bao_cao"]))
-print(f"\n✓ 2.12.17 cài trọn chuỗi (cam UNV + modem VNPT AX3000 giả lập): {dat}/{dat} đạt")
+
+# ---------- Lượt 5: lần trước DỞ đúng một việc (DDNS trên cam 1 chưa nhập) → lần này chỉ làm việc đó, cam/port/modem giữ nguyên
+del nk[:]; del PT[:]; Modem.lan = 0
+c1.ddns["Enable"] = 0; c1.ddns_ghi = 0; so_luat = len(Modem.nat)
+C.chay("1", "admin", HE_THONG, "admin", HE_THONG); k = C.KQ_CUOI
+kt("L5: chỉ làm việc còn dở — DDNS được nhập lại đúng 1 lần", c1.ddns_ghi == 1 and c1.ddns["Enable"] == 1)
+kt("L5: việc đã xong giữ nguyên — 2 cam 'đã đúng sẵn', không thêm luật modem, báo cáo tất cả hoàn tất",
+   sum("đã đúng sẵn (IP" in l for l in nk) == 2 and len(Modem.nat) == so_luat and all(b["xong"] for b in k["bao_cao"]))
+print(f"\n✓ 2.12.18 cài trọn chuỗi (cam UNV + modem VNPT AX3000 giả lập): {dat}/{dat} đạt")

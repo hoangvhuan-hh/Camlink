@@ -105,6 +105,15 @@ def quet(mang, bo_qua):
     return tim
 
 
+def tien_do(pct):
+    """Báo % của lượt cài cho màn hình (một dòng 'Hệ thống đang tự cài cam · NN%'). Không ghi vào nhật ký."""
+    try:
+        if LOG_CB:
+            LOG_CB(f"TIEN_DO {int(pct)}|")
+    except Exception:
+        pass
+
+
 def cho_khoa(giay, cau):
     """Thiết bị đang khoá đăng nhập → chờ có đếm ngược trên nhật ký/thanh trạng thái rồi mới thử tiếp. Mất modem quá 2 phút thì thôi chờ."""
     con = int(giay)
@@ -449,6 +458,7 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
     may = ip_may()
     gw = GW or ".".join(may.split(".")[:3]) + ".1"
     log(f"Máy này {may}, modem {gw}")
+    tien_do(5)
     if ds_ip:
         tim = {}
         for ip in ds_ip:
@@ -461,6 +471,7 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
         log("Quét mạng tìm cam ...")
         tim = quet(gw.rsplit(".", 1)[0] + ".0/24", {gw, may})
     cams = []
+    tien_do(15)
     global LY_DO_0CAM, TM_LECH, GHI_DE_DDNS, DUNG_VI_MAT_MODEM
     KHOA_DUNG.clear()
     del VIEC_CON[:]
@@ -579,6 +590,8 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
             break
         ip_moi, http, rtsp = f"{gw.rsplit('.', 1)[0]}.{IP_TU + i}", HTTP[i], RTSP[i]
         cam_user, cam_pw = khoa_cam.get(ip, cam_goc)      # cam nào vào bằng khoá dự phòng thì các bước sau dùng đúng khoá đó
+        td0, td1 = 20 + 55 * i / max(1, len(cams)), 55 / max(1, len(cams))      # mỗi cam chiếm đều khoảng 20–75%
+        tien_do(td0)
         log(f"-- Cam {i + 1}: {ip}:{port} → {ip_moi}  HTTP {http}  RTSP {rtsp}")
         kq = {"so": i + 1, "ip": ip_moi, "http": http, "rtsp": rtsp, "model": tt["model"], "ghi": []}
         try:
@@ -596,11 +609,13 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
                         log(f"   ⚠ {kq['ghi'][-1]}")
                     elif not tm_app:
                         kq["ghi"].append("DDNS bỏ trống (điểm chưa có tên miền)")
+                    elif tm_cam and tm_cam == tm_app and not ghi_de_ddns:      # việc đã xong từ lần trước → giữ nguyên, không ghi lại
+                        kq["ghi"].append("DDNS đã đúng sẵn — giữ nguyên")
                     elif nt == "oryza":
                         kq["ghi"].append(camlink_oryza.dat_ddns(ip, port, cam_user, cam_pw, d["domain"], d["u"], d["p"]))
                         log(f"   ✔ {kq['ghi'][-1]}")
-                    elif ip == ip_moi and port == http:
-                        pass  # Hik/Dahua đã đúng sẵn: giữ nguyên DDNS
+                    elif ip == ip_moi and port == http and nt in ("isapi", "dahua"):
+                        pass  # Hik/Dahua đã đúng sẵn: giữ nguyên DDNS (hai hãng này app chưa đọc được tên miền trên cam)
                     elif nt == "isapi":
                         ddns_isapi(ip, port, cam_user, cam_pw, d["domain"], d["u"], d["p"])
                         kq["ghi"].append("DDNS đã nhập")
@@ -624,6 +639,7 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
                 log(f"   ✔ Cam {i + 1} đã đúng sẵn (IP {ip_moi}, HTTP {http}, RTSP {rtsp}) — giữ nguyên")
                 ket_qua.append(kq)
                 continue
+            tien_do(td0 + td1 * 0.25)
             ov.dat_gw_dns(gw)
             try:
                 ov.dat_port(http, rtsp)
@@ -637,10 +653,12 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
             if not cho_len(ip, http, 150 if nt == "unv" else 60):
                 raise RuntimeError("cam không mở port HTTP mới")
             ov.port = http
+            tien_do(td0 + td1 * 0.5)
             ov.dat_ip(token, ip_moi)
             log(f"   đặt IP xong, chờ cam lên {ip_moi}:{http} ...")
             if not cho_len(ip_moi, http, 120):
                 raise RuntimeError(f"cam không lên lại ở {ip_moi}:{http}")
+            tien_do(td0 + td1 * 0.75)
             kq["ok"] = mo(ip_moi, rtsp, 3)
             if not kq["ok"] and nt == "unv":
                 # Cam UNV chỉ đổi port RTSP sau khi KHỞI ĐỘNG LẠI (mẫu thật 25/11: cam 2 đổi HTTP 8081 xong nhưng RTSP 5541 chưa mở)
@@ -671,6 +689,7 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
         if not k.get("ok"):
             VIEC_CON.append(f"Cam {k['so']} ({k['ip']}) chưa đạt: {'; '.join(k['ghi'])[:160]}")
 
+    tien_do(75)
     log("-- Modem: mở port")
     da_mo = 0
     wan = None
@@ -689,6 +708,7 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
             KHOA_DUNG["modem"] = (mdm.user, mdm.pw)
     except Exception as e:
         log(f"   · Trang quản trị modem: {str(e)[:80]}")
+    tien_do(80)
     log("   dò UPnP trên modem …")
     igd = upnp_tim()
     if igd:
@@ -773,6 +793,7 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
     if not igd and pass_modem_yeu(modem_user, modem_pw):      # không in mật khẩu ra nhật ký (nhật ký được gửi qua Zalo/Gmail)
         log("   ⚠ Mật khẩu modem đang lưu trong app còn mặc định/yếu — nếu modem đã đặt mật khẩu riêng thì nhập đúng vào app.")
 
+    tien_do(88)
     log("-- Kiểm tra")
     wan_ngoai = False
     if not wan:      # modem không cho đọc IP WAN (UPnP tắt, chưa vào được trang modem) → hỏi Internet "IP công cộng của mạng này là gì"
@@ -802,22 +823,22 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
     bao_cao = []
     for k in ket_qua:
         ghi = "; ".join(k["ghi"])
-        bao_cao.append({"viec": f"Cam {k['so']}: đăng nhập, IP {k['ip']}, HTTP {k['http']}, RTSP {k['rtsp']}", "xong": bool(k.get("ok")), "ly_do": "" if k.get("ok") else ghi[:200]})
+        bao_cao.append({"ngan": f"Cam {k['so']}", "viec": f"Cam {k['so']}: đăng nhập, IP {k['ip']}, HTTP {k['http']}, RTSP {k['rtsp']}", "xong": bool(k.get("ok")), "ly_do": "" if k.get("ok") else ghi[:200]})
     if ket_qua:
         g0 = ket_qua[0]["ghi"]
         hong = next((x for x in g0 if "DDNS CHƯA" in x or "CHƯA ghi đè" in x or "DDNS bỏ trống" in x or x.startswith("LỖI")), "")
-        bao_cao.append({"viec": f"Tên miền DDNS {d.get('domain') or '(chưa có)'} trên cam 1", "xong": not hong, "ly_do": hong[:200]})
+        bao_cao.append({"ngan": "Tên miền DDNS", "viec": f"Tên miền DDNS {d.get('domain') or '(chưa có)'} trên cam 1", "xong": not hong, "ly_do": hong[:200]})
     for ip, port in sai_pass:
-        bao_cao.append({"viec": f"Cam {ip}:{port}", "xong": False,
+        bao_cao.append({"ngan": f"Cam {ip}", "viec": f"Cam {ip}:{port}", "xong": False,
                         "ly_do": (unv_tt.get(ip) or ("", "cam từ chối user/pass cam đã lưu trong app"))[1][:220]})
     try:
         thu_m = ", ".join(camlink_modem.DA_THU)
     except Exception:
         thu_m = ""
-    bao_cao.append({"viec": "Đăng nhập trang quản trị modem", "xong": mdm is not None,
+    bao_cao.append({"ngan": "Đăng nhập modem", "viec": "Đăng nhập trang quản trị modem", "xong": mdm is not None,
                     "ly_do": "" if mdm is not None else ("modem không nhận: " + thu_m if thu_m else "app chưa nhận ra kiểu modem này")})
     if luat:
-        bao_cao.append({"viec": f"Mở {len(luat)} port trên modem (" + ", ".join(str(p) for _, p, _ in luat) + ")", "xong": da_mo >= len(luat),
+        bao_cao.append({"ngan": "Mở port modem", "viec": f"Mở {len(luat)} port trên modem (" + ", ".join(str(p) for _, p, _ in luat) + ")", "xong": da_mo >= len(luat),
                         "ly_do": "" if da_mo >= len(luat) else f"mới mở {da_mo}/{len(luat)} — " + ("chưa đăng nhập được modem" if mdm is None else "modem không nhận lệnh thêm luật")})
     global KQ_CUOI
     KQ_CUOI = {"stt": stt, "ten": d["ten"], "domain": d["domain"], "gw": gw, "wan": wan or "", "web_modem": web_modem,
@@ -845,6 +866,7 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
     with open(f, "w", encoding="utf-8") as fh:
         fh.write("\n".join(NHAT_KY))
     log(f"Đã lưu nhật ký: {f}")
+    tien_do(92)
     tu_thu_mau(cam_user, cam_pw)
 
 

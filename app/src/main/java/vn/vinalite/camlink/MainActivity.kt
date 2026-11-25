@@ -70,6 +70,8 @@ class MainActivity : Activity() {
     private var dangChay = ""
     @Volatile private var buocDang = ""          // bước lõi đang làm (dòng nhật ký mới nhất) — hiện trên thanh trạng thái theo thời gian thực
     @Volatile private var buocTu = 0L
+    @Volatile private var tienDo = -1            // % của lượt cài tại chỗ (−1: không trong lượt cài) → thanh trạng thái hiện MỘT dòng + thanh %
+    @Volatile private var soDoVuaMo = false      // lượt cài vừa mở màn kết quả → không bật thêm hộp thoại tóm tắt
     @Volatile private var matModemTu = 0L        // > 0: đang KHÔNG thấy modem từ thời điểm này
     @Volatile private var canhModemChay = false
     @Volatile private var gwCanh = ""
@@ -83,6 +85,11 @@ class MainActivity : Activity() {
     /** Python gọi nhatKy.ghi("...") để in nhật ký; dòng bước lớn đổi luôn thanh trạng thái. */
     inner class NhatKy {
         fun ghi(s: String) {
+            if (s.startsWith("TIEN_DO ") && dangChay.startsWith("CÀI TẠI CHỖ")) {      // lõi báo % của lượt cài → chỉ vẽ lại thanh, không ghi nhật ký
+                val p = s.removePrefix("TIEN_DO ").substringBefore("|").trim().toIntOrNull() ?: return
+                ui.post { if (p > tienDo) tienDo = p; veTrangThaiChay() }
+                return
+            }
             ui.post {
                 log.append(s + "\n")
                 tvThuMau?.let { tv -> tv.append(s + "\n"); (tv.parent as? ScrollView)?.let { c -> c.post { c.fullScroll(ScrollView.FOCUS_DOWN) } } }
@@ -248,6 +255,12 @@ class MainActivity : Activity() {
             datTrangThai("⛔ $dangChay\nKHÔNG THẤY MODEM $gwCanh (${(now - matModemTu) / 1000} giây) — modem đang khởi động lại hoặc rớt / sai WiFi. Đang chờ modem lên lại…", DO)
             return
         }
+        if (tienDo >= 0) {      // lượt cài tại chỗ: MỘT dòng + thanh % (Huan chốt 25/11 — không liệt kê bước)
+            val p = tienDo.coerceIn(0, 100)
+            val o = p / 10
+            datTrangThai("⏳ HỆ THỐNG ĐANG TỰ CÀI CAM · $p%\n" + "▰".repeat(o) + "▱".repeat(10 - o) + "\n" + dangChay.removePrefix("CÀI TẠI CHỖ · "), LAM)
+            return
+        }
         val giay = (now - buocTu) / 1000
         datTrangThai("⏳ $dangChay\nĐang: " + (if (buocDang.isEmpty()) "bắt đầu…" else buocDang) + (if (giay >= 3) " · $giay giây" else ""), LAM)
     }
@@ -316,6 +329,8 @@ class MainActivity : Activity() {
 
     private fun chayNen(viec: String, coTomTat: Boolean, lam: () -> List<String>?) {
         dangChay = viec
+        tienDo = if (viec.startsWith("CÀI TẠI CHỖ")) 2 else -1
+        soDoVuaMo = false
         buocDang = ""; buocTu = System.currentTimeMillis(); matModemTu = 0
         datTrangThai("⏳ $viec\nĐang bắt đầu…", LAM)
         ui.removeCallbacks(nhipTrangThai)
@@ -333,6 +348,7 @@ class MainActivity : Activity() {
                 val ketQua = kq
                 ui.post {
                     dangChay = ""
+                    tienDo = -1
                     capNhatTieuDe()
                     if (coTomTat && ketQua != null) hienKetQua(viec, ketQua)
                     else datTrangThai("✔ Xong: $viec", XANH)
@@ -346,6 +362,11 @@ class MainActivity : Activity() {
             "DAT" -> Pair("✔ ĐẠT", XANH)
             "CHUA" -> Pair("⚠ CHƯA XONG HẾT", VANG)
             else -> Pair("✖ LỖI", DO)
+        }
+        if (viec.startsWith("CÀI TẠI CHỖ") && soDoVuaMo) {      // màn kết quả đã mở và nói đủ (xong → xem cam; chưa → đã cài / chưa cài + lý do)
+            soDoVuaMo = false
+            datTrangThai(if (kq[0] == "DAT") "✔ ĐÃ CÀI XONG — ${viec.removePrefix("CÀI TẠI CHỖ · ")}" else "⚠ CHƯA XONG — ${viec.removePrefix("CÀI TẠI CHỖ · ")}", if (kq[0] == "DAT") XANH else VANG)
+            return
         }
         datTrangThai("$nhan — $viec", mau)
         val b = AlertDialog.Builder(this)
@@ -1161,7 +1182,7 @@ class MainActivity : Activity() {
                 ganWifi(false)
                 khoa.release()
             }
-            ui.post { datBuoc("chứng minh qua tên miền (4G)") }
+            ui.post { tienDo = 95; datBuoc("chứng minh qua tên miền (4G)") }
             ui.post { thaWifiRieng() }      // cài xong: nhả WiFi modem app tự vào, điện thoại về mạng thường
             bangChung(ma, stt)
             try {      // cam đang dùng tên miền khác tên miền của điểm trong app → hỏi người dùng, không tự ghi đè
@@ -1184,7 +1205,8 @@ class MainActivity : Activity() {
                 if (thuLai && lan < 3) { nhatKy.ghi("   chờ 40 giây cho tên miền cập nhật rồi thử lại…"); Thread.sleep(40_000) }
             }
             val du = j
-            ui.post { startActivity(Intent(this, SoDoActivity::class.java).putExtra("du_lieu", du)) }
+            soDoVuaMo = true
+            ui.post { if (tienDo >= 0) { tienDo = 100; veTrangThaiChay() }; startActivity(Intent(this, SoDoActivity::class.java).putExtra("du_lieu", du)) }
         } finally {
             ganDiDong(false)
         }

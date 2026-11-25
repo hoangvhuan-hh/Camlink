@@ -93,20 +93,45 @@ class SoDoActivity : Activity() {
             goc.addView(mui())
         }
 
-        val baoCao = j.optJSONArray("bao_cao")      // Huan chốt 25/11: việc nào hoàn tất báo ĐÃ HOÀN TẤT, việc nào chưa báo CHƯA kèm lý do
-        if (baoCao != null && baoCao.length() > 0) {
-            val chua = (0 until baoCao.length()).count { !baoCao.getJSONObject(it).optBoolean("xong") }
-            val mauBc = if (chua == 0) "#067647" else "#B54708"
-            val bc = the(mauBc)
-            bc.addView(chu(if (chua == 0) "✔ BÁO CÁO: ĐÃ HOÀN TẤT TẤT CẢ ${baoCao.length()} VIỆC" else "BÁO CÁO: ${baoCao.length() - chua} việc hoàn tất · $chua việc CHƯA", 13f, true, mauBc))
-            for (i in 0 until baoCao.length()) {
+        // KẾT QUẢ LƯỢT CÀI (Huan chốt 25/11) — chỉ 2 trường hợp:
+        //   xanh: ĐÃ CÀI XONG → xem cam ngay bên dưới · cam: CHƯA XONG → "đã cài" / "chưa cài được + lý do"
+        val baoCao = j.optJSONArray("bao_cao")
+        val coBaoCao = baoCao != null && baoCao.length() > 0
+        if (coBaoCao) {
+            val daCai = ArrayList<String>()
+            val chuaCai = ArrayList<String>()
+            for (i in 0 until baoCao!!.length()) {
                 val b = baoCao.getJSONObject(i)
-                if (b.optBoolean("xong")) bc.addView(chu("✔ " + b.optString("viec") + " — đã hoàn tất", 14f))
-                else bc.addView(chu("✖ " + b.optString("viec") + " — CHƯA. Lý do: " + b.optString("ly_do"), 14f, false, "#B42318"))
+                val ten = b.optString("ngan").ifEmpty { b.optString("viec") }
+                if (b.optBoolean("xong")) daCai.add(ten) else chuaCai.add(ten + " — " + b.optString("ly_do").ifEmpty { "chưa rõ lý do" })
             }
-            goc.addView(bc)
+            for (i in 0 until tong) {      // cài tại chỗ xong nhưng chưa xem được từ ngoài thì chưa tính là xong
+                val c = cams!!.getJSONObject(i)
+                if (c.optBoolean("ok") && !c.optBoolean("ngoai"))
+                    chuaCai.add("Xem cam ${c.optInt("so")} từ ngoài — " + c.optString("loi_ngoai").ifEmpty { "chưa xem được qua tên miền" })
+            }
+            if (chuaCai.isEmpty()) {
+                val x = the("#067647")
+                x.addView(chu("✔ ĐÃ CÀI XONG", 20f, true, "#067647"))
+                x.addView(chu("$tong cam — xem hình ngay bên dưới", 14f))
+                goc.addView(x)
+            } else {
+                val x = the("#B54708")
+                x.addView(chu("⚠ CHƯA XONG — còn ${chuaCai.size} việc", 18f, true, "#B54708"))
+                if (daCai.isNotEmpty()) {
+                    x.addView(chu("ĐÃ CÀI", 13f, true, "#067647"))
+                    x.addView(chu(daCai.joinToString("\n") { "✔ $it" }, 14f))
+                }
+                x.addView(chu("CHƯA CÀI ĐƯỢC", 13f, true, "#B42318"))
+                for (v in chuaCai) x.addView(chu("✖ $v", 14f, false, "#B42318"))
+                x.addView(chu("Lần cài kế tiếp app chỉ xử lý các việc chưa xong.", 12f, mau = "#5B6776"))
+                goc.addView(x)
+            }
             goc.addView(mui())
         }
+
+        val chiTiet = LinearLayout(this)      // phần kỹ thuật (tên miền, modem, bảng port): sau lượt cài thì thu gọn, bấm mới mở
+        chiTiet.orientation = LinearLayout.VERTICAL
 
         // Internet / tên miền
         val tm = the("#0F5D8C")
@@ -115,8 +140,8 @@ class SoDoActivity : Activity() {
         val ipTm = j.optString("ip_ten_mien")
         tm.addView(chu(if (ipTm.isNotEmpty()) "trỏ về IP $ipTm" else "không phân giải được", 13f,
             mau = if (ipTm.isNotEmpty()) "#1D7A46" else "#B42318"))
-        goc.addView(tm)
-        goc.addView(mui())
+        chiTiet.addView(tm)
+        chiTiet.addView(mui())
 
         // Modem
         val md = the("#5B6776")
@@ -131,8 +156,9 @@ class SoDoActivity : Activity() {
                 md.addView(chu("  ${r.optString("ten").padEnd(10)}  ${r.optInt("port").toString().padEnd(5)} → ${r.optString("ip")}", 13f).apply { typeface = Typeface.MONOSPACE })
             }
         }
-        goc.addView(md)
-        goc.addView(mui())
+        chiTiet.addView(md)
+        chiTiet.addView(mui())
+        if (!coBaoCao) goc.addView(chiTiet)
 
         // Cam
         for (i in 0 until tong) {
@@ -178,6 +204,14 @@ class SoDoActivity : Activity() {
                 ct.addView(b)
             }
             goc.addView(ct)
+        }
+        if (coBaoCao) {
+            chiTiet.visibility = android.view.View.GONE
+            goc.addView(chu("▸ Chi tiết kỹ thuật (tên miền, modem, bảng port)", 14f, mau = "#0B57D0").apply {
+                setPadding(0, dp(14), 0, dp(8))
+                setOnClickListener { chiTiet.visibility = if (chiTiet.visibility == android.view.View.GONE) android.view.View.VISIBLE else android.view.View.GONE }
+            })
+            goc.addView(chiTiet)
         }
         setContentView(ScrollView(this).apply { addView(goc) })
     }
