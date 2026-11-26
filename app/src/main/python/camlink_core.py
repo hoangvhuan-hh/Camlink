@@ -1797,6 +1797,7 @@ def dat_chung(ma, b, a, cam):
         if diem[a].get("so_thuc"):
             diem[a]["so_thuc"] = max(int(diem[a]["so_thuc"]), cam)
     _ghi_du_an(ma, da)
+    _gan_ghim_lich_su(ma, da)
     return ""
 
 
@@ -1804,7 +1805,42 @@ def bo_chung(ma, b):
     da = _doc_du_an(ma)
     da["diem"][str(b)].pop("chung", None)
     _ghi_du_an(ma, da)
+    _gan_ghim_lich_su(ma, da)
     return ""
+
+
+def _gan_ghim_lich_su(ma, da):
+    """Gắn / gỡ tên ghim cho cam ngay trong kết quả kiểm tra đang lưu → Giám sát, Kiểm tra từ xa đổi liền, không chờ lượt kiểm sau."""
+    import camlink_tuxa as T
+    try:
+        f = T._f_lich_su(GOC, ma)
+        with open(f, encoding="utf-8") as fh:
+            kq = json.load(fh)
+        T.gan_ghim(da, kq.get("diem", []))
+        with open(f, "w", encoding="utf-8") as fh:
+            json.dump(kq, fh, ensure_ascii=False)
+    except (OSError, ValueError):
+        pass
+
+
+def ds_chon_chung(ma):
+    """Cho hộp CHỌN TAY 'ghim dùng chung modem': b = ghim chưa có tên miền (chưa gắn); a = điểm đặt modem kèm số cam kế tiếp;
+    go = ghim đang gắn chung (để gỡ khi bấm nhầm). JSON."""
+    da = _doc_du_an(ma)
+    diem, ls = da.get("diem", {}), _lich_su_kiem(ma)
+    thu_tu = sorted(diem, key=lambda x: int(x) if x.isdigit() else 0)
+    b = [{"stt": k, "ten": diem[k].get("ten", "")} for k in thu_tu
+         if not diem[k].get("domain") and not _chung(diem[k]) and not _cam_chung(da, k)]
+    a = []
+    for k in thu_tu:
+        if _chung(diem[k]) or not diem[k].get("domain"):
+            continue
+        da_co = max([int(diem[k].get("so") or 0), _so_cam_that(da, k, ls), 1] + list(_cam_chung(da, k)))
+        tiep = next((n for n in range(2, len(C.HTTP) + 1) if n > _so_cam_ke_hoach(diem[k]) and n not in _cam_chung(da, k)
+                     and (n <= da_co or n == da_co + 1)), da_co + 1)
+        a.append({"stt": k, "ten": diem[k].get("ten", ""), "cam": tiep})
+    go = [{"stt": k, "ten": diem[k].get("ten", ""), "a": str(_chung(diem[k])["stt"])} for k in thu_tu if _chung(diem[k])]
+    return json.dumps({"a": a, "b": b, "go": go}, ensure_ascii=False)
 
 
 def tu_choi_chung(ma, b):

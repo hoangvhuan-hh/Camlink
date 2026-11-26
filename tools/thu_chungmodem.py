@@ -57,12 +57,28 @@ kt("T1d: Phú Lý / Tân Triều không có gợi ý nào", json.loads(K.goi_y_c
 x = tt(talai)
 kt("T1e: trước khi xác nhận, số liệu giữ như cũ (6 modem, thiếu 1 tên miền)", x["modem"] == 6 and x["ten_mien"] == 5 and not x["hoan_thanh"])
 
+# lịch sử kiểm tra từ xa đang có trên máy (Giám sát vẽ theo file này): điểm 1 có 2 cam đang lên
+import camlink_tuxa as T
+with open(T._f_lich_su(G, talai), "w", encoding="utf-8") as fh:
+    json.dump({"luc": "11:42 25/11/2026", "diem": [{"stt": "1", "ten": "Ngã 3 Tư Gia 1", "domain": "d1.ddns.net", "muc": "xanh",
+                                                   "cam": [{"so": 1, "muc": "xanh"}, {"so": 2, "muc": "xanh"}]}]}, fh)
+ch = json.loads(K.ds_chon_chung(talai))
+# điểm 1: kế hoạch 1 cam, thấy thật 2 cam → cam đầu tiên vượt kế hoạch chưa gắn cho ghim nào là cam 2 (khớp với gợi ý T1a);
+# điểm 2: kế hoạch 1, thấy 1 → cam kế tiếp là cam 2
+kt("T1f: chọn tay — ghim chưa có tên miền: [6]; điểm đặt modem: 1..5 kèm số cam kế tiếp (điểm 1 → cam 2, điểm 2 → cam 2)",
+   [x["stt"] for x in ch["b"]] == ["6"] and [x["stt"] for x in ch["a"]] == list("12345") and ch["a"][0]["cam"] == 2 and ch["a"][1]["cam"] == 2 and ch["go"] == [])
+
 # ================= T2: người dùng xác nhận → báo đúng sự thật
 kt("T2a: ghi nhận ghim 6 dùng chung modem điểm 1", K.dat_chung(talai, "6", "1", 2) == "")
 x = tt(talai)
 kt("T2b: 6 định vị · 6 cam · 5 modem", (x["diem"], x["cam"], x["modem"]) == (6, 6, 5))
 kt("T2c: tên miền 5/5 modem, user/pass DDNS 5/5 — không còn thiếu", x["ten_mien"] == 5 and x["tk_ddns"] == 5)
 kt("T2d: đã cài 6/6 và dự án là HOÀN THÀNH", x["da_xong"] == 6 and x["hoan_thanh"] is True)
+with open(T._f_lich_su(G, talai), encoding="utf-8") as fh:
+    c2 = json.load(fh)["diem"][0]["cam"][1]
+kt("T2f: lịch sử kiểm tra đang lưu được gắn ngay tên ghim cho cam số 2 (Giám sát đổi liền, không chờ kiểm lại)", c2.get("ghim") == "6" and c2.get("ten_ghim") == "Ngã 3 Tư Gia 2")
+ch = json.loads(K.ds_chon_chung(talai))
+kt("T2g: chọn tay sau khi gắn — không còn ghim trống; có mục gỡ cho ghim 6", ch["b"] == [] and [(x["stt"], x["a"]) for x in ch["go"]] == [("6", "1")])
 kt("T2e: xác nhận rồi thì không gợi ý lại", json.loads(K.goi_y_chung(talai)) == [])
 
 # ================= T3: Phú Lý / Tân Triều không đổi
