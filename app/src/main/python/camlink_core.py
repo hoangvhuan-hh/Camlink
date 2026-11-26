@@ -570,6 +570,7 @@ def bang_chung(ma, stt, log):
                 with open(f, "wb") as fh:
                     fh.write(jpg)
                 c["anh"] = f
+                c["anh_url"] = getattr(ov, "anh_url", "")
             except Exception as e:
                 c["loi_ngoai"] = f"không lấy được ảnh: {e}"
             try:

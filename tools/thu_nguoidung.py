@@ -70,4 +70,14 @@ kt("N9: mục Hồ sơ hệ thống camera hiện tại chỉ có Phú Lý + Tà
    sorted(x["ten"] for x in hs_) == ["Camera Xa Phu Ly", "Dự án cam an ninh Tà Lài mở rộng"] and all(x["tep"] and os.path.exists(x["tep"]) for x in hs_))
 x = next(x for x in hs_ if x["ten"] == "Camera Xa Phu Ly")
 kt("N10: dòng Phú Lý nói đúng sự thật: 21/23 cam đạt (điểm 6 đang rớt) — khớp Trang chủ", (x["dat"], x["cam"]) == (21, 23) and tq["dat"] - 0 >= 21)
+# ---- 2.12.22: mở hồ sơ ra, người cầm file (không có LiteMark, không có CamLink) phải vào xem được từng cam
+import camlink_hoso as H
+for ten_da in ("Camera Xa Phu Ly", "Dự án cam an ninh Tà Lài mở rộng"):
+    mh = H.du_lieu(K.GOC, next(x["ma"] for x in hs_ if x["ten"] == ten_da))
+    cams = [c for d in mh["diem"] for c in d["cam"]]
+    print(f"   {ten_da}: {len(cams)} cam trong hồ sơ, ví dụ: {cams[0]['link']} · user {cams[0]['user']}")
+    kt(f"N11 ({ten_da}): MỌI cam có tên miền đều có link http + user + mật khẩu + QR riêng; không có QR nào trỏ LiteMark / https; không có thứ gì ngoài cam (modem, DDNS)",
+       all(c["link"].startswith("http://") and c["qr"].startswith("http://") and c["user"] and "pass" in c for c in cams if c.get("http") and c["link"])
+       and all(c["link"] for d in mh["diem"] if d["domain"] for c in d["cam"]) and "litemark" not in json.dumps(mh).lower() and "https://" not in json.dumps(mh)
+       and all("qr" not in d for d in mh["diem"]))
 print(f"\n✓ đi thử như người dùng: {dat}/{dat} đạt")

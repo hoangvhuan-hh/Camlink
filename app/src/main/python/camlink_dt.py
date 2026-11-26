@@ -297,6 +297,7 @@ class Onvif:
         for au in (HTTPDigestAuth(self.user, self.pw), (self.user, self.pw)):
             r = requests.get(u, auth=au, timeout=12)
             if r.status_code == 200 and r.content[:2] == b"\xff\xd8":
+                self.anh_url = u      # đường ảnh của cam (qua tên miền) — hồ sơ dùng làm QR mở thẳng ảnh cam
                 return r.content
         raise RuntimeError(f"lấy ảnh lỗi {r.status_code}")
 

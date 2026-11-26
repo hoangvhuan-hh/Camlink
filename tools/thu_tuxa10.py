@@ -13,6 +13,7 @@ diem = {"4": {"ten": "Bình Chánh 761", "domain": "pl4.ddns.net", "so": 2, "bs"
 da = {"ten": "PL", "diem": diem}
 r1 = T.kiem_du_an(G, da, "pl", cd, log=lambda s: None, tu_sua=False)
 assert r1["che_do"] == "day_du" and r1["dat"] == 3
+assert [c.get("anh_url") for x in r1["diem"] if x["stt"] == "4" for c in x["cam"]] == ["http://pl4.ddns.net:8080/anh.jpg", "http://pl4.ddns.net:8081/anh.jpg"], "2.12.22: kiểm tra từ xa phải lưu đường ảnh của từng cam (để QR hồ sơ mở thẳng ảnh cam)"
 t0 = time.time(); logs = []
 r2 = T.kiem_du_an(G, da, "pl", cd, log=logs.append, tu_sua=False, nhanh=True)
 assert r2["che_do"] == "nhanh" and r2["so_tai_su_dung"] == 1 and r2["so_quet_lai"] == 1, (r2["che_do"], r2["so_tai_su_dung"])

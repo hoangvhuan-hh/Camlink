@@ -65,3 +65,5 @@ python3 tools/chay_test.py thu_hoiquy     # một bài
   từng trang PDF ra NHÌN bằng mắt trước khi giao (lộ ngay cột "Cam" bị xuống dòng). Thứ để người đọc thì phải mở ra xem, bài thử không thấy bố cục.
 - 26/11/2026 — Đặt tên "Hồ sơ nghiệm thu" là bó nó vào một thời điểm; anh Huan đổi thành "Hồ sơ hệ thống camera hiện tại" vì file tự cập nhật, dùng lúc nào cũng đúng.
   Đặt tên theo thứ nó LÀ (trạng thái hiện tại), không theo một dịp dùng nó.
+- 26/11/2026 — QR hồ sơ trỏ sang LiteMark: người không dùng LiteMark quét ra không xem được gì; anh Huan đổi thành QR từng cam = link http kèm user/mật khẩu cam.
+  Thứ đưa cho người ngoài (file, QR, link) phải dùng được mà KHÔNG cần cài app nào của mình; và mức bảo mật theo giai đoạn do anh Huan quyết, không tự siết.

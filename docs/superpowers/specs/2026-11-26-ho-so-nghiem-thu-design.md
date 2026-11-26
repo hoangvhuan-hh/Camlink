@@ -30,3 +30,13 @@ không phụ thuộc phần tự cài.
 - QR mỗi điểm: trang ghim trên LiteMark nếu dự án đã nối LiteMark; chưa nối thì trang web của cam 1 (`http://tên-miền:port`, khách tự đăng nhập bằng tài khoản xem của họ).
 - Tệp: `ketqua/HoSo_NghiemThu_<ma>.pdf` (ghi đè bản mới nhất).
 - API lõi: `ho_so_tu_dong(ma)` (không ném lỗi), `ho_so_ds()` JSON, `ho_so_tao(ma)` → đường dẫn.
+
+## Sửa 2.12.22 — QR từng cam (anh Huan quyết 26/11/2026 23:17)
+
+- Bỏ QR chung của điểm trỏ sang LiteMark (người không dùng LiteMark không xem được).
+- Mỗi cam một QR đặt cạnh ảnh cam: link **http** (không https) theo tên miền + port của cam, kèm user/mật khẩu **cam** trong link (ký tự lạ được mã hoá).
+  App đã biết đường ảnh của cam (lưu lúc kiểm tra từ xa / lúc cài) thì QR mở thẳng ảnh cam; chưa biết thì mở trang cam.
+- In ra chữ cạnh QR: link, user, mật khẩu cam. KHÔNG in mật khẩu modem, user/mật khẩu DDNS, đường RTSP.
+- Lý do anh Huan nêu: giai đoạn cài đặt, file chia trong nhóm cài đặt; bên quản lý tiếp quản sẽ tự đổi mật khẩu.
+- Chưa thử trên thiết bị thật: trình duyệt / app quét QR trên điện thoại có nhận user/mật khẩu trong link hay không (một số app quét bỏ phần này → khi đó gõ user/mật khẩu in bên cạnh).
+- Bài thử: `tools/thu_hoso.py` H1g–H1n, H4e–H4f, H5; `tools/thu_tuxa10.py` (lưu đường ảnh); `tools/thu_nguoidung.py` N11.
