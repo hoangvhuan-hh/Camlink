@@ -64,4 +64,10 @@ kt("N6: Tân Triều và Phú Lý không bị ảnh hưởng gì sau khi Tà Là
 tq = json.loads(K.tong_quan()); dl = json.loads(K.diem_loi_tat_ca())
 kt("N7: Trang chủ 1 điểm lỗi → bấm là tới thẳng Phú Lý điểm 6 (không hỏi dự án)", tq["diem_loi"] == 1 and [(d["du_an"], d["stt"]) for d in dl] == [("Camera Xa Phu Ly", "6")])
 kt("N8: hộp chọn dự án kiểm tra chỉ có Phú Lý + Tà Lài; Tân Triều chưa cài không hiện", sorted(r[1] for r in K.ds_du_an_kiem()) == ["Camera Xa Phu Ly", "Dự án cam an ninh Tà Lài mở rộng"])
+# ---- mục Hồ sơ nghiệm thu (một dòng trong tab Thêm)
+hs_ = json.loads(K.ho_so_ds())
+kt("N9: mục Hồ sơ nghiệm thu chỉ có Phú Lý + Tà Lài (đã cài); Tân Triều chưa cài không hiện; mỗi dòng có file sẵn, không cần bấm tạo",
+   sorted(x["ten"] for x in hs_) == ["Camera Xa Phu Ly", "Dự án cam an ninh Tà Lài mở rộng"] and all(x["tep"] and os.path.exists(x["tep"]) for x in hs_))
+x = next(x for x in hs_ if x["ten"] == "Camera Xa Phu Ly")
+kt("N10: dòng Phú Lý nói đúng sự thật: 21/23 cam đạt (điểm 6 đang rớt) — khớp Trang chủ", (x["dat"], x["cam"]) == (21, 23) and tq["dat"] - 0 >= 21)
 print(f"\n✓ đi thử như người dùng: {dat}/{dat} đạt")

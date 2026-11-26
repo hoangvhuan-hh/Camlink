@@ -111,16 +111,16 @@ object TheoDoi {
 
     fun uriPdf(ctx: Context, f: String): Uri = FileProvider.getUriForFile(ctx, "vn.vinalite.camlink.files", File(f))
 
-    fun moPdf(act: Activity, f: String) {
+    fun moPdf(act: Activity, f: String, tieuDe: String = "Báo cáo theo dõi") {
         val u = uriPdf(act, f)
-        AlertDialog.Builder(act).setTitle("Báo cáo theo dõi").setMessage(File(f).name)
+        AlertDialog.Builder(act).setTitle(tieuDe).setMessage(File(f).name)
             .setPositiveButton("Mở PDF") { _, _ ->
                 try { act.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(u, "application/pdf").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }
                 catch (_: Exception) { Toast.makeText(act, "Máy chưa có app đọc PDF — bấm Gửi để mở bằng Zalo", Toast.LENGTH_LONG).show() }
             }
             .setNeutralButton("Gửi Zalo / Gmail") { _, _ ->
                 act.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("application/pdf").putExtra(Intent.EXTRA_STREAM, u)
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Gửi báo cáo theo dõi"))
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Gửi " + tieuDe.lowercase()))
             }.setNegativeButton("Đóng", null).show()
     }
 

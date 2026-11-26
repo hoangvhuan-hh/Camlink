@@ -590,6 +590,7 @@ def bang_chung(ma, stt, log):
         json.dump(kq, fh, ensure_ascii=False)
     n = sum(1 for c in kq["cam"] if c["ngoai"])
     C.log(f"   → Xem được từ ngoài: {n}/{len(kq['cam'])} cam")
+    ho_so_tu_dong(ma)      # cam lên → hồ sơ nghiệm thu tự cập nhật
     return json.dumps(kq, ensure_ascii=False)
 
 
@@ -664,6 +665,7 @@ def tuxa_kiem(ma, log, nhanh=True):
             kq["litemark"]["da_gui"] = L.goi_canh_bao(ma, kq, PHIEN_BAN_LOI, log, da)
         except Exception as e:
             log(f"⚠ LiteMark: {e}")
+    ho_so_tu_dong(ma)      # sau mỗi lượt kiểm tra từ xa: hồ sơ nghiệm thu tự cập nhật (người dùng không phải bấm tạo)
     return json.dumps(kq, ensure_ascii=False)
 
 
@@ -899,6 +901,7 @@ def tuxa_kiem_diem(ma, stt, log):
             json.dump(ls, fh, ensure_ascii=False)
     except (OSError, ValueError, KeyError):
         pass
+    ho_so_tu_dong(ma)
     return json.dumps(p, ensure_ascii=False)
 
 
@@ -960,6 +963,41 @@ def tuxa_sua_diem(ma, json_kq, stt, log):
     log = _cb(log)
     kq = T.sua_tat_ca(GOC, _doc_du_an(ma), ma, json.loads(json_kq), C.doc_cai_dat(), log, chi_diem=[str(stt)])
     return json.dumps(kq, ensure_ascii=False)
+
+
+# ------------------------------------------------------------------ 2.12.20: HỒ SƠ NGHIỆM THU tự động (camlink_hoso.py)
+def ho_so_tao(ma):
+    import camlink_hoso as H
+    return H.tao(GOC, ma)
+
+
+def ho_so_tu_dong(ma):
+    """Lõi tự gọi sau lượt kiểm tra từ xa / sau bằng chứng lúc cài. KHÔNG BAO GIỜ ném lỗi ra ngoài (không được làm hỏng lượt kiểm)."""
+    try:
+        da = _doc_du_an(ma)
+        if not any(diem_da_cai(da, k, _lich_su_kiem(ma)) for k in da.get("diem", {})):
+            return ""      # dự án chưa cài cam nào: chưa có gì để nghiệm thu
+        return ho_so_tao(ma)
+    except Exception:
+        return ""
+
+
+def ho_so_ds():
+    """Mục 'Hồ sơ nghiệm thu': mỗi dự án ĐÃ CÀI cam một dòng {ma, ten, cam, dat, chua, luc, tep}. Thiếu file thì tự tạo."""
+    import camlink_hoso as H
+    out = []
+    for r in ds_du_an_kiem():
+        ma = str(r[0])
+        try:
+            m = H.du_lieu(GOC, ma)
+            f = H.tep(GOC, ma)
+            if not os.path.exists(f):
+                f = H.ve_pdf(m, f)
+            out.append({"ma": ma, "ten": m["du_an"], "cam": m["tong"]["cam"], "dat": m["tong"]["dat"], "chua": m["tong"]["chua"],
+                        "luc": time.strftime("%H:%M %d/%m/%Y", time.localtime(os.path.getmtime(f))), "tep": f})
+        except Exception as e:
+            out.append({"ma": ma, "ten": str(r[1]), "cam": 0, "dat": 0, "chua": 0, "luc": "", "tep": "", "loi": str(e)[:120]})
+    return json.dumps(out, ensure_ascii=False)
 
 
 def diem_loi_tat_ca():

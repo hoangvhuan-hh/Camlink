@@ -61,3 +61,5 @@ python3 tools/chay_test.py thu_hoiquy     # một bài
   Thứ app đã biết thì không hỏi lại người dùng — mỗi con số hiện ra phải bấm được tới đúng thứ nó đếm.
 - 26/11/2026 — 2.12.19 qua đủ 26 bài thử nhưng đi thử như người dùng mới lộ: nút "Ghim dùng chung modem" hiện cả ở Tân Triều (chưa có modem nào),
   và trên máy anh Huan app không tự hỏi vì Tà Lài cài tay (app chưa thấy 2 cam). Bài thử từng hàm không thay được việc soát cả màn hình.
+- 26/11/2026 — Hồ sơ nghiệm thu: tách `du_lieu()` (thuần, bài thử soát được từng con số, soát không lộ mật khẩu) khỏi `ve_pdf()`, rồi dựng ảnh
+  từng trang PDF ra NHÌN bằng mắt trước khi giao (lộ ngay cột "Cam" bị xuống dòng). Thứ để người đọc thì phải mở ra xem, bài thử không thấy bố cục.
