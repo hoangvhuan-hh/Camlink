@@ -1,12 +1,42 @@
 name: Build APK
 on:
   push:
-    branches: [main]
+    branches: ['**']
   workflow_dispatch:
 permissions:
   contents: write
 jobs:
+  # CỔNG TEST: chạy toàn bộ bài thử tools/thu_*.py. Có bài đỏ → job build bên dưới KHÔNG chạy → KHÔNG ra APK.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Cai thu vien cho bai thu
+        run: pip install requests openpyxl rsa pillow reportlab==4.2.5
+      - name: Test (cong chan)
+        run: |
+          set -o pipefail
+          sudo env "PATH=$PATH" python tools/chay_test.py --du 2>&1 | tee test.log
+      - name: Luu ket qua test
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: camlink-test
+          path: test.log
+      - name: Upload test log on failure
+        if: failure() && github.ref == 'refs/heads/main'
+        run: |
+          mkdir -p /tmp/log && cp test.log /tmp/log/build.log
+          cd /tmp/log && git init -q && git checkout -q -b buildlog
+          git config user.name "camlink-ci" && git config user.email "ci@users.noreply.github.com"
+          git add . && git commit -qm "test do ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" buildlog
   build:
+    needs: test
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

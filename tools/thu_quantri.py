@@ -1,10 +1,10 @@
 # Test LOCAL nhiều vai cho module Quản trị & Khôi phục (Huan 15/11).
 # Mục tiêu chứng minh: thợ rút là KHÔNG can thiệp được; chỉ CHỦ xem/đổi được; liên kết LiteMark không đứt khi xoay pass.
 import sys, os, shutil
-sys.path.insert(0, '/home/claude/camlink-repo/app/src/main/python')
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '../app/src/main/python')); sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import camlink_quantri as Q
 
-G = "/tmp/claude-0/-home-claude/ee4cb562-845a-57dc-b797-8c1359dd9ac2/scratchpad/qt"
+G = os.path.join(__import__("tempfile").gettempdir(), "camlink_thu", "qt")
 shutil.rmtree(G, True); os.makedirs(G)
 Q.khoi_tao(G)
 MAY_CHU, MAY_THO, MAY_THO2 = "may-chu-huan", "may-tho-A", "may-tho-B"

@@ -1,8 +1,8 @@
 # Tái hiện báo cáo Huan gửi 10/11 14:06: theo dõi cam 2 điểm 2 từ 10:58 → 14:05, dịch vụ đo bị dừng (chỉ 3 lượt), màn xem ghi 20 lần ngắt
 import sys, os, shutil, time, json
-sys.path.insert(0, '/home/claude/camlink-repo/app/src/main/python')
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '../app/src/main/python')); sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import camlink_theodoi as T
-G = "/tmp/claude-0/-home-claude/ee4cb562-845a-57dc-b797-8c1359dd9ac2/scratchpad/td6"; shutil.rmtree(G, True); os.makedirs(G + "/ketqua")
+G = os.path.join(__import__("tempfile").gettempdir(), "camlink_thu", "td6"); shutil.rmtree(G, True); os.makedirs(G + "/ketqua")
 T.khoi_tao(G); T._chup = lambda m, ten: ""
 p = {"stt": "2", "ten": "Ngã ba chùa Pháp Bảo", "domain": "phuly-chuaphapbao.ddns.net", "du_an": "Camera Xa Phu Ly",
      "cam": [{"so": 1, "http": 8080}, {"so": 2, "http": 8081, "live": "rtsp://a:b@phuly-chuaphapbao.ddns.net:5541/snl/live/1/1"}]}

@@ -1,5 +1,5 @@
 import os, sys, json
-sys.path.insert(0, '/home/claude/camlink-repo/app/src/main/python')
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '../app/src/main/python')); sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import camlink_litemark as L
 CL = {"1": (11.3108,107.1574,"Ngã ba gần trạm y tế"), "2": (11.3069,107.1450,"Ngã ba chùa Pháp Bảo"), "3": (11.2938,107.1372,"Ngã ba 761 Bàu điền"),
       "4": (11.2998,107.1394,"Ngã ba Bình Chánh 761"), "5": (11.2784,107.1523,"Ngã tư bầu phụng"), "6": (11.2802,107.1645,"Ngã tư vô rừng lý lịch"),

@@ -1,8 +1,8 @@
 # 1.9.6: theo dõi CẢ ĐIỂM (đo chung 1 lượt) · cam TREO (nhận kết nối mà câm) · báo ngay khi rớt ≥ BAO_SAU · 1 báo cáo chung · khoảng trống do app bị dừng
 import sys, os, shutil, time, json
-sys.path.insert(0, '/home/claude/camlink-repo/app/src/main/python')
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '../app/src/main/python')); sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import camlink_theodoi as T
-G = "/tmp/claude-0/-home-claude/ee4cb562-845a-57dc-b797-8c1359dd9ac2/scratchpad/td4"; shutil.rmtree(G, True); os.makedirs(G + "/ketqua")
+G = os.path.join(__import__("tempfile").gettempdir(), "camlink_thu", "td4"); shutil.rmtree(G, True); os.makedirs(G + "/ketqua")
 T.khoi_tao(G); T.NHIP = 1; T.BAO_SAU = 3; T.ANH_MOI = 10 ** 9
 T._chup = lambda m, ten: ""
 T._mang_ok = lambda: True

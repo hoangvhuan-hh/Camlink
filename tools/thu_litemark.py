@@ -2,8 +2,8 @@
 import os, sys, json, threading, shutil, time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 os.environ["CAMLINK_LITEMARK"] = "http://127.0.0.1:18765"
-sys.path.insert(0, '/home/claude/camlink-repo/app/src/main/python')
-G = "/tmp/claude-0/-home-claude/ee4cb562-845a-57dc-b797-8c1359dd9ac2/scratchpad/lm"; shutil.rmtree(G, True); os.makedirs(G)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '../app/src/main/python')); sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+G = os.path.join(__import__("tempfile").gettempdir(), "camlink_thu", "lm"); shutil.rmtree(G, True); os.makedirs(G)
 NHAN = []
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass

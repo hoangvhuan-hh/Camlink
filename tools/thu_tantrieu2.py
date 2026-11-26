@@ -1,5 +1,5 @@
 import sys, re
-exec(open('thu_tantrieu.py', encoding='utf-8').read().split("dong = L.doc_file_ddns")[0])
+exec(open(__import__('os').path.join(__import__('os').path.dirname(__import__('os').path.abspath(__file__)), 'thu_tantrieu.py'), encoding='utf-8').read().split("dong = L.doc_file_ddns")[0])
 da = L.tao_du_an_tu_lm("f7ee", "", lambda s: None)
 dong = L.doc_file_ddns(f, lambda u: None, lambda s: None)
 for d in dong: d["ten"] = "Vị trí " + d["no"] if d["no"] != "51" else "Cột cao"; d["no"] = str(100 + int(d["no"]))   # bỏ hết mã TT

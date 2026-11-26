@@ -2,14 +2,14 @@
 #                                                         (B) cả điểm mất, nhật ký cam CÓ khởi động lại → Mất điện cao nhất
 import sys, os, shutil, time, subprocess, json
 os.environ["CAMLINK_THU_NOI_BO"] = "1"
-sys.path.insert(0, '/home/claude/camlink-repo/app/src/main/python')
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '../app/src/main/python')); sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gialap_onvif as S, camlink_theodoi as T, camlink_chandoan as D
 def cam(ip, h, r):
     c = S.Cam(ip, isapi=False, stt=1); c.http, c.rtsp = h, r; c.gw, c.dns = "192.168.1.1", "8.8.8.8"; c.model = "OR-IPC"; c.mac = f"78:CE:A5:00:{h-8000:02X}:01"; S.bat(c); return c
 c1 = cam("127.0.4.2", 8080, 554); c2 = cam("127.0.4.2", 8081, 5541)
 p = {"stt": "2", "ten": "Chùa Pháp Bảo", "domain": "pl2.ddns.net", "cam": [{"so": 1, "http": 8080, "live": "rtsp://admin:Abc@12345@pl2.ddns.net:554/"}, {"so": 2, "http": 8081, "live": "rtsp://admin:Abc@12345@pl2.ddns.net:5541/"}]}
 def chay(ten, khoi_dong):
-    G = f"/tmp/claude-0/-home-claude/ee4cb562-845a-57dc-b797-8c1359dd9ac2/scratchpad/cd_{ten}"; shutil.rmtree(G, True); os.makedirs(G + "/ketqua")
+    G = os.path.join(__import__("tempfile").gettempdir(), "camlink_thu", f"cd_{ten}"); shutil.rmtree(G, True); os.makedirs(G + "/ketqua")
     T.khoi_tao(G); D.khoi_tao(G); T.NHIP = 1; T.ANH_MOI = 10 ** 9; T.BAO_SAU = 3; T._NK_CACHE.clear()
     c1.khoi_dong = c2.khoi_dong = []
     ip_that = {"v": "127.0.4.2"}; T._ip = lambda d: ip_that["v"]

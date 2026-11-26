@@ -1,0 +1,3 @@
+#!/bin/sh
+# Chặn đẩy code khi bài thử đỏ. Bật một lần: git config core.hooksPath .githooks
+exec python3 "$(git rev-parse --show-toplevel)/tools/chay_test.py" --nhanh

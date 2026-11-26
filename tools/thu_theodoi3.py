@@ -1,8 +1,8 @@
 # 1.9.2: video làm chuẩn — web còn nhưng video ngắt = rớt; hỏng 1 lần = chập chờn ngắn; 401 không tính; ghi lần ngắt từ màn xem
 import sys, os, shutil, time
-sys.path.insert(0, '/home/claude/camlink-repo/app/src/main/python')
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '../app/src/main/python')); sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import camlink_theodoi as T
-G = "/tmp/claude-0/-home-claude/ee4cb562-845a-57dc-b797-8c1359dd9ac2/scratchpad/td3"; shutil.rmtree(G, True); os.makedirs(G + "/ketqua")
+G = os.path.join(__import__("tempfile").gettempdir(), "camlink_thu", "td3"); shutil.rmtree(G, True); os.makedirs(G + "/ketqua")
 T.khoi_tao(G)
 T._chup = lambda m, ten: None
 p = {"stt": "2", "ten": "Ngã ba chùa Pháp Bảo", "domain": "phuly-chuaphapbao.ddns.net", "du_an": "Camera Xa Phu Ly",

@@ -1,7 +1,7 @@
 # 1.9.6: cam rớt ≥5 phút → sửa đúng cam trong kết quả gần nhất, đẩy CẢ ẢNH CHỤP DỰ ÁN lên LiteMark (điểm khác giữ nguyên); lên lại → gỡ
 import sys, os, shutil, json, time
-sys.path.insert(0, '/home/claude/camlink-repo/app/src/main/python')
-G = "/tmp/claude-0/-home-claude/ee4cb562-845a-57dc-b797-8c1359dd9ac2/scratchpad/td5"; shutil.rmtree(G, True); os.makedirs(G)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '../app/src/main/python')); sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+G = os.path.join(__import__("tempfile").gettempdir(), "camlink_thu", "td5"); shutil.rmtree(G, True); os.makedirs(G)
 import camlink_core as K, camlink_litemark as L, camlink_tuxa as T
 K.khoi_tao(G)
 gui = []

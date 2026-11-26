@@ -1,5 +1,6 @@
+import os
 import sys, json
-sys.path.insert(0, '/home/claude/camlink-repo/app/src/main/python')
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '../app/src/main/python')); sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import camlink_litemark as L
 da = {"ten": "PL", "diem": {"2": {"ten": "Chùa Pháp Bảo", "domain": "a.ddns.net", "lm_stt": "7"},
                            "6": {"ten": "Rừng Lý Lịch", "domain": "b.ddns.net", "lm_stt": "2"},

@@ -1,10 +1,10 @@
 # 2.3.0 — quản trị ĐA HÃNG qua ONVIF chuẩn: xoay mật khẩu (SetUser), tạo tài khoản Xem (CreateUsers mức User),
 # nhận diện hãng (GetDeviceInformation). Giả lập cam ONVIF bất kỳ (không dính hãng nào), kiểm bản tin SOAP + két + LiteMark.
 import sys, os, shutil, json
-sys.path.insert(0, '/home/claude/camlink-repo/app/src/main/python')
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '../app/src/main/python')); sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import camlink_core as K, camlink_dt as C, camlink_quantri as Q, camlink_tuxa as TX
 
-G = "/tmp/claude-0/-home-claude/ee4cb562-845a-57dc-b797-8c1359dd9ac2/scratchpad/onvif"
+G = os.path.join(__import__("tempfile").gettempdir(), "camlink_thu", "onvif")
 shutil.rmtree(G, True); os.makedirs(G + "/duan"); os.makedirs(G + "/ketqua")
 K.khoi_tao(G)
 

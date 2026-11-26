@@ -238,6 +238,11 @@ def goi_canh_bao(ma, kq, phien_ban, log=print, da=None):
     lk = lien_ket(ma)
     if not lk.get("id"):
         return False
+    if not int(kq.get("tong_cam") or 0) and not kq.get("diem"):
+        # Chưa kiểm được cam nào (0/0, không điểm nào): KHÔNG gửi. Bản trống từng làm LiteMark hiện nhầm "đạt hết"
+        # cho công trình chưa lắp cam (Tân Triều 10/11/2026). Không xếp hàng đợi, không đè bản thật đang chờ gửi.
+        log("🔗 Chưa kiểm được cam nào — không gửi cảnh báo lên LiteMark")
+        return False
     dm = (da or {}).get("diem", {})
     def lm(p):
         if p.get("lm_stt_that"):   # tên miền đổi: báo theo ghim của điểm thật (nhận diện bằng MAC/IP)

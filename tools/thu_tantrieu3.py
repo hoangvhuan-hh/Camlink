@@ -1,6 +1,6 @@
 # Qua đúng các hàm lõi app gọi: nhận dự án → nạp file → điểm cần chọn tại cột → gán → kiểm từ xa bỏ qua điểm chưa cài
 import sys, json, os, shutil
-exec(open('thu_tantrieu.py', encoding='utf-8').read().split("dong = L.doc_file_ddns")[0])
+exec(open(__import__('os').path.join(__import__('os').path.dirname(__import__('os').path.abspath(__file__)), 'thu_tantrieu.py'), encoding='utf-8').read().split("dong = L.doc_file_ddns")[0])
 import camlink_core as K
 G2 = G + "/app"; shutil.rmtree(G2, True); os.makedirs(G2)
 K.khoi_tao(G2)

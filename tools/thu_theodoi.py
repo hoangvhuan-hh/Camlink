@@ -1,8 +1,8 @@
 # Backtest máy trạng thái + phân loại + PDF bằng 24 giờ mẫu giả lập (nhịp 30 giây) có đủ các kiểu rớt
 import sys, os, json, shutil, time
-sys.path.insert(0, '/home/claude/camlink-repo/app/src/main/python')
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '../app/src/main/python')); sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import camlink_theodoi as T
-G = "/tmp/claude-0/-home-claude/ee4cb562-845a-57dc-b797-8c1359dd9ac2/scratchpad/td"; shutil.rmtree(G, True); os.makedirs(G + "/ketqua")
+G = os.path.join(__import__("tempfile").gettempdir(), "camlink_thu", "td"); shutil.rmtree(G, True); os.makedirs(G + "/ketqua")
 T.khoi_tao(G)
 from PIL import Image, ImageDraw
 anh_mau = G + "/mau.jpg"
