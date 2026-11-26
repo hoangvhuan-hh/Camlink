@@ -1235,12 +1235,14 @@ def _tinh_lai(kq, diem):
     return kq
 
 
-def sua_tat_ca(goc, da, ma, kq, cd, log=print):
+def sua_tat_ca(goc, da, ma, kq, cd, log=print, chi_diem=None):
     """Gom MỌI vấn đề trong kết quả kiểm tra → chạy hết các cách sửa app làm được → kiểm tra lại →
     báo cáo từng vấn đề: HOÀN THÀNH, hoặc CHƯA kèm nguyên nhân + giải pháp."""
     diem = da["diem"]
     muc_sua, dong_diem = [], set()
     for p in kq["diem"]:
+        if chi_diem and p["stt"] not in chi_diem:      # sửa đúng (các) điểm được chỉ định; điểm khác không đụng tới
+            continue
         ca_diem = p["muc"] == DO and p["tong"].isupper() and not any(c["muc"] == XANH for c in p["cam"])
         cams = [c for c in p["cam"] if c["muc"] != XANH]
         if ca_diem and cams:
@@ -1252,7 +1254,7 @@ def sua_tat_ca(goc, da, ma, kq, cd, log=print):
                             "nguyen_nhan_truoc": c.get("nguyen_nhan", ""), "chay": chay, "da_lam": [],
                             "gw_dung": c.get("gw_dung", ""),
                             "trung": any("Cùng một cam" in x for x in c.get("canh_bao", []))})
-    log(f"SỬA TẤT CẢ: {len(muc_sua)} vấn đề")
+    log((f"SỬA ĐIỂM {', '.join(chi_diem)}" if chi_diem else "SỬA TẤT CẢ") + f": {len(muc_sua)} vấn đề")
     for vong in range(3):   # sửa → kiểm lại → còn việc sửa được (vd mất cấu hình sau khởi động) thì làm tiếp
         dong_diem = set()
         for m in muc_sua:

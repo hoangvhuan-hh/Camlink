@@ -48,6 +48,7 @@ class TuXaActivity : Activity() {
     private lateinit var rada: android.webkit.WebView
     private lateinit var cuonKq: ScrollView
     private lateinit var duoi: LinearLayout
+    private var tuSua = false     // mở từ thẻ "điểm lỗi" ở Trang chủ: quét lại xong, điểm còn lỗi thì TỰ sửa từ xa đúng điểm đó
     private var toiDiem = ""      // điểm cần nhảy tới sau khi quét xong (bấm "Chi tiết / sửa" từ màn Giám sát)
     private var radaSan = false
     private val radaCho = mutableListOf<String>()
@@ -457,7 +458,7 @@ class TuXaActivity : Activity() {
             val m0 = intent.getStringExtra("ma") ?: ""
             val ds = core.callAttr("ds_du_an").asList().map { r -> r.asList().map { it.toString() } }
             val d = ds.firstOrNull { it[0] == m0 }
-            if (d != null) { ma = d[0]; tenDuAn = d[1]; toiDiem = intent.getStringExtra("toi_diem") ?: ""; batDau() } else chonDuAn()
+            if (d != null) { ma = d[0]; tenDuAn = d[1]; toiDiem = intent.getStringExtra("toi_diem") ?: ""; tuSua = intent.getBooleanExtra("tu_sua", false); batDau() } else chonDuAn()
         }
         else { chonDuAn(); kiemChoNhan() }
     }
@@ -532,11 +533,11 @@ class TuXaActivity : Activity() {
     // ---------------- dự án ----------------
     private fun chonDuAn() {
         if (dangChay) return
-        val ds = core.callAttr("ds_du_an").asList().map { r -> r.asList().map { it.toString() } }
+        val ds = core.callAttr("ds_du_an_kiem").asList().map { r -> r.asList().map { it.toString() } }      // chỉ dự án ĐÃ cài cam; dự án chưa cài cam nào không có gì để kiểm
         val ten = ds.map { "📂 ${it[1]} — ${it[2]} điểm (đã nạp sẵn trong app, bấm để kiểm tra)" } +
             "＋ Nạp file Excel khác / cập nhật file mới"
         AlertDialog.Builder(this)
-            .setTitle(if (ds.isEmpty()) "Chưa có dự án — nạp file Excel cấu hình" else "Chọn dự án để kiểm tra")
+            .setTitle(if (ds.isEmpty()) "Chưa có dự án nào đã cài cam để kiểm tra" else "Chọn dự án để kiểm tra")
             .setItems(ten.toTypedArray()) { _, i ->
                 if (i == ds.size) moFile() else { ma = ds[i][0]; tenDuAn = ds[i][1]; batDau() }
             }
@@ -650,7 +651,11 @@ class TuXaActivity : Activity() {
                     cheDoQuet(false)
                     veBang(if (co4G) "Đã kiểm tra qua 4G (như IOC gọi từ ngoài)" else "⚠ Không bật được 4G — đã kiểm tra qua WiFi; nếu đang ở trong WiFi của chính điểm, kết quả có thể sai")
                     js("rada.xong('ĐÃ QUÉT XONG ${java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())}')")
-                    if (toiDiem.isNotEmpty()) { val s0 = toiDiem; toiDiem = ""; cuonKq.postDelayed({ cuonToi(s0) }, 300) }
+                    if (toiDiem.isNotEmpty()) {
+                        val s0 = toiDiem; toiDiem = ""
+                        cuonKq.postDelayed({ cuonToi(s0) }, 300)
+                        if (tuSua) { tuSua = false; cuonKq.postDelayed({ suaDiemLoi(s0) }, 900) }
+                    }
                     val d1 = ketQua?.optInt("dat") ?: 0
                     if (d0 >= 0 && d1 != d0) Toast.makeText(this, "So với lần trước: $d0 → $d1 cam đạt", Toast.LENGTH_LONG).show()
                 }
@@ -978,6 +983,35 @@ class TuXaActivity : Activity() {
             .show()
     }
 
+    /** Vào từ thẻ "điểm lỗi": điểm còn lỗi → tự chạy mọi cách sửa từ xa app làm được cho ĐÚNG điểm đó, kiểm lại, mở báo cáo
+     *  (sửa xong, hoặc chưa kèm nguyên nhân + việc cần làm). Điểm đã lên lại thì chỉ báo, không đụng gì. */
+    private fun suaDiemLoi(stt: String) {
+        val k = ketQua ?: return
+        val ds = k.optJSONArray("diem") ?: return
+        val p = (0 until ds.length()).map { ds.getJSONObject(it) }.firstOrNull { it.optString("stt") == stt } ?: return
+        if (p.optString("muc") == "xanh") {
+            Toast.makeText(this, "Điểm $stt đã lên lại — không cần sửa", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (dangChay) return
+        dangChay = true
+        nk.ghi("🔧 Điểm $stt. ${p.optString("ten")} đang lỗi → tự sửa từ xa (chỉ điểm này)…")
+        Toast.makeText(this, "Đang tự sửa từ xa điểm $stt…", Toast.LENGTH_LONG).show()
+        thread {
+            gan4G(true)
+            try {
+                val j = core.callAttr("tuxa_sua_diem", ma, k.toString(), stt, nk).toString()
+                ui.post {
+                    ketQua = JSONObject(j)
+                    veBang("Đã sửa từ xa điểm $stt và kiểm tra lại")
+                    cuonKq.postDelayed({ cuonToi(stt) }, 300)
+                    xemBaoCaoSua(ketQua!!.optJSONArray("bao_cao_sua") ?: JSONArray())
+                }
+            } catch (e: Exception) { ui.post { nk.ghi("✖ ${e.message}"); veBang("Sửa điểm $stt bị lỗi: ${e.message}") } }
+            finally { gan4G(false); dangChay = false }
+        }
+    }
+
     private fun xemBaoCaoSua(bcs: JSONArray) {
         val sb = StringBuilder()
         for (i in 0 until bcs.length()) {
@@ -991,7 +1025,7 @@ class TuXaActivity : Activity() {
             }
             sb.append("\n")
         }
-        AlertDialog.Builder(this).setTitle("Báo cáo sửa tất cả").setMessage(sb.toString().trim()).setPositiveButton("Đóng", null).show()
+        AlertDialog.Builder(this).setTitle("Báo cáo sửa từ xa").setMessage(sb.toString().trim()).setPositiveButton("Đóng", null).show()
     }
 
     private fun suaSoCam(p: JSONObject) {

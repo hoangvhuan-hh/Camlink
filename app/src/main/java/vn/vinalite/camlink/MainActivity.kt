@@ -1585,6 +1585,30 @@ class MainActivity : Activity() {
         if (sanSang()) startActivity(Intent(this, TuXaActivity::class.java))
     }
 
+    /** Bấm thẻ "x/y cam · n điểm lỗi": app ĐÃ biết điểm nào lỗi nên vào thẳng điểm đó và tự sửa từ xa — không hỏi lại dự án (Huan chốt 26/11). */
+    private fun moDiemLoi() {
+        if (ban() || !sanSang()) return
+        val dl = try { org.json.JSONArray(core.callAttr("diem_loi_tat_ca").toString()) } catch (_: Exception) { org.json.JSONArray() }
+        fun vao(d: org.json.JSONObject) = startActivity(Intent(this, TuXaActivity::class.java)
+            .putExtra("ma", d.optString("ma")).putExtra("toi_diem", d.optString("stt")).putExtra("tu_sua", true))
+        when {
+            dl.length() == 1 -> vao(dl.getJSONObject(0))
+            dl.length() > 1 -> {
+                val nhan = Array(dl.length()) { i -> dl.getJSONObject(i).let { d ->
+                    (if (d.optString("muc") == "do") "🔴 " else "🟡 ") + "${d.optString("du_an")} — điểm ${d.optString("stt")}. ${d.optString("ten")}\n${d.optString("tong")}" } }
+                AlertDialog.Builder(this).setTitle("${dl.length()} điểm đang lỗi — chọn điểm để sửa")
+                    .setItems(nhan) { _, i -> vao(dl.getJSONObject(i)) }
+                    .setNegativeButton("Đóng", null).show()
+            }
+            else -> {      // không có điểm lỗi: mở thẳng dự án vừa kiểm gần nhất
+                val m = try { org.json.JSONObject(core.callAttr("tong_quan").toString()).optString("gan_nhat_ma") } catch (_: Exception) { "" }
+                val i = Intent(this, TuXaActivity::class.java)
+                if (m.isNotEmpty()) i.putExtra("ma", m)
+                startActivity(i)
+            }
+        }
+    }
+
     /** Thẻ trạng thái: đọc kết quả kiểm gần nhất đã lưu (không chạm mạng). Chưa có dữ liệu thì chỉ đúng bước cần làm. */
     private fun lamMoiTrangChu() {
         if (!::dhThe.isInitialized) return
@@ -1644,7 +1668,7 @@ class MainActivity : Activity() {
         val dangTd = j.optInt("theo_doi")
         if (dangTd > 0) o(dangTd.toString(), "đang theo dõi", M_CHU, 1.4f)
         dhThe.addView(h, lpDoc(tren = 14))
-        dhThe.setOnClickListener { moKiemTra() }
+        dhThe.setOnClickListener { moDiemLoi() }
         if (loi > 0) dhChamGS.visibility = android.view.View.VISIBLE
     }
 
@@ -1903,7 +1927,6 @@ class MainActivity : Activity() {
             dongTrang(v, "Toạ độ (GPS tự dò điểm)", du("toa_do"), mau("toa_do"))
             fun duM(k: String) = "${d.optInt(k)}/$modem"      // tên miền tính theo MODEM (một modem một tên miền), không theo ghim
             fun mauM(k: String) = if (d.optInt(k) == modem) M_XANH else M_DO
-            if (modem != n) dongTrang(v, "Modem (ghim có modem riêng)", "$modem", M_CHU)
             dongTrang(v, "Tên miền DDNS", duM("ten_mien"), mauM("ten_mien"))
             dongTrang(v, "User/pass DDNS kèm tên miền", duM("tk_ddns"), mauM("tk_ddns"))
             if (d.optInt("toa_do") < n) v.addView(chu("Điểm thiếu toạ độ: tới nơi app sẽ hỏi chọn điểm bằng tay.", 12f, M_MO), lpDoc(tren = 6))
@@ -1921,7 +1944,7 @@ class MainActivity : Activity() {
             if (thieuTM > 0 && tuLm) viec("📄  Nạp file tên miền của bên cấp", M_LAM) { choDdns = arrayOf(ma, "", "-1", ""); moFileDdns() }
             if (!tuLm) viec("📁  Cập nhật file Excel của dự án", if (xong) M_MO else M_LAM) { moFile() }
             if (daCai > 0) viec("🔍  Mở kiểm tra từ xa dự án này", M_XANH) { startActivity(Intent(this, TuXaActivity::class.java).putExtra("ma", ma)) }
-            if (thieuTM > 0 || modem != n) viec("📍  Ghim dùng chung modem điểm khác…", M_MO) { chonChung(ma) }
+            if (d.optBoolean("chon_chung")) viec("📍  Ghim dùng chung modem điểm khác…", M_MO) { chonChung(ma) }      // chỉ khi đủ điều kiện (lõi quyết định)
             if (thieuTM > 0 && !tuLm) v.addView(chu("Điểm thiếu tên miền: bổ sung cột Domain trong file Excel rồi cập nhật.", 12f, M_MO), lpDoc(tren = 6))
         }
         v.isClickable = true

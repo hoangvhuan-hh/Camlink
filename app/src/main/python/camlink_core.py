@@ -954,6 +954,45 @@ def tuxa_sua_tat_ca(ma, json_kq, log):
     return json.dumps(kq, ensure_ascii=False)
 
 
+def tuxa_sua_diem(ma, json_kq, stt, log):
+    """Sửa từ xa ĐÚNG MỘT điểm (bấm 'điểm lỗi' ở Trang chủ → vào thẳng điểm → tự sửa). Báo cáo như 'Sửa tất cả'."""
+    import camlink_tuxa as T
+    log = _cb(log)
+    kq = T.sua_tat_ca(GOC, _doc_du_an(ma), ma, json.loads(json_kq), C.doc_cai_dat(), log, chi_diem=[str(stt)])
+    return json.dumps(kq, ensure_ascii=False)
+
+
+def diem_loi_tat_ca():
+    """Các ĐIỂM đang lỗi theo kết quả kiểm gần nhất đã lưu của mọi dự án (không chạm mạng) — đỏ trước, vàng sau.
+    JSON [{ma, du_an, stt, ten, muc, tong, luc}]. Số phần tử khớp con số 'điểm lỗi' ở Trang chủ."""
+    import camlink_tuxa as T
+    out = []
+    for r in ds_du_an():
+        ma, ten = str(r[0]), str(r[1])
+        try:
+            with open(T._f_lich_su(GOC, ma), encoding="utf-8") as fh:
+                kq = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        for p in kq.get("diem") or []:
+            if p.get("muc") != "xanh":
+                out.append({"ma": ma, "du_an": ten, "stt": str(p.get("stt")), "ten": p.get("ten", ""), "muc": p.get("muc", ""),
+                            "tong": p.get("tong", ""), "luc": str(kq.get("luc", ""))})
+    out.sort(key=lambda x: 0 if x["muc"] == "do" else 1)
+    return json.dumps(out, ensure_ascii=False)
+
+
+def ds_du_an_kiem():
+    """Dự án để KIỂM TRA TỪ XA: chỉ dự án đã có ít nhất một điểm cài cam. Dự án chưa cài cam nào thì không có gì để kiểm."""
+    out = []
+    for r in ds_du_an():
+        da = _doc_du_an(str(r[0]))
+        ls = _lich_su_kiem(str(r[0]))
+        if any(diem_da_cai(da, k, ls) for k in da.get("diem", {})):
+            out.append(r)
+    return out
+
+
 def tuxa_ban_do(json_kq):
     import camlink_tuxa as T
     return T.ban_do_html(json.loads(json_kq), GOC)
@@ -1432,7 +1471,7 @@ def qt_doi_pin(pin_cu, pin_moi):
 def tong_quan():
     """Số liệu cho thẻ trạng thái ở trang chủ đồ hoạ — CHỈ đọc kết quả kiểm gần nhất đã lưu, không chạm mạng."""
     import camlink_tuxa as T
-    out = {"du_an": 0, "tong_cam": 0, "dat": 0, "diem_loi": 0, "gan_nhat": "", "theo_doi": 0, "ds": []}
+    out = {"du_an": 0, "tong_cam": 0, "dat": 0, "diem_loi": 0, "gan_nhat": "", "gan_nhat_ma": "", "theo_doi": 0, "ds": []}
     moi = 0
     for r in ds_du_an():
         ma, ten = str(r[0]), str(r[1])
@@ -1454,7 +1493,7 @@ def tong_quan():
                 out["diem_loi"] += d["diem_loi"]
                 t = os.path.getmtime(f)
                 if t > moi:
-                    moi, out["gan_nhat"] = t, f"{ten} · {d['luc']}"
+                    moi, out["gan_nhat"], out["gan_nhat_ma"] = t, f"{ten} · {d['luc']}", ma
         except (OSError, ValueError):
             pass
         out["ds"].append(d)
@@ -1685,6 +1724,10 @@ def tom_tat_du_an():
                     "luc_kiem": (ls.get("_luc") or {}).get("luc", ""),
                     "tu_litemark": "kho_ddns" in da,
                     "modem": len(modem),
+                    # nút "Ghim dùng chung modem…" chỉ hiện khi ĐỦ ĐIỀU KIỆN: dự án đã có modem (điểm có tên miền) VÀ có ghim trống để gắn hoặc ghim đang gắn để gỡ.
+                    # Dự án chưa có modem nào (Tân Triều chưa cài) hay đã đủ tên miền (Phú Lý) thì không hiện — tránh gây rối.
+                    "chon_chung": any(diem[k].get("domain") for k in modem) and (len(modem) != len(diem) or any(
+                        not diem[k].get("domain") and not _cam_chung(da, k) for k in modem)),
                     "cam": sum(max([int(diem[k].get("so") or 0)] + list(_cam_chung(da, k))) for k in modem),
                     "toa_do": sum(1 for k in diem if td.get(k)),
                     "ten_mien": sum(1 for k in modem if diem[k].get("domain")),

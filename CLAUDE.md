@@ -20,6 +20,10 @@ Lý do: từ 08/11 đến 25/11/2026 kho này ra 61 bản trong 18 ngày vì gia
 6. **Gỡ lỗi tận gốc.** Tái hiện → tìm nguyên nhân gốc → một giả thuyết → sửa tại gốc → chạy lại cả bộ.
    Thủ công chạy được mà app tự động không chạy thì lỗi nằm ở code app, mở code ra kiểm, không đổ cho bên ngoài.
 7. **Mỗi việc để lại một bài học.** Cuối việc, thêm đúng một dòng vào mục BÀI HỌC bên dưới.
+8. **Code xong phải ĐI THỬ NHƯ NGƯỜI DÙNG trước khi phát hành.** Dựng dữ liệu giống máy anh Huan (Tân Triều chưa cài · Phú Lý đã xong · Tà Lài mở rộng),
+   in ra đúng những gì từng màn hình sẽ hiện rồi soát: (a) thứ KHÔNG đủ điều kiện có bị hiện ra không (nút, dự án, câu hỏi);
+   (b) có thêm thứ anh Huan KHÔNG yêu cầu làm màn hình rối hơn không — có thì bỏ. Giữ thành mục trong `tools/thu_nguoidung.py`.
+   Code đúng mà logic sai / gây rối thì vẫn là hỏng: app để phục vụ người dùng, không phải để họ phải nghĩ thay nó.
 
 Quy trình chi tiết: bộ skill Superpowers trong `.claude/skills/` (brainstorming → writing-plans → test-driven-development →
 systematic-debugging → verification-before-completion). Dùng chúng cho mọi việc code trong kho này.
@@ -53,3 +57,7 @@ python3 tools/chay_test.py thu_hoiquy     # một bài
   Bài thử phải chạy thử trên CI (đẩy nhánh trước) rồi mới gộp `main`; "xanh trên máy mình" chưa phải bằng chứng.
 - 26/11/2026 — Code đếm mọi thứ theo ghim vì ngầm coi "1 ghim = 1 modem = 1 tên miền"; Tà Lài mở rộng (1 modem, 2 cam, 2 ghim cách 100 m)
   làm lộ ra. Trước khi viết chỗ đếm / quét nào, dựng dữ liệu giả cho ĐỦ các kiểu công trình thật (Tà Lài, Phú Lý 3 cam một ghim, Tân Triều 4 cam).
+- 26/11/2026 — Trang chủ báo "1 điểm lỗi" nhưng bấm vào lại hỏi chọn dự án: màn hình đã có dữ liệu mà không truyền sang bước sau.
+  Thứ app đã biết thì không hỏi lại người dùng — mỗi con số hiện ra phải bấm được tới đúng thứ nó đếm.
+- 26/11/2026 — 2.12.19 qua đủ 26 bài thử nhưng đi thử như người dùng mới lộ: nút "Ghim dùng chung modem" hiện cả ở Tân Triều (chưa có modem nào),
+  và trên máy anh Huan app không tự hỏi vì Tà Lài cài tay (app chưa thấy 2 cam). Bài thử từng hàm không thay được việc soát cả màn hình.
