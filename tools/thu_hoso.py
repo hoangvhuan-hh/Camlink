@@ -1,4 +1,4 @@
-# 2.12.20 — HỒ SƠ NGHIỆM THU tự động, có bằng chứng (anh Huan chốt 26/11/2026). Thiết kế: docs/superpowers/specs/2026-11-26-ho-so-nghiem-thu-design.md
+# 2.12.20 — HỒ SƠ HỆ THỐNG CAMERA HIỆN TẠI tự động, có bằng chứng (anh Huan chốt 26/11/2026). Thiết kế: docs/superpowers/specs/2026-11-26-ho-so-nghiem-thu-design.md
 # Chạy: python3 tools/thu_hoso.py
 import os, sys, json, shutil, tempfile, re, time
 os.environ["CAMLINK_THU_NOI_BO"] = "1"
@@ -54,7 +54,9 @@ kt("H1h: QR mỗi điểm trỏ tới trang web cam 1 khi dự án chưa nối L
 f = K.ho_so_tao(pl)
 raw = open(f, "rb").read()
 so_trang = len(re.findall(rb"/Type\s*/Page(?![a-zA-Z])", raw))
-kt("H2a: ra đúng MỘT file PDF, tên có mã dự án", f.endswith(".pdf") and os.path.basename(f) == f"HoSo_NghiemThu_{pl}.pdf" and raw[:5] == b"%PDF-")
+kt("H2a: ra đúng MỘT file PDF, tên có mã dự án", f.endswith(".pdf") and os.path.basename(f) == f"HoSo_HeThongCamera_{pl}.pdf" and raw[:5] == b"%PDF-")
+kt("H2d: tiêu đề là 'HỒ SƠ HỆ THỐNG CAMERA HIỆN TẠI' (anh Huan 26/11: hợp với mọi thời điểm, không chỉ lúc nghiệm thu) — không còn chữ 'nghiệm thu'",
+   m["tieu_de"] == "HỒ SƠ HỆ THỐNG CAMERA HIỆN TẠI" and "nghiệm thu" not in json.dumps(m, ensure_ascii=False).lower())
 kt(f"H2b: 1 trang tổng + 11 trang điểm = 12 trang (đếm được {so_trang})", so_trang == 12)
 kt("H2c: file có nhúng ảnh thật của cam (21 ảnh)", len(re.findall(rb"/Subtype\s*/Image", raw)) >= 21)
 
@@ -86,4 +88,4 @@ kt("H4b: trang ghim 1 chỉ có cam 1; cam 2 nằm ở trang ghim 6 (ghi rõ dù
 kt("H4c: điểm 2 chưa có trong lượt kiểm từ xa → lấy bằng chứng lúc cài (ảnh + giờ)", p["2"]["cam"][0]["dat"] and os.path.exists(p["2"]["cam"][0]["anh"]) and "26/11/2026" in p["2"]["cam"][0]["gio"])
 f2 = K.ho_so_tao(tl)
 kt("H4d: PDF Tà Lài: 1 + 3 = 4 trang", len(re.findall(rb"/Type\s*/Page(?![a-zA-Z])", open(f2, "rb").read())) == 4)
-print(f"\n✓ 2.12.20 hồ sơ nghiệm thu: {dat}/{dat} đạt")
+print(f"\n✓ 2.12.20 hồ sơ hệ thống camera: {dat}/{dat} đạt")

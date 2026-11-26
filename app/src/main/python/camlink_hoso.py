@@ -1,4 +1,4 @@
-"""HỒ SƠ NGHIỆM THU tự động, có bằng chứng (2.12.20 — anh Huan chốt 26/11/2026).
+"""HỒ SƠ HỆ THỐNG CAMERA HIỆN TẠI — tự động, có bằng chứng (2.12.20; đổi tên 2.12.21 theo anh Huan: hợp mọi thời điểm, không chỉ lúc nghiệm thu).
 
 Ghép những thứ app ĐÃ CÓ thành một file PDF: ảnh từng cam chụp qua tên miền (như chủ đầu tư / IOC nhìn từ ngoài), giờ chụp,
 toạ độ ghim, tên miền + port, kết quả ĐẠT / CHƯA ĐẠT kèm lý do. Không in mật khẩu, không in user DDNS, không in đường RTSP.
@@ -10,6 +10,9 @@ Thiết kế: docs/superpowers/specs/2026-11-26-ho-so-nghiem-thu-design.md
 import os
 import json
 import time
+
+
+TIEU_DE = "HỒ SƠ HỆ THỐNG CAMERA HIỆN TẠI"
 
 
 def _so(x):
@@ -90,7 +93,7 @@ def du_lieu(goc, ma):
                    "qr_litemark": bool(qr) and bool(L.link_diem(ma, k, da))})
     modem = [k for k in diem if not K._chung(diem[k])]
     tat = [c for p in ds for c in p["cam"]]
-    return {"ma": ma, "du_an": da.get("ten", ""), "lap_luc": time.strftime("%H:%M %d/%m/%Y"), "kiem_luc": str(kq.get("luc", "")),
+    return {"tieu_de": TIEU_DE, "ma": ma, "du_an": da.get("ten", ""), "lap_luc": time.strftime("%H:%M %d/%m/%Y"), "kiem_luc": str(kq.get("luc", "")),
             "tong": {"dinh_vi": len(diem), "modem": len(modem), "cam": len(tat), "dat": sum(1 for c in tat if c["dat"]),
                      "chua": sum(1 for c in tat if not c["dat"])},
             "diem": ds}
@@ -107,7 +110,7 @@ def C_RTSP(n):
 
 
 def tep(goc, ma):
-    return os.path.join(goc, "ketqua", f"HoSo_NghiemThu_{ma}.pdf")
+    return os.path.join(goc, "ketqua", f"HoSo_HeThongCamera_{ma}.pdf")
 
 
 def ve_pdf(m, duong):
@@ -128,7 +131,7 @@ def ve_pdf(m, duong):
                                             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)])
     t, e = m["tong"], []
     # ---------------- trang tổng
-    e += [P("HỒ SƠ NGHIỆM THU HỆ THỐNG CAMERA", 16, dam, giua=1), Spacer(1, 2 * mm), P(m["du_an"], 13, dam, giua=1), Spacer(1, 4 * mm),
+    e += [P(m.get("tieu_de") or TIEU_DE, 16, dam, giua=1), Spacer(1, 2 * mm), P(m["du_an"], 13, dam, giua=1), Spacer(1, 4 * mm),
           P(f"Lập lúc {m['lap_luc']}" + (f"   ·   Lượt kiểm tra gần nhất: {m['kiem_luc']}" if m["kiem_luc"] else ""), 9.5, mau=MO, giua=1), Spacer(1, 5 * mm)]
     du = t["chua"] == 0 and t["cam"] > 0
     e += [P(f"{t['dinh_vi']} định vị   ·   {t['cam']} cam   ·   {t['modem']} modem", 12, dam, giua=1), Spacer(1, 1.5 * mm),
@@ -197,7 +200,7 @@ def ve_pdf(m, duong):
     os.makedirs(os.path.dirname(duong), exist_ok=True)
     tam = duong + ".tam"
     SimpleDocTemplate(tam, pagesize=A4, leftMargin=16 * mm, rightMargin=16 * mm, topMargin=16 * mm, bottomMargin=14 * mm,
-                      title=f"Hồ sơ nghiệm thu — {m['du_an']}", author="CamLink").build(e)
+                      title=f"Hồ sơ hệ thống camera hiện tại — {m['du_an']}", author="CamLink").build(e)
     os.replace(tam, duong)
     return duong
 

@@ -1513,7 +1513,7 @@ class MainActivity : Activity() {
         fun them(bieu: String, ten: String, moTa: String, khoaKhiChay: Boolean = true, bam: () -> Unit) =
             t.addView(hang(bieu, ten, moTa) { if (!khoaKhiChay || !ban()) bam() }.first, lpDoc(duoi = 10))
         t.addView(nhan("Theo dõi & kết quả"))
-        them("📑", "Hồ sơ nghiệm thu", "Tự chụp, tự xuất khi cam lên", khoaKhiChay = false) { hoSoNghiemThu() }
+        them("📑", "Hồ sơ hệ thống camera hiện tại", "Tự chụp, tự xuất khi cam lên", khoaKhiChay = false) { hoSoNghiemThu() }
         them("📈", "Theo dõi ổn định", "Cam rớt lúc nào, bao lâu", khoaKhiChay = false) { TheoDoi.danhSach(this) }
         them("🧩", "Sơ đồ + ảnh lần gần nhất", "Kết quả lần cài điểm vừa rồi", khoaKhiChay = false) { moSoDoGanNhat() }
         them("📤", "Gửi kết quả", "Zalo, Gmail…", khoaKhiChay = false) { guiKetQua() }
@@ -1586,25 +1586,25 @@ class MainActivity : Activity() {
         if (sanSang()) startActivity(Intent(this, TuXaActivity::class.java))
     }
 
-    /** MỘT chỗ duy nhất cho hồ sơ nghiệm thu (Huan chốt 26/11: nằm trong phần hồ sơ, không làm rối màn hình). File do lõi TỰ xuất sau mỗi lượt
+    /** MỘT chỗ duy nhất cho hồ sơ hệ thống camera hiện tại (Huan chốt 26/11: nằm trong phần hồ sơ, không làm rối màn hình). File do lõi TỰ xuất sau mỗi lượt
      *  kiểm tra từ xa / sau khi cài xong điểm — ở đây chỉ mở hoặc gửi. Chỉ liệt kê dự án đã cài cam. */
     private fun hoSoNghiemThu() {
         thread {
             val ds = try { org.json.JSONArray(core.callAttr("ho_so_ds").toString()) } catch (_: Exception) { org.json.JSONArray() }
             ui.post {
                 if (ds.length() == 0) {
-                    AlertDialog.Builder(this).setTitle("Hồ sơ nghiệm thu").setMessage("Chưa có dự án nào đã cài cam.\nCài xong điểm đầu tiên là hồ sơ tự có ở đây.")
+                    AlertDialog.Builder(this).setTitle("Hồ sơ hệ thống camera hiện tại").setMessage("Chưa có dự án nào đã cài cam.\nCài xong điểm đầu tiên là hồ sơ tự có ở đây.")
                         .setPositiveButton("Đóng", null).show()
                     return@post
                 }
                 val nhan = Array(ds.length()) { i -> ds.getJSONObject(i).let { d ->
                     d.optString("ten") + "\n" + (if (d.optInt("chua") == 0 && d.optInt("cam") > 0) "✔" else "⚠") +
                         " Đạt ${d.optInt("dat")}/${d.optInt("cam")} cam · cập nhật ${d.optString("luc")}" } }
-                AlertDialog.Builder(this).setTitle("Hồ sơ nghiệm thu")
+                AlertDialog.Builder(this).setTitle("Hồ sơ hệ thống camera hiện tại")
                     .setItems(nhan) { _, i ->
                         val f = ds.getJSONObject(i).optString("tep")
                         if (f.isEmpty()) android.widget.Toast.makeText(this, "Chưa tạo được hồ sơ: " + ds.getJSONObject(i).optString("loi"), android.widget.Toast.LENGTH_LONG).show()
-                        else TheoDoi.moPdf(this, f, "Hồ sơ nghiệm thu")
+                        else TheoDoi.moPdf(this, f, "Hồ sơ hệ thống camera hiện tại")
                     }
                     .setNegativeButton("Đóng", null).show()
             }

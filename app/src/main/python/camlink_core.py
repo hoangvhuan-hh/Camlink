@@ -590,7 +590,7 @@ def bang_chung(ma, stt, log):
         json.dump(kq, fh, ensure_ascii=False)
     n = sum(1 for c in kq["cam"] if c["ngoai"])
     C.log(f"   → Xem được từ ngoài: {n}/{len(kq['cam'])} cam")
-    ho_so_tu_dong(ma)      # cam lên → hồ sơ nghiệm thu tự cập nhật
+    ho_so_tu_dong(ma)      # cam lên → hồ sơ hệ thống tự cập nhật
     return json.dumps(kq, ensure_ascii=False)
 
 
@@ -665,7 +665,7 @@ def tuxa_kiem(ma, log, nhanh=True):
             kq["litemark"]["da_gui"] = L.goi_canh_bao(ma, kq, PHIEN_BAN_LOI, log, da)
         except Exception as e:
             log(f"⚠ LiteMark: {e}")
-    ho_so_tu_dong(ma)      # sau mỗi lượt kiểm tra từ xa: hồ sơ nghiệm thu tự cập nhật (người dùng không phải bấm tạo)
+    ho_so_tu_dong(ma)      # sau mỗi lượt kiểm tra từ xa: hồ sơ hệ thống tự cập nhật (người dùng không phải bấm tạo)
     return json.dumps(kq, ensure_ascii=False)
 
 
@@ -965,7 +965,7 @@ def tuxa_sua_diem(ma, json_kq, stt, log):
     return json.dumps(kq, ensure_ascii=False)
 
 
-# ------------------------------------------------------------------ 2.12.20: HỒ SƠ NGHIỆM THU tự động (camlink_hoso.py)
+# ------------------------------------------------------------------ 2.12.20: HỒ SƠ HỆ THỐNG CAMERA HIỆN TẠI, tự động (camlink_hoso.py)
 def ho_so_tao(ma):
     import camlink_hoso as H
     return H.tao(GOC, ma)
@@ -976,14 +976,14 @@ def ho_so_tu_dong(ma):
     try:
         da = _doc_du_an(ma)
         if not any(diem_da_cai(da, k, _lich_su_kiem(ma)) for k in da.get("diem", {})):
-            return ""      # dự án chưa cài cam nào: chưa có gì để nghiệm thu
+            return ""      # dự án chưa cài cam nào: chưa có gì để lập hồ sơ
         return ho_so_tao(ma)
     except Exception:
         return ""
 
 
 def ho_so_ds():
-    """Mục 'Hồ sơ nghiệm thu': mỗi dự án ĐÃ CÀI cam một dòng {ma, ten, cam, dat, chua, luc, tep}. Thiếu file thì tự tạo."""
+    """Mục 'Hồ sơ hệ thống camera hiện tại': mỗi dự án ĐÃ CÀI cam một dòng {ma, ten, cam, dat, chua, luc, tep}. Thiếu file thì tự tạo."""
     import camlink_hoso as H
     out = []
     for r in ds_du_an_kiem():
