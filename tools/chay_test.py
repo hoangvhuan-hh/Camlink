@@ -6,7 +6,7 @@
 #   sudo python3 tools/chay_test.py --du  bắt buộc chạy ĐỦ mọi bài (CI dùng lệnh này); thiếu quyền → đỏ
 #   python3 tools/chay_test.py thu_hoiquy thu_modem     chỉ chạy các bài nêu tên
 #
-# Cần: pip install requests openpyxl rsa pillow reportlab==4.2.5 (đúng các gói app dùng, xem app/build.gradle.kts).
+# Cần: pip install requests openpyxl rsa pillow reportlab==4.2.5 cryptography (đúng các gói app dùng, xem app/build.gradle.kts).
 # Bài cần mạng giả (cam giả lập ở 127.0.4.x + iptables để giả mất mạng) phải chạy bằng root trên Linux.
 import glob, os, shutil, subprocess, sys, time
 

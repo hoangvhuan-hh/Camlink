@@ -7,6 +7,7 @@ T.khoi_tao(G); T.NHIP = 1; T.BAO_SAU = 3; T.ANH_MOI = 10 ** 9
 T._chup = lambda m, ten: ""
 T._mang_ok = lambda: True
 T._ip = lambda d: "113.188.130.14"
+T._nhat_ky_khoi_dong = lambda m, dich: None      # không gọi ONVIF ra IP thật (bài thử không được chạm thiết bị thật; trên CI có Internet nên từng chờ hết giờ → đo hụt nhịp)
 hoi = []
 bd = None
 def hoi_web(h, p, cho=4):

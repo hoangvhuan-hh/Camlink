@@ -15,7 +15,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Cai thu vien cho bai thu
-        run: pip install requests openpyxl rsa pillow reportlab==4.2.5
+        run: pip install requests openpyxl rsa pillow reportlab==4.2.5 cryptography
       - name: Test (cong chan)
         run: |
           set -o pipefail

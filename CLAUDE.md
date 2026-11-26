@@ -27,7 +27,7 @@ systematic-debugging → verification-before-completion). Dùng chúng cho mọi
 ## Chạy bài thử
 
 ```
-pip install requests openpyxl rsa pillow reportlab==4.2.5
+pip install requests openpyxl rsa pillow reportlab==4.2.5 cryptography
 sudo python3 tools/chay_test.py --du      # đủ mọi bài (cần root: cam giả ở 127.0.4.x + iptables giả mất mạng)
 python3 tools/chay_test.py --nhanh        # bỏ 4 bài cần mạng giả
 python3 tools/chay_test.py thu_hoiquy     # một bài
@@ -35,6 +35,7 @@ python3 tools/chay_test.py thu_hoiquy     # một bài
 
 - `tools/gialap_onvif.py`: cam giả lập ONVIF + RTSP dùng chung cho các bài thử.
 - Bài thử mới: đặt tên `tools/thu_<ten>.py`, tự thoát mã khác 0 khi hỏng, không dùng đường dẫn cứng (dùng `tempfile`).
+- Bài thử KHÔNG được gọi ra tên miền hay IP thật của công trình: mọi lời gọi mạng phải vào cam giả hoặc được thay bằng hàm giả.
 
 ## Phát hành
 
@@ -48,3 +49,5 @@ python3 tools/chay_test.py thu_hoiquy     # một bài
   nên không bài nào canh cho 61 bản đã ra. Bài thử chỉ có giá trị khi CI chạy nó ở mỗi lần đẩy.
 - 26/11/2026 — Lỗi gửi cảnh báo trống 0/0 lên LiteMark được ghi nhận từ 11/11 nhưng vẫn còn nguyên ở bản 2.12.18:
   lỗi đã biết mà không có bài thử thì sẽ nằm đó. Ghi lỗi nào là viết bài thử đỏ cho lỗi đó ngay.
+- 26/11/2026 — `thu_theodoi4` xanh trên máy không có Internet nhưng đỏ trên CI: nó còn gọi ONVIF ra một IP thật rồi chờ hết giờ.
+  Bài thử phải chạy thử trên CI (đẩy nhánh trước) rồi mới gộp `main`; "xanh trên máy mình" chưa phải bằng chứng.
