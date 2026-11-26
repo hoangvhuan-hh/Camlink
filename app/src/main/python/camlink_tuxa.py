@@ -576,6 +576,32 @@ def _xong(kq):
 
 
 # ------------------------------------------------------------------ cả dự án
+def cam_chung(da, a):
+    """{số cam trên modem điểm `a`: stt của ghim mang cam đó} — ghim dùng chung modem (người dùng đã xác nhận)."""
+    out = {}
+    for k, d in ((da or {}).get("diem") or {}).items():
+        c = d.get("chung") or {}
+        if str(c.get("stt") or "") == str(a):
+            for n in c.get("cam") or []:
+                out[int(n)] = k
+    return out
+
+
+def gan_ghim(da, ds_diem):
+    """Cam nằm ở ghim KHÁC ghim đặt modem thì mang `ghim` + `ten_ghim` của ghim đó (Giám sát, Kiểm tra từ xa, LiteMark hiện đúng vị trí)."""
+    diem = (da or {}).get("diem") or {}
+    for p in ds_diem or []:
+        mp = cam_chung(da, p.get("stt"))
+        for c in p.get("cam") or []:
+            g = mp.get(int(c.get("so") or 0))
+            if g:
+                c["ghim"], c["ten_ghim"] = g, diem.get(g, {}).get("ten", "")
+            else:
+                c.pop("ghim", None)
+                c.pop("ten_ghim", None)
+    return ds_diem
+
+
 def _f_lich_su(goc, ma):
     return os.path.join(goc, "ketqua", f"tuxa_{ma}.json")
 
@@ -649,6 +675,8 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True, nhanh=Fal
     os.makedirs(anh_dir, exist_ok=True)
     diem = da["diem"]
     ds = [k for k in diem if not chi_diem or k in chi_diem]
+    chung = [k for k in ds if (diem[k].get("chung") or {}).get("stt")]      # ghim không có modem riêng: cam của nó nằm trên modem điểm khác → không quét riêng
+    ds = [k for k in ds if k not in chung]
     chua_cai = [k for k in ds if not diem[k].get("domain")]   # dự án tạo từ LiteMark: điểm chưa cài thì chưa có tên miền
     if chua_cai:
         log(f"⏭ {len(chua_cai)} điểm chưa có tên miền (chưa cài) — bỏ qua khi kiểm: {', '.join(chua_cai[:15])}{'…' if len(chua_cai) > 15 else ''}")
@@ -775,6 +803,7 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True, nhanh=Fal
                     kqs[i] = tu_sua_diem(p, diem[p["stt"]], cd, anh_dir, ma, ho_so.get(p["stt"]), log)
                 except Exception as e:
                     log(f"   ✖ Tự sửa điểm {p['stt']} lỗi: {e}")
+    gan_ghim(da, kqs)
     # so với lần trước
     f = _f_lich_su(goc, ma)
     truoc = {}

@@ -282,7 +282,10 @@ def diem_gan(lat, lng):
         return None
     ung.sort(key=lambda x: x[0])
     m, ma, k, da = ung[0]
-    sat = len(ung) > 1 and ung[1][0] - m < 150 and ung[1][0] <= 400
+    # ghim dùng chung modem (không có modem riêng) không phải là một điểm để cài → không tính là "điểm khác sát bên"
+    khac = [u for u in ung[1:] if not _chung(u[3]["diem"].get(u[2])) and not (_chung(da["diem"].get(k)) and u[1] == ma
+                                                                               and str(_chung(da["diem"][k])["stt"]) == str(u[2]))]
+    sat = bool(khac) and khac[0][0] - m < 150 and khac[0][0] <= 400
     return [ma, k, da["ten"], da["diem"][k]["ten"], int(m), sat]
 
 
@@ -1645,6 +1648,12 @@ def diem_da_cai(da, stt, ls=None):
     """Điểm coi là ĐÃ CÀI khi: app cài đạt (da_xong) · hoặc có hồ sơ lúc cài · hoặc từng thấy cam của điểm (dấu vết MAC) ·
     hoặc lần kiểm tra từ xa gần nhất có cam của điểm đang lên. Trả câu mô tả ('' nếu chưa cài)."""
     stt = str(stt)
+    c = _chung((da.get("diem") or {}).get(stt))
+    if c:      # ghim dùng chung modem: đã cài khi điểm đặt modem đã cài VÀ thật sự thấy cam mang số của ghim này trên modem đó
+        a = str(c["stt"])
+        if a == stt or not diem_da_cai(da, a, ls) or _so_cam_that(da, a, ls) < max([int(n) for n in c.get("cam") or [1]]):
+            return ""
+        return f"đã cài (cam số {', '.join(str(n) for n in c.get('cam') or [])} trên modem điểm {a})"
     x = (da.get("da_xong") or {}).get(stt)
     if x:
         return f"đã cài lúc {x}"
@@ -1668,16 +1677,18 @@ def tom_tat_du_an():
         td = da.get("toa_do", {})
         ls = _lich_su_kiem(str(r[0]))
         da_cai = sum(1 for k in diem if diem_da_cai(da, k, ls))
+        modem = [k for k in diem if not _chung(diem[k])]      # ghim có modem riêng; ghim dùng chung modem điểm khác không tính
         out.append({"ma": str(r[0]), "ten": da.get("ten", ""), "diem": len(diem),
                     "hoan_thanh": bool(diem) and da_cai == len(diem),
                     "cam_kiem": sum(len(ls[k].get("cam", [])) for k in diem if k in ls),
                     "cam_len": sum(1 for k in diem if k in ls for c in ls[k].get("cam", []) if c.get("muc") == "xanh"),
                     "luc_kiem": (ls.get("_luc") or {}).get("luc", ""),
                     "tu_litemark": "kho_ddns" in da,
-                    "cam": sum(int(v.get("so") or 0) for v in diem.values()),
+                    "modem": len(modem),
+                    "cam": sum(max([int(diem[k].get("so") or 0)] + list(_cam_chung(da, k))) for k in modem),
                     "toa_do": sum(1 for k in diem if td.get(k)),
-                    "ten_mien": sum(1 for v in diem.values() if v.get("domain")),
-                    "tk_ddns": sum(1 for v in diem.values() if v.get("domain") and v.get("u") and v.get("p")),
+                    "ten_mien": sum(1 for k in modem if diem[k].get("domain")),
+                    "tk_ddns": sum(1 for k in modem if diem[k].get("domain") and diem[k].get("u") and diem[k].get("p")),
                     "da_xong": da_cai,
                     "rieng": sum(1 for v in diem.values() if v.get("rieng")),
                     "litemark": bool(da.get("kho_ddns") is not None and "kho_ddns" in da)})
@@ -1696,6 +1707,118 @@ def thong_tin_cai(ma, stt):
     return json.dumps({"domain": d.get("domain", ""), "u_ddns": d.get("u", ""), "co_p_ddns": bool(d.get("p")),
                        "cam_user": cd.get("cam_user", "admin"), "modem_user": cd.get("modem_user", "admin"), "modem_mac_dinh": mac_dinh,
                        "so": int(d.get("so") or 0)}, ensure_ascii=False)
+
+
+# ------------------------------------------------------------------ 2.12.19: GHIM · MODEM · CAM
+# Sự thật ngoài công trình: một modem (một tên miền) gánh 1..6 cam; cam có thể nằm ở ghim KHÁC ghim đặt modem
+# (Tà Lài mở rộng: 1 modem, 2 cam, 2 ghim cách ~100 m). Ghim không có modem riêng ghi: chung = {"stt": <điểm đặt modem>, "cam": [số cam]}.
+# App KHÔNG tự đoán: chỉ ghi khi người dùng xác nhận (dat_chung). Thiết kế: docs/superpowers/specs/2026-11-26-ghim-modem-cam-design.md
+def _chung(d):
+    c = (d or {}).get("chung")
+    return c if isinstance(c, dict) and c.get("stt") else None
+
+
+def _cam_chung(da, a):
+    import camlink_tuxa as T
+    return T.cam_chung(da, a)
+
+
+def _so_cam_that(da, stt, ls=None):
+    """Số cam THẬT SỰ thấy trên modem của điểm: lúc cài tại chỗ (hồ sơ) hoặc đang lên ở lần kiểm tra từ xa gần nhất."""
+    n = len(((da.get("ho_so") or {}).get(str(stt)) or {}).get("cam") or [])
+    return max(n, sum(1 for c in ((ls or {}).get(str(stt)) or {}).get("cam", []) if c.get("muc") == "xanh"))
+
+
+def _so_cam_ke_hoach(d):
+    """Số cam theo file / ghim khảo sát (giá trị gốc trước khi app hiệu chỉnh); 0 coi là 1."""
+    g = d.get("goc") or {}
+    return max(1, int((g.get("so") if "so" in g else d.get("so")) or 0))
+
+
+def goi_y_chung(ma):
+    """GỢI Ý (không ghi): điểm A thấy nhiều cam hơn kế hoạch VÀ có ghim B chưa có tên miền, chưa cài → hỏi người dùng
+    "ghim B dùng chung modem điểm A, cam số n?". Trả JSON [{a, ten_a, b, ten_b, cam, m}] (m: mét giữa hai ghim, -1 nếu thiếu toạ độ)."""
+    try:
+        da = _doc_du_an(ma)
+    except (OSError, ValueError):
+        return "[]"
+    diem, td, ls = da.get("diem", {}), da.get("toa_do", {}), _lich_su_kiem(ma)
+    trong = [k for k, d in diem.items() if not d.get("domain") and not _chung(d) and not d.get("chung_khong")
+             and not diem_da_cai(da, k, ls) and not _cam_chung(da, k)]
+    out = []
+    for a, d in sorted(diem.items(), key=lambda x: int(x[0]) if x[0].isdigit() else 0):
+        if _chung(d) or not d.get("domain") or not trong:
+            continue
+        da_gan = _cam_chung(da, a)
+        du = [n for n in range(_so_cam_ke_hoach(d) + 1, _so_cam_that(da, a, ls) + 1) if n not in da_gan]
+        for n in du:
+            if not trong:
+                break
+            def xa(b):
+                return C.khoang_cach(td[a], td[b]) if td.get(a) and td.get(b) else 10 ** 9
+            b = min(trong, key=xa)
+            m = int(xa(b)) if xa(b) < 10 ** 9 else -1
+            if m > 1000:      # hai ghim cách nhau quá 1 km thì không thể chung một modem → không hỏi
+                continue
+            trong.remove(b)
+            out.append({"a": a, "ten_a": d.get("ten", ""), "b": b, "ten_b": diem[b].get("ten", ""), "cam": n, "m": m})
+    return json.dumps(out, ensure_ascii=False)
+
+
+def dat_chung(ma, b, a, cam):
+    """Người dùng xác nhận: ghim `b` không có modem riêng, cam của nó là cam số `cam` trên modem điểm `a`. '' nếu ghi được, câu lỗi nếu không."""
+    da = _doc_du_an(ma)
+    diem, a, b = da.get("diem", {}), str(a), str(b)
+    try:
+        cam = int(cam)
+    except (TypeError, ValueError):
+        return "Số cam không hợp lệ."
+    if a not in diem or b not in diem:
+        return "Không tìm thấy điểm."
+    if a == b:
+        return "Một ghim không thể dùng chung modem với chính nó."
+    if _chung(diem[a]):
+        return f"Điểm {a} cũng đang dùng chung modem của điểm khác — chọn điểm đặt modem."
+    if _cam_chung(da, b):
+        return f"Điểm {b} đang là điểm đặt modem cho ghim khác."
+    if diem[b].get("domain"):
+        return f"Điểm {b} đã có tên miền riêng ({diem[b]['domain']}) — tức là có modem riêng."
+    if not 1 <= cam <= len(C.HTTP):
+        return f"Số cam phải từ 1 đến {len(C.HTTP)}."
+    if _cam_chung(da, a).get(cam) not in (None, b):
+        return f"Cam số {cam} của điểm {a} đã gắn cho ghim khác."
+    diem[b]["chung"] = {"stt": a, "cam": [cam]}
+    diem[b].pop("chung_khong", None)
+    if int(diem[a].get("so") or 0) < cam:      # điểm đặt modem phải mang đủ số cam để lượt kiểm tra từ xa quét cả cam của ghim này
+        diem[a].setdefault("goc", {"so": diem[a].get("so"), "bs": diem[a].get("bs")})
+        diem[a].setdefault("hieu_chinh", []).append({"luc": time.strftime("%d/%m/%Y %H:%M"), "ly_do": f"ghim {b} dùng chung modem (cam số {cam})",
+                                                    "cu": int(diem[a].get("so") or 0), "moi": cam})
+        diem[a]["so"] = cam
+        if diem[a].get("so_thuc"):
+            diem[a]["so_thuc"] = max(int(diem[a]["so_thuc"]), cam)
+    _ghi_du_an(ma, da)
+    return ""
+
+
+def bo_chung(ma, b):
+    da = _doc_du_an(ma)
+    da["diem"][str(b)].pop("chung", None)
+    _ghi_du_an(ma, da)
+    return ""
+
+
+def tu_choi_chung(ma, b):
+    """Người dùng bấm 'Không phải' → không hỏi lại cho ghim này."""
+    da = _doc_du_an(ma)
+    da["diem"][str(b)]["chung_khong"] = True
+    _ghi_du_an(ma, da)
+    return ""
+
+
+def gan_ghim_cam(da, kq):
+    import camlink_tuxa as T
+    T.gan_ghim(da, kq.get("diem", []))
+    return kq
 
 
 # ------------------------------------------------------------------ 2.5: TỰ CÀI khi điện thoại vào WiFi modem của điểm
@@ -1720,7 +1843,12 @@ def tu_dong_xet(lat, lng):
     ma, stt, _, ten, m, sat = g
     da = _doc_du_an(ma)
     r.update(ma=ma, stt=stt, ten=f"{stt}. {ten}", m=int(m))
-    if m > TU_DONG_MET:
+    c = _chung(da["diem"][stt])
+    if c and m <= TU_DONG_MET:      # ghim này không có modem riêng → không cài riêng, không đòi tên miền
+        a = str(c["stt"])
+        r["ly_do"] = (f"điểm này dùng chung modem với điểm {a}. {da['diem'].get(a, {}).get('ten', '')} "
+                      f"(cam số {', '.join(str(n) for n in c.get('cam') or [])}) — cài tại điểm {a}")
+    elif m > TU_DONG_MET:
         r["ly_do"] = f"điểm gần nhất cách {int(m)} m (quá {TU_DONG_MET} m)"
     elif sat:
         r["ly_do"] = "có điểm khác ở sát bên — cần người chọn đúng điểm"

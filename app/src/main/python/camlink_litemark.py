@@ -248,14 +248,41 @@ def goi_canh_bao(ma, kq, phien_ban, log=print, da=None):
         if p.get("lm_stt_that"):   # tên miền đổi: báo theo ghim của điểm thật (nhận diện bằng MAC/IP)
             return str(p["lm_stt_that"])
         return str(dm.get(str(p["stt"]), {}).get("lm_stt") or p["stt"])
+    def cam_gui(c):
+        return {"so": c["so"], "http": c["http"], "muc": c["muc"], "nhan": c.get("nhan", ""),
+                "nguyen_nhan": c.get("nguyen_nhan", ""), "viec": c.get("viec", [])[:3]}
+    import camlink_tuxa as T
+    diem_dat, diem_loi = [], []
+    for p in kq.get("diem", []):
+        mp = T.cam_chung(da, p["stt"]) if da else {}      # {số cam: ghim khác đang mang cam đó}
+        if not mp:      # điểm thường (mọi cam ở đúng ghim đặt modem): bản tin giữ nguyên như trước
+            if p["muc"] == "xanh":
+                diem_dat.append(lm(p))
+            else:
+                diem_loi.append({"stt": lm(p), "stt_camlink": p["stt"], "ten": p["ten"], "domain": p.get("domain", ""), "muc": p["muc"], "tong": p["tong"],
+                                 "chua_chac_ghim": not dm.get(str(p["stt"]), {}).get("lm_chac", True), "cam": [cam_gui(c) for c in p["cam"]]})
+            continue
+        # điểm có cam nằm ở ghim khác (dùng chung modem): tách theo ghim — mỗi ghim chỉ mang cam của mình, mức = mức xấu nhất của các cam đó
+        nhom = {}
+        for c in p["cam"]:
+            nhom.setdefault(mp.get(int(c.get("so") or 0)) or str(p["stt"]), []).append(c)
+        nhom.setdefault(str(p["stt"]), [])
+        for g, cs in nhom.items():
+            so_lm = lm(p) if g == str(p["stt"]) else str(dm.get(g, {}).get("lm_stt") or g)
+            if cs:
+                muc = max((c["muc"] for c in cs), key=lambda m: {"xanh": 0, "vang": 1, "do": 2}.get(m, 2))
+            else:
+                muc = p["muc"]      # không đo được cam nào của ghim này (điểm rớt hẳn) → theo mức của cả điểm
+            if muc == "xanh":
+                diem_dat.append(so_lm)
+            else:
+                dat_n = sum(1 for c in cs if c["muc"] == "xanh")
+                diem_loi.append({"stt": so_lm, "stt_camlink": p["stt"], "ten": dm.get(g, {}).get("ten", p["ten"]), "domain": p.get("domain", ""), "muc": muc,
+                                 "tong": f"{dat_n}/{len(cs)} cam đạt" if cs else p["tong"],
+                                 "chua_chac_ghim": not dm.get(g, {}).get("lm_chac", True), "cam": [cam_gui(c) for c in cs]})
     than = {"luc": time.strftime("%Y-%m-%dT%H:%M:%S%z")[:-2] + ":" + time.strftime("%z")[-2:], "nguon": "camlink", "phien_ban": phien_ban,
             "khong_tin_cay": kq.get("khong_tin_cay", ""), "tong": {"dat": kq.get("dat", 0), "tong": kq.get("tong_cam", 0)},
-            "chi_bao_loi": True, "diem_dat": [lm(p) for p in kq.get("diem", []) if p["muc"] == "xanh"],
-            "diem": [{"stt": lm(p), "stt_camlink": p["stt"], "ten": p["ten"], "domain": p.get("domain", ""), "muc": p["muc"], "tong": p["tong"],
-                      "chua_chac_ghim": not dm.get(str(p["stt"]), {}).get("lm_chac", True),
-                      "cam": [{"so": c["so"], "http": c["http"], "muc": c["muc"], "nhan": c.get("nhan", ""),
-                               "nguyen_nhan": c.get("nguyen_nhan", ""), "viec": c.get("viec", [])[:3]} for c in p["cam"]]}
-                     for p in kq.get("diem", []) if p["muc"] != "xanh"]}
+            "chi_bao_loi": True, "diem_dat": diem_dat, "diem": diem_loi}
     _ghi(f"cho_{ma}.json", than)   # hàng đợi: luôn ghi bản mới nhất
     return gui_bu(ma, log)
 
