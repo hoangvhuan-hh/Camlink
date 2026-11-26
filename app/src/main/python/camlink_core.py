@@ -1851,6 +1851,17 @@ def tu_choi_chung(ma, b):
     return ""
 
 
+def chung_cua(ma, stt):
+    """Bấm tay 'Cài điểm này' ở một ghim dùng chung modem → câu nói rõ phải cài ở đâu ('' nếu là điểm thường)."""
+    da = _doc_du_an(ma)
+    c = _chung(da.get("diem", {}).get(str(stt)))
+    if not c:
+        return ""
+    a = str(c["stt"])
+    return (f"Ghim này không có modem riêng: nó dùng chung modem với điểm {a}. {da['diem'].get(a, {}).get('ten', '')} "
+            f"(cam số {', '.join(str(n) for n in c.get('cam') or [])}).\n\nCài tại điểm {a} — app cài luôn cam của ghim này.")
+
+
 def gan_ghim_cam(da, kq):
     import camlink_tuxa as T
     T.gan_ghim(da, kq.get("diem", []))

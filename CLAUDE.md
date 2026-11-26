@@ -51,3 +51,5 @@ python3 tools/chay_test.py thu_hoiquy     # một bài
   lỗi đã biết mà không có bài thử thì sẽ nằm đó. Ghi lỗi nào là viết bài thử đỏ cho lỗi đó ngay.
 - 26/11/2026 — `thu_theodoi4` xanh trên máy không có Internet nhưng đỏ trên CI: nó còn gọi ONVIF ra một IP thật rồi chờ hết giờ.
   Bài thử phải chạy thử trên CI (đẩy nhánh trước) rồi mới gộp `main`; "xanh trên máy mình" chưa phải bằng chứng.
+- 26/11/2026 — Code đếm mọi thứ theo ghim vì ngầm coi "1 ghim = 1 modem = 1 tên miền"; Tà Lài mở rộng (1 modem, 2 cam, 2 ghim cách 100 m)
+  làm lộ ra. Trước khi viết chỗ đếm / quét nào, dựng dữ liệu giả cho ĐỦ các kiểu công trình thật (Tà Lài, Phú Lý 3 cam một ghim, Tân Triều 4 cam).

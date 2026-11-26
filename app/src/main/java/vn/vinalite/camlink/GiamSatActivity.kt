@@ -177,7 +177,7 @@ class GiamSatActivity : Activity() {
             if (t != null) cuNhat = if (cuNhat == 0L) t.luc else minOf(cuNhat, t.luc)
             val tuoi = t?.let { ((now - it.luc) / 1000).toInt() }
             val dangHinh = k in dangPhatO && boPhat.dangPhat(o.khung)
-            o.nhan.text = "C${o.c.optInt("so")} " + when (tt) {
+            o.nhan.text = "C${o.c.optInt("so")}" + o.c.optString("ten_ghim").let { g -> if (g.isNotEmpty()) " · $g " else " " } + when (tt) {
                 "xanh" -> if (dangHinh) "🔴 trực tiếp" else "● ${tuoi}s"
                 "vang" -> "◐ ${t?.ly}"
                 "do" -> "✖ ${t?.ly} · từ ${java.text.SimpleDateFormat("HH:mm").format(java.util.Date(t!!.rotTu))}"
@@ -287,7 +287,7 @@ class GiamSatActivity : Activity() {
                 fr.setBackgroundColor(Color.BLACK)
                 val anh = c.optString("anh")
                 val bm = if (anh.isNotEmpty() && File(anh).exists()) try { BitmapFactory.decodeFile(anh, BitmapFactory.Options().apply { inSampleSize = 4 }) } catch (_: Exception) { null } else null
-                val nhan = chu("C${c.optInt("so")} · đang đo…", 10f, true, "#FFFFFF").apply { setPadding(dp(4), dp(1), dp(4), dp(1)); maxLines = 2 }
+                val nhan = chu("C${c.optInt("so")}" + c.optString("ten_ghim").let { g -> if (g.isNotEmpty()) " · $g" else "" } + " · đang đo…", 10f, true, "#FFFFFF").apply { setPadding(dp(4), dp(1), dp(4), dp(1)); maxLines = 2 }
                 val o = O(fr, nhan, bm, p, c)
                 oLuoi[khoa(p, c)] = o
                 tatO(o)

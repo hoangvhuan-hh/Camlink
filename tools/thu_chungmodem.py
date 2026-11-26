@@ -91,6 +91,8 @@ kt("T3c: Phú Lý 1 ghim 3 cam · Tân Triều 1 ghim 4 cam", (tt(phuly)["cam"],
 r = json.loads(K.tu_dong_xet(11.3009, 107.3000))
 kt("T4a: đứng tại ghim 6 → không tự cài, lý do nói rõ dùng chung modem điểm 1, không đòi tên miền",
    not r["ok"] and "dùng chung modem" in r["ly_do"] and "tên miền" not in r["ly_do"])
+kt("T4g: bấm tay 'Cài điểm này' ở ghim 6 → app nói rõ cài tại điểm 1 (không mở hộp đòi tên miền); điểm thường trả rỗng",
+   "điểm 1" in K.chung_cua(talai, "6") and "cam số 2" in K.chung_cua(talai, "6") and K.chung_cua(talai, "1") == "")
 talai2 = tao("Ta Lai chua cai", {"diem": {"1": diem("A", "e1.ddns.net"), "2": diem("B", "")},
                         "toa_do": {"1": [14.0000, 110.0000], "2": [14.0009, 110.0000]}, "da_xong": {}, "ho_so": {}})
 r0 = json.loads(K.tu_dong_xet(14.0000, 110.0000))

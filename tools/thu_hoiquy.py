@@ -12,6 +12,7 @@
 #   8  Tên miền còn trỏ IP cũ mà báo nhầm "modem chặn" .......... HQ8 (file này)
 #   9  Chỉ thử 1 mật khẩu rồi ngưng ............................. HQ9 (file này) + thu_caitron.py (L3, L4) + thu_modem.py
 #   10 Bấm cài khi chưa có tên miền thì cài mù .................. HQ10 (file này) + thu_tenmien.py
+#   11 Cam nằm ở ghim khác ghim đặt modem → báo "thiếu tên miền" . thu_chungmodem.py (Tà Lài 6 định vị · 6 cam · 5 modem)
 import os, sys, json, shutil, tempfile, time, socket
 os.environ["CAMLINK_THU_NOI_BO"] = "1"
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "../app/src/main/python"))

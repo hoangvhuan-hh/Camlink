@@ -822,7 +822,7 @@ class TuXaActivity : Activity() {
             } else if (muc != "xanh") {
                 khung.addView(chu(c.optString("nhan"), 12f, true, "#FFD7D2").apply { setPadding(dp(8), dp(22), dp(8), dp(4)) }, FrameLayout.LayoutParams(-1, -2))
             }
-            khung.addView(chu(" C${c.optInt("so")} ${if (muc == "xanh") "✓" else "✖"} ", 12f, true, "#FFFFFF").apply { setBackgroundColor(Color.parseColor("#99000000")) },
+            khung.addView(chu(" C${c.optInt("so")}${c.optString("ten_ghim").let { g -> if (g.isNotEmpty()) " · $g" else "" }} ${if (muc == "xanh") "✓" else "✖"} ", 12f, true, "#FFFFFF").apply { setBackgroundColor(Color.parseColor("#99000000")) },
                 FrameLayout.LayoutParams(-2, -2, android.view.Gravity.TOP or android.view.Gravity.START))
             if (live.isNotEmpty() && muc == "xanh") {
                 khung.setOnClickListener { boPhat.phat(khung, live, tt, cao) }
@@ -845,7 +845,7 @@ class TuXaActivity : Activity() {
         val hop = LinearLayout(this)
         hop.orientation = LinearLayout.VERTICAL
         hop.setPadding(0, dp(8), 0, 0)
-        val dau = chu("${bieu[muc]} Cam ${c.optInt("so")}: ${c.optString("nhan")}" +
+        val dau = chu("${bieu[muc]} Cam ${c.optInt("so")}${c.optString("ten_ghim").let { g -> if (g.isNotEmpty()) " (ghim ${c.optString("ghim")}. $g)" else "" }}: ${c.optString("nhan")}" +
             (if (c.optBoolean("vua_rot")) "   ⬇ VỪA RỚT" else "") + (if (c.optBoolean("vua_len")) "   ⬆ đã lên lại" else "") + "   ▸ chi tiết",
             15f, true, mauVien[muc] ?: "#17202B")
         hop.addView(dau)

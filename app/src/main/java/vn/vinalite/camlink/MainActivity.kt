@@ -755,6 +755,11 @@ class MainActivity : Activity() {
 
     /** Điểm (dự án nhận từ LiteMark) chưa có tên miền → chọn tên miền TẠI CỘT trước khi cài. */
     private fun xacNhanCai(ma: String, stt: String, m: Int, canhBao: String?) {
+        val chung = try { core.callAttr("chung_cua", ma, stt).toString() } catch (_: Exception) { "" }
+        if (chung.isNotEmpty()) {      // ghim dùng chung modem điểm khác: không cài riêng, không đòi tên miền
+            AlertDialog.Builder(this).setTitle("Ghim dùng chung modem").setMessage(chung).setPositiveButton("Đã hiểu", null).show()
+            return
+        }
         val can = try { core.callAttr("can_chon_ten_mien", ma, stt).toBoolean() } catch (_: Exception) { false }
         val thieu = try { core.callAttr("ten_mien_diem", ma, stt).toString().isEmpty() } catch (_: Exception) { false }
         if (!can && !thieu) { xacNhanCaiThat(ma, stt, m, canhBao); return }
@@ -1758,11 +1763,79 @@ class MainActivity : Activity() {
 
     private fun khongDau(x: String) = java.text.Normalizer.normalize(x.lowercase(), java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").replace('đ', 'd')
 
+    // ---- 2.12.19: GHIM · MODEM · CAM — cam nằm ở ghim khác ghim đặt modem (một modem gánh 2 cam ở 2 vị trí). App KHÔNG tự đoán: hỏi rồi mới ghi.
+    private var dangHoiChung = false
+
+    private fun napLaiDuAn() {
+        dhDuLieu = try { org.json.JSONObject(core.callAttr("tom_tat_du_an").toString()) } catch (_: Exception) { org.json.JSONObject() }
+        veDsDuAn()
+    }
+
+    /** Điểm A quét được nhiều cam hơn kế hoạch và có ghim B chưa có tên miền: hỏi MỘT lần cho mỗi cặp. */
+    private fun hoiChung() {
+        if (dangHoiChung) return
+        val ds = dhDuLieu.optJSONArray("du_an") ?: return
+        for (i in 0 until ds.length()) {
+            val ma = ds.getJSONObject(i).optString("ma")
+            val gy = try { org.json.JSONArray(core.callAttr("goi_y_chung", ma).toString()) } catch (_: Exception) { continue }
+            if (gy.length() == 0) continue
+            val g = gy.getJSONObject(0)
+            val a = g.optString("a"); val b = g.optString("b"); val cam = g.optInt("cam"); val m = g.optInt("m")
+            dangHoiChung = true
+            AlertDialog.Builder(this)
+                .setTitle("Ghim dùng chung modem?")
+                .setMessage("${ds.getJSONObject(i).optString("ten")}\n\nĐiểm $a. ${g.optString("ten_a")} quét được nhiều cam hơn số ghi trên ghim.\n" +
+                    "Ghim $b. ${g.optString("ten_b")} chưa có tên miền" + (if (m >= 0) ", cách điểm $a khoảng $m m" else "") + ".\n\n" +
+                    "Ghim $b dùng chung modem với điểm $a (cam số $cam)?")
+                .setPositiveButton("Đúng") { _, _ ->
+                    val loi = try { core.callAttr("dat_chung", ma, b, a, cam).toString() } catch (e: Exception) { e.message ?: "lỗi" }
+                    if (loi.isNotEmpty()) android.widget.Toast.makeText(this, loi, android.widget.Toast.LENGTH_LONG).show()
+                    dangHoiChung = false; napLaiDuAn()
+                }
+                .setNegativeButton("Không phải") { _, _ ->
+                    try { core.callAttr("tu_choi_chung", ma, b) } catch (_: Exception) {}
+                    dangHoiChung = false; napLaiDuAn()
+                }
+                .setOnCancelListener { dangHoiChung = false }
+                .show()
+            return
+        }
+    }
+
+    /** Chọn tay: ghim nào dùng chung modem với điểm nào (hoặc gỡ khi bấm nhầm). */
+    private fun chonChung(ma: String) {
+        val j = try { org.json.JSONObject(core.callAttr("ds_chon_chung", ma).toString()) } catch (_: Exception) { return }
+        val b = j.optJSONArray("b") ?: org.json.JSONArray(); val a = j.optJSONArray("a") ?: org.json.JSONArray(); val go = j.optJSONArray("go") ?: org.json.JSONArray()
+        val nhan = ArrayList<String>()
+        for (i in 0 until b.length()) nhan.add("Ghim ${b.getJSONObject(i).optString("stt")}. ${b.getJSONObject(i).optString("ten")} — chưa có modem riêng")
+        for (i in 0 until go.length()) nhan.add("↩ Gỡ: ghim ${go.getJSONObject(i).optString("stt")}. ${go.getJSONObject(i).optString("ten")} đang dùng chung modem điểm ${go.getJSONObject(i).optString("a")}")
+        if (nhan.isEmpty()) { android.widget.Toast.makeText(this, "Không có ghim nào thiếu tên miền.", android.widget.Toast.LENGTH_SHORT).show(); return }
+        AlertDialog.Builder(this).setTitle("Ghim nào dùng chung modem điểm khác?")
+            .setItems(nhan.toTypedArray()) { _, k ->
+                if (k >= b.length()) {
+                    try { core.callAttr("bo_chung", ma, go.getJSONObject(k - b.length()).optString("stt")) } catch (_: Exception) {}
+                    napLaiDuAn()
+                    return@setItems
+                }
+                val sttB = b.getJSONObject(k).optString("stt")
+                val nhanA = Array(a.length()) { i -> "Điểm ${a.getJSONObject(i).optString("stt")}. ${a.getJSONObject(i).optString("ten")} → cam số ${a.getJSONObject(i).optInt("cam")}" }
+                AlertDialog.Builder(this).setTitle("Ghim $sttB dùng modem của điểm nào?")
+                    .setItems(nhanA) { _, i ->
+                        val loi = try { core.callAttr("dat_chung", ma, sttB, a.getJSONObject(i).optString("stt"), a.getJSONObject(i).optInt("cam")).toString() } catch (e: Exception) { e.message ?: "lỗi" }
+                        if (loi.isNotEmpty()) android.widget.Toast.makeText(this, loi, android.widget.Toast.LENGTH_LONG).show()
+                        napLaiDuAn()
+                    }
+                    .setNegativeButton("Đóng", null).show()
+            }
+            .setNegativeButton("Đóng", null).show()
+    }
+
     /** Danh sách dự án: hai nhóm (Đang làm · Hoàn thành); mỗi dự án MỘT DÒNG ghi trạng thái theo VIỆC CẦN LÀM; bấm dòng bung chi tiết + nút việc tiếp theo. */
     private fun veDsDuAn() {
         val l = dhDs ?: return
         l.removeAllViews()
         val ds = dhDuLieu.optJSONArray("du_an") ?: org.json.JSONArray()
+        ui.post { hoiChung() }
         if (ds.length() == 0) {
             val v = theTrang()
             v.addView(chu("Chưa có dự án nào", 15.5f, M_CHU, dam = true))
@@ -1791,7 +1864,9 @@ class MainActivity : Activity() {
         val ma = d.optString("ma"); val n = d.optInt("diem")
         val xong = d.optBoolean("hoan_thanh")
         val daCai = d.optInt("da_xong")
-        val thieuTM = n - d.optInt("ten_mien")
+        val modem = if (d.has("modem")) d.optInt("modem") else n      // ghim có modem riêng; ghim dùng chung modem điểm khác không tính
+        val thieuTM = modem - d.optInt("ten_mien")
+        val dvTM = if (modem != n) "modem" else "điểm"
         val camKiem = d.optInt("cam_kiem"); val camLen = d.optInt("cam_len")
         val luc = d.optString("luc_kiem").substringAfter(" ", "").ifEmpty { d.optString("luc_kiem") }      // chỉ lấy giờ
         // trạng thái = việc cần làm
@@ -1799,7 +1874,7 @@ class MainActivity : Activity() {
             xong && camKiem > 0 && camLen == camKiem -> Pair("✔ Hoàn thành · $camLen/$camKiem cam đang lên (kiểm $luc)", M_XANH)
             xong && camKiem > 0 -> Pair("Hoàn thành · ${camKiem - camLen} cam lỗi (kiểm $luc)", M_DO)
             xong -> Pair("✔ Hoàn thành · chưa kiểm tra từ xa", M_XANH)
-            thieuTM > 0 -> Pair("Thiếu tên miền $thieuTM/$n điểm" + (if (daCai > 0) " · đã cài $daCai/$n" else ""), M_DO)
+            thieuTM > 0 -> Pair("Thiếu tên miền $thieuTM/$modem $dvTM" + (if (daCai > 0) " · đã cài $daCai/$n" else ""), M_DO)
             daCai == 0 -> Pair("Sẵn sàng cài · 0/$n điểm", M_LAM)
             else -> Pair("Đang cài · $daCai/$n điểm", M_LAM)
         }
@@ -1817,7 +1892,7 @@ class MainActivity : Activity() {
         ten.maxLines = 1; ten.ellipsize = android.text.TextUtils.TruncateAt.END
         tx.addView(ten)
         tx.addView(chu(tt, 13f, mauTt, dam = true))
-        tx.addView(chu("$n điểm · $soCam", 12f, M_MO2))
+        tx.addView(chu(if (modem != n) "$n định vị · $soCam · $modem modem" else "$n điểm · $soCam", 12f, M_MO2))
         h.addView(tx, LinearLayout.LayoutParams(0, -2, 1f))
         h.addView(chu(if (mo) "▾" else "›", 20f, M_MO2))
         v.addView(h)
@@ -1826,8 +1901,11 @@ class MainActivity : Activity() {
             fun mau(k: String) = if (d.optInt(k) == n) M_XANH else M_DO
             dongTrang(v, "Đã cài", "$daCai/$n", if (daCai == n) M_XANH else M_CHU)
             dongTrang(v, "Toạ độ (GPS tự dò điểm)", du("toa_do"), mau("toa_do"))
-            dongTrang(v, "Tên miền DDNS", du("ten_mien"), mau("ten_mien"))
-            dongTrang(v, "User/pass DDNS kèm tên miền", du("tk_ddns"), mau("tk_ddns"))
+            fun duM(k: String) = "${d.optInt(k)}/$modem"      // tên miền tính theo MODEM (một modem một tên miền), không theo ghim
+            fun mauM(k: String) = if (d.optInt(k) == modem) M_XANH else M_DO
+            if (modem != n) dongTrang(v, "Modem (ghim có modem riêng)", "$modem", M_CHU)
+            dongTrang(v, "Tên miền DDNS", duM("ten_mien"), mauM("ten_mien"))
+            dongTrang(v, "User/pass DDNS kèm tên miền", duM("tk_ddns"), mauM("tk_ddns"))
             if (d.optInt("toa_do") < n) v.addView(chu("Điểm thiếu toạ độ: tới nơi app sẽ hỏi chọn điểm bằng tay.", 12f, M_MO), lpDoc(tren = 6))
             if (d.optInt("rieng") > 0) v.addView(chu("${d.optInt("rieng")} điểm đang dùng user/pass riêng (khác mặc định).", 12f, M_MO), lpDoc(tren = 4))
             // nút đúng việc tiếp theo
@@ -1843,6 +1921,7 @@ class MainActivity : Activity() {
             if (thieuTM > 0 && tuLm) viec("📄  Nạp file tên miền của bên cấp", M_LAM) { choDdns = arrayOf(ma, "", "-1", ""); moFileDdns() }
             if (!tuLm) viec("📁  Cập nhật file Excel của dự án", if (xong) M_MO else M_LAM) { moFile() }
             if (daCai > 0) viec("🔍  Mở kiểm tra từ xa dự án này", M_XANH) { startActivity(Intent(this, TuXaActivity::class.java).putExtra("ma", ma)) }
+            if (thieuTM > 0 || modem != n) viec("📍  Ghim dùng chung modem điểm khác…", M_MO) { chonChung(ma) }
             if (thieuTM > 0 && !tuLm) v.addView(chu("Điểm thiếu tên miền: bổ sung cột Domain trong file Excel rồi cập nhật.", 12f, M_MO), lpDoc(tren = 6))
         }
         v.isClickable = true
