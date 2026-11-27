@@ -244,6 +244,10 @@ kq = json.loads(K.bang_chung(ma, "1", None))
 luu = K._doc_du_an(ma)["ho_so"]["1"]
 kt("C2a: cửa thông → thử từ ngoài vào được modem → 'Sửa modem từ xa: ĐƯỢC', lưu vào hồ sơ điểm; vào 1 lần, ra 1 lần",
    kq["sua_tu_xa"]["duoc"] is True and luu["sua_tu_xa"]["duoc"] is True and Modem.vao == Modem.ra == 1, (kq.get("sua_tu_xa"), Modem.vao, Modem.ra))
+import camlink_xem as XEM
+cx = [(c.get("anh_url"), XEM.cua_cam(os.path.join(K.GOC, "ketqua"), ma, kq["domain"], c["http"])[0], c.get("xem_ghi")) for c in kq["cam"]]
+kt("C2x: 2.14.2 — ngay lúc cài, cam nào đã ra ảnh qua tên miền thì app tạo luôn tài khoản chỉ xem cho QR hồ sơ (không chờ lượt kiểm tra từ xa)",
+   cx and all(u and x == XEM.TEN and not g for u, x, g in cx), (cx, kq.get("domain")))
 kt("C2b: hai IP lệch nhau nhưng vào được → KHÔNG cảnh báo gì về IP (không bắt trùng)", "IP" not in kq["sua_tu_xa"].get("ly_do", ""), kq["sua_tu_xa"])
 dat_luat(LUAT_DUNG)      # cửa không thông (modem không nhận luật trỏ vào chính nó / nhà mạng chặn)
 kq = json.loads(K.bang_chung(ma, "1", None))

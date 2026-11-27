@@ -50,20 +50,8 @@ body{margin:0;background:#EEF2F7;font-family:system-ui,-apple-system,"Segoe UI",
     <p class="duoi">Tự đăng nhập, không phải gõ mật khẩu</p>
   </div>
 
-  <div class="khoi" id="khoi-tai">
-    <h2>Chưa có CamLink? Dùng miễn phí</h2>
-    <ul>
-      <li>Quét mã là thấy hình trực tiếp</li>
-      <li>Không cần đăng ký, không cần tài khoản</li>
-      <li>Tự kiểm tra cả hệ thống cam từ xa</li>
-      <li>Tự xuất hồ sơ kèm ảnh và chỉ đường</li>
-    </ul>
-    <a class="nut phu" id="nut-tai" href="#">Tải CamLink miễn phí (Android)</a>
-    <p class="duoi" style="margin:8px 0 0">Cài xong, quét lại mã này là vào thẳng hình live.</p>
-  </div>
-
   <div class="tu" id="khoi-tu">
-    <h3>Không muốn cài? Mở trang cam và tự nhập</h3>
+    <h3>Mở trang cam và tự nhập</h3>
     <div class="dong"><span>User</span><b id="u"></b><button type="button" data-chep="u">Sao chép</button></div>
     <div class="dong"><span>Mật khẩu</span><b id="p"></b><button type="button" data-chep="p">Sao chép</button></div>
     <a class="nut nhat" id="nut-web" href="#" style="margin-top:8px">Mở trang cam</a>
@@ -74,8 +62,7 @@ body{margin:0;background:#EEF2F7;font-family:system-ui,-apple-system,"Segoe UI",
 </div>
 <script>
 (function () {
-  // Link tải app: khi CamLink lên CH Play chỉ đổi MỘT dòng này (mã QR đã phát không phải in lại).
-  var TAI = "https://github.com/hoangvhuan-hh/camlink/raw/apk/CamLink.apk";
+  // 2.14.2 (anh Huan 27/11 20:40): trang này chỉ còn phục vụ mã QR của hồ sơ 2.14.0 / 2.14.1 đã phát. KHÔNG còn nút tải app ở đây.
   var $ = function (i) { return document.getElementById(i); };
   var ma = (location.hash || "").replace(/^#/, "");
   var j = null;
@@ -87,7 +74,6 @@ body{margin:0;background:#EEF2F7;font-family:system-ui,-apple-system,"Segoe UI",
     j = JSON.parse(new TextDecoder("utf-8").decode(a));
   } catch (e) { j = null; }
   var bao = function (t) { $("bao").textContent = t; $("bao").style.display = "block"; };
-  $("nut-tai").href = TAI;
   if (!j || typeof j !== "object") {
     bao("Mã không hợp lệ hoặc thiếu. Hãy quét lại mã QR trong hồ sơ.");
     $("khoi-live").className = "an"; $("khoi-tu").className = "an";
@@ -123,7 +109,7 @@ body{margin:0;background:#EEF2F7;font-family:system-ui,-apple-system,"Segoe UI",
   var laAndroid = /Android/i.test(ua), laIos = /iPhone|iPad|iPod/i.test(ua);
   var chua = /[?&]chua=1/.test(location.search);
   if (laIos) {
-    $("khoi-live").className = "an"; $("khoi-tai").className = "an";
+    $("khoi-live").className = "an";
     bao("CamLink hiện có cho điện thoại Android. Trên iPhone, hãy mở trang cam và nhập user, mật khẩu bên dưới.");
     if (j.w) {
       // Đã ở Safari (link có web=1) → vào thẳng trang cam qua tên miền.
@@ -147,8 +133,8 @@ body{margin:0;background:#EEF2F7;font-family:system-ui,-apple-system,"Segoe UI",
   var mo = "intent://xem?d=" + ma + "#Intent;scheme=camlink;package=vn.vinalite.camlink;S.browser_fallback_url=" + encodeURIComponent(lui) + ";end";
   $("nut-live").href = laAndroid ? mo : "camlink://xem?d=" + ma;
   if (chua) {
-    bao("Máy này chưa có CamLink. Tải miễn phí bên dưới, cài xong quét lại mã là thấy hình live.");
-    $("nut-tai").className = "nut chinh"; $("nut-live").className = "nut phu";
+    $("khoi-live").className = "an";
+    bao("Máy này chưa có CamLink. Hãy mở trang cam và nhập user, mật khẩu bên dưới.");
     return;
   }
   if (!laAndroid) { bao("Xem live bằng CamLink chạy trên điện thoại Android. Trên máy tính, hãy mở trang cam và nhập user, mật khẩu bên dưới."); return; }

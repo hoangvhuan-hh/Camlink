@@ -353,6 +353,8 @@ def _kiem_diem_goc(stt, d, cd, anh_dir, ma, ho_so=None):
                 fh.write(jpg)
             c["anh"] = f
             c["anh_url"] = getattr(ov, "anh_url", "")
+            import camlink_xem as XEM      # 2.14.2: QR hồ sơ dùng tài khoản CHỈ XEM — tạo (hoặc giữ) ngay trong lượt kiểm, không hỏi người dùng
+            c["xem_ghi"] = XEM.dam_bao(anh_dir, ma, ov, dom, c["http"], c["anh_url"])[2]
         except Exception as e:
             _ket(c, VANG, f"Cam trả lời nhưng không ra hình ({str(e)[:60]}) → cam treo",
                  ["Bấm Sửa từ xa để khởi động lại cam, chờ 2 phút rồi kiểm tra lại."], ["khoi_dong_cam"], "Cam treo")

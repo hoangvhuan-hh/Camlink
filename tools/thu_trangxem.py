@@ -35,10 +35,9 @@ kt("X4: trang tự chứa — không tải mã / phông / ảnh từ nơi khác,
    not re.search(r"<script[^>]+src=|<link[^>]+href=|fetch\(|XMLHttpRequest|sendBeacon|<img[^>]+src=[\"']http", t))
 kt("X5: nút 'Xem live ngay' mở đúng app CamLink (tên gói + kiểu link camlink://xem), có đường lui khi máy chưa cài",
    all(x in t for x in ("scheme=camlink", "package=vn.vinalite.camlink", "intent://xem?d=", "browser_fallback_url")) and "Xem live ngay" in t)
-kt("X6: khối kêu gọi dùng CamLink MIỄN PHÍ: nút tải + 4 lợi ích đã chốt", all(x in t for x in (
-    "Dùng miễn phí", "Tải CamLink miễn phí", "Quét mã là thấy hình trực tiếp", "Không cần đăng ký, không cần tài khoản", "Tự kiểm tra cả hệ thống cam từ xa", "Tự xuất hồ sơ kèm ảnh và chỉ đường")))
-kt("X7: link tải app nằm ở MỘT chỗ (sau này lên CH Play chỉ đổi một dòng, mã QR đã phát không phải in lại)", t.count("github.com/hoangvhuan-hh/camlink/raw/apk/CamLink.apk") == 1 and "var TAI =" in t)
-kt("X8: lối 'không cài': hiện user + mật khẩu (có nút sao chép) và nút mở trang cam", all(x in t for x in ("Không muốn cài", "Mở trang cam", "Sao chép", "j.u", "j.p", "j.w")))
+kt("X6: 2.14.2 — trang KHÔNG còn chỗ nào tải được CamLink: không nút tải, không link APK, không lời mời cài (anh Huan 27/11 20:40)",
+   not any(x in t for x in ("Tải CamLink", ".apk", "raw/apk", "Dùng miễn phí", "nut-tai", "khoi-tai", "play.google")))
+kt("X8: lối 'không cài': hiện user + mật khẩu (có nút sao chép) và nút mở trang cam", all(x in t for x in ("tự nhập", "Mở trang cam", "Sao chép", "j.u", "j.p", "j.w")))
 
 # ---- CHẠY THẬT đoạn mã của trang (node) với trang giả tối thiểu: 5 tình huống người quét gặp
 import shutil, subprocess
@@ -58,7 +57,7 @@ RA = """
 var tuMo = location.href;      // trang tự chuyển đi đâu ngay khi vừa mở (chưa ai bấm gì)
 if (el("nut-web").bam) el("nut-web").bam({preventDefault: function () {}});
 console.log(JSON.stringify({di: di, goi_y_ios: el("goi-y-ios").style.display || "", cam: el("cam").textContent, da: el("da").textContent, u: el("u").textContent, p: el("p").textContent, web: el("nut-web").href, live: el("nut-live").href,
-  tai: el("nut-tai").href, tu_mo: tuMo, bao: el("bao").textContent, an_live: el("khoi-live").className, an_tai: el("khoi-tai").className, an_tu: el("khoi-tu").className}));
+  tu_mo: tuMo, bao: el("bao").textContent, an_live: el("khoi-live").className, an_tu: el("khoi-tu").className}));
 """
 AND = "Mozilla/5.0 (Linux; Android 14; SM-A546E) AppleWebKit/537.36 Chrome/130.0 Mobile Safari/537.36"
 IOS = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 Version/17.5 Mobile/15E148 Safari/604.1"
@@ -79,11 +78,11 @@ if shutil.which("node"):
     kt("X22: máy chưa cài CamLink → đường lui quay về chính trang này kèm đúng mã cam (không ra trang lỗi)",
        "S.browser_fallback_url=" + __import__("urllib.parse").parse.quote("https://hhaico.com/Camlink/xem.html?chua=1#" + ma, safe="") + ";end" in a["live"], a["live"][-200:])
     c = chay(AND, ma, "?chua=1")
-    kt("X23: quay về vì chưa cài → báo 'chưa có CamLink, tải miễn phí', KHÔNG tự thử mở app lần nữa (không lặp vô hạn), nút tải thành nút chính",
-       "chưa có CamLink" in c["bao"] and c["tu_mo"] == "" and c["tai"].endswith("CamLink.apk"), c)
+    kt("X23: quay về vì chưa cài → báo 'chưa có CamLink', ẩn nút xem live, chỉ sang lối mở trang cam; KHÔNG tự thử mở app lần nữa, KHÔNG mời tải",
+       "chưa có CamLink" in c["bao"] and c["tu_mo"] == "" and c["an_live"] == "an" and "Tải" not in c["bao"], c)
     i = chay(IOS, ma)
     kt("X24: iPhone → ẩn nút xem live và khối tải (không có bản iPhone), nói rõ, vẫn đủ user / mật khẩu / link trang cam",
-       i["an_live"] == "an" and i["an_tai"] == "an" and "iPhone" in i["bao"] and i["tu_mo"] == "" and (i["u"], i["p"], i["web"]) == ("admin", "Mk@1:#x", "http://pl8.ddns.net:8081/"), i)
+       i["an_live"] == "an" and "iPhone" in i["bao"] and i["tu_mo"] == "" and (i["u"], i["p"], i["web"]) == ("admin", "Mk@1:#x", "http://pl8.ddns.net:8081/"), i)
     w = chay(MAY, ma)
     kt("X25: máy tính → không tự mở app, nói rõ xem live chạy trên Android, vẫn có lối tự nhập", w["tu_mo"] == "" and "Android" in w["bao"] and w["web"] == "http://pl8.ddns.net:8081/", w)
     h = chay(AND, "@@@")

@@ -19,6 +19,10 @@ class Cam:
         self._serial = ""
         self.khoi_dong = []          # các thời điểm (epoch) cam khởi động lại — bài thử tự gán
         self.users = [("admin", "Administrator")]
+        self.mk = {}                 # mật khẩu của các tài khoản tạo thêm qua ONVIF (CreateUsers / SetUser) — ảnh chụp chỉ trả cho đúng tài khoản
+        self.so_lan_tao_user = 0
+        self.cho_tao_user = True     # False: cam từ chối tạo tài khoản (giả hãng không hỗ trợ)
+        self.anh_chi_quan_tri = False  # True: cam chỉ cho tài khoản quản trị lấy ảnh
         self.so_lan_reboot = 0
 
 
@@ -143,7 +147,13 @@ def _tra_loi_onvif(cam, than):
     if co("CreateUsers") or co("SetUser"):
         t = (re.search(r"Username>(.*?)<", than.split("Body", 1)[-1]) or [None, ""])[1]
         m = (re.search(r"UserLevel>(.*?)<", than) or [None, "User"])[1]
+        if not cam.cho_tao_user:
+            return 400, _loi("Action not supported")
+        mk = re.search(r"Password>(.*?)<", than.split("Body", 1)[-1])
         cam.users = [x for x in cam.users if x[0] != t] + [(t, m)]
+        if mk and t != cam.user:
+            cam.mk[t] = mk.group(1).replace("&amp;", "&")
+        cam.so_lan_tao_user += 1
         return 200, _boc("<tds:CreateUsersResponse/>")
     if co("DeleteUsers"):
         t = (re.search(r"Username>(.*?)<", than.split("Body", 1)[-1]) or [None, ""])[1]
@@ -176,8 +186,11 @@ def _lop_xu_ly(cam):
                 au = self.headers.get("Authorization", "")
                 if not au:
                     return self._gui(401, "", dau={"WWW-Authenticate": 'Basic realm="cam"'})
-                if au.startswith("Basic ") and base64.b64decode(au[6:]).decode(errors="ignore") != f"{cam.user}:{cam.pw}":
-                    return self._gui(401, "", dau={"WWW-Authenticate": 'Basic realm="cam"'})
+                if au.startswith("Basic "):
+                    tu, _, tp = base64.b64decode(au[6:]).decode(errors="ignore").partition(":")
+                    them = (not cam.anh_chi_quan_tri) and tu in cam.mk and cam.mk[tu] == tp and any(x[0] == tu for x in cam.users)
+                    if (tu, tp) != (cam.user, cam.pw) and not them:
+                        return self._gui(401, "", dau={"WWW-Authenticate": 'Basic realm="cam"'})
                 return self._gui(200, _anh_jpg(f"cam {cam.ip}:{cam.http}"), "image/jpeg")
             if cam.isapi and self.path.startswith("/ISAPI/System/deviceInfo"):
                 return self._gui(401, "", dau={"WWW-Authenticate": 'Digest realm="isapi", nonce="abc", qop="auth"'})

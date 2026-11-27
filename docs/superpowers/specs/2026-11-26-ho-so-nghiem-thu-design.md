@@ -86,3 +86,17 @@ trong trình duyệt nhúng của app quét mã, trong khi trước đó quét Q
 - (2) Chưa xác định chắc nguyên nhân (trang cam Oryza nặng ~2,7 MB, tải được tiêu đề rồi trắng). Làm: trên iPhone nút "Mở trang cam" thử chuyển sang Safari
   (`x-safari-https://…/xem.html?web=1#mã` → trang tự vào thẳng trang cam), sau 1,5 giây không đi được thì mở thẳng như cũ; thêm dòng "Nếu trang cam trắng: bấm ··· rồi chọn Mở bằng Safari".
   Kiểu link `x-safari-https` không phải cách chính thức của Apple (được báo chạy trên iOS 15/17/18, không chạy iOS 16) → CHƯA thử trên iPhone thật.
+
+## 2.14.2 — QR mở ảnh cam chụp ngay lúc quét, bằng tài khoản chỉ xem (anh Huan chốt 27/11/2026 20:40)
+
+Lý do đổi hướng (anh Huan 20:27): người đã có CamLink thì mở app xem, không cần quét; QR là cho người cầm hồ sơ, không cài gì. Ảnh phải là ảnh chụp tại lúc quét.
+- **QR** = đường ảnh của chính cam (ONVIF GetSnapshotUri, đã lưu `anh_url` từ 2.12.22) qua tên miền, `http://user:mật-khẩu@tên-miền:cổng/đường` (`camlink_hoso.link_anh`).
+  Mỗi lần mở link là cam chụp và trả ảnh mới. Không qua trang trung gian, không cần app. Ảnh in trong hồ sơ giữ nguyên.
+- **Tài khoản chỉ xem** (`camlink_xem.py`): trong lượt kiểm tra từ xa và lúc cài, app tự tạo trên cam tài khoản `xemhoso` mức ONVIF `User`, mật khẩu ngẫu nhiên `Xem-XXXXXXXX`,
+  thử lấy ảnh bằng tài khoản đó rồi mới ghi sổ `ketqua/xem_<mã>.json`. Đã có thì giữ nguyên (QR đã in còn dùng được); bị xoá trên cam thì tạo lại đúng mật khẩu cũ.
+- **Không tạo được** (cam từ chối / tài khoản mới không lấy được ảnh): QR dùng tài khoản đang có, hồ sơ in dòng đỏ "Tài khoản quản trị — cam chưa có tài khoản chỉ xem".
+  Cam đang rớt và chưa có tài khoản chỉ xem: QR chỉ mở trang cam, KHÔNG in tài khoản nào.
+- **Bỏ**: QR trỏ `web/xem.html`, lời mời cài app, nút tải APK (trang `xem.html` vẫn để cho mã QR của hồ sơ 2.14.0 / 2.14.1 đã phát, đã gỡ nút tải). Đồng hồ đếm ngược: không làm.
+- **Để sau** (cùng đợt cấp phép): máy chủ đứng giữa cho link ngắn không chứa mật khẩu, thu hồi được.
+- **CHƯA thử trên cam Oryza thật**: (1) trình duyệt điện thoại + cam có nhận tài khoản trong link ảnh không — không nhận thì máy hiện ô hỏi user / mật khẩu (đã in cạnh QR);
+  (2) cam có cho tạo tài khoản mức User qua ONVIF không; (3) tài khoản mức User trên Oryza có thật sự không sửa được cấu hình không. Cam giả trong bộ thử không chứng minh được ba điều này.

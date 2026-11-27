@@ -11,7 +11,7 @@ cd = C.doc_cai_dat(); cd.update(cam_user="admin", cam_pw="x@1"); C.ghi_cai_dat(c
 def tao(ten, da):
     ma = K._ma(K._ten_tu_file(ten + ".xlsx")); da["ten"] = ten; K._ghi_du_an(ma, da); return ma
 hs = lambda n: {"luc": "25/11/2026", "cam": [{"so": i + 1} for i in range(n)]}
-cam = lambda so, muc: {"so": so, "http": 8079 + so, "muc": muc, "nhan": "", "sua": []}
+cam = lambda so, muc, dom="": {"so": so, "http": 8079 + so, "muc": muc, "nhan": "", "sua": [], "anh_url": f"http://{dom}:{8079 + so}/anh.jpg" if muc == "xanh" and dom else ""}
 # Tân Triều: 49 ghim từ LiteMark, CHƯA cài, chưa có tên miền
 tt = tao("Cam an ninh tân triều 2", {"kho_ddns": [], "diem": {str(i): {"ten": f"Ghim {i}", "domain": "", "so": 2 if i <= 36 else 1} for i in range(1, 50)},
                                      "toa_do": {str(i): [11.0 + i * 0.01, 107.0] for i in range(1, 50)}, "da_xong": {}, "ho_so": {}})
@@ -21,7 +21,7 @@ pl = tao("Camera Xa Phu Ly", {"diem": pl_d, "toa_do": {str(i): [12.0 + i * 0.01,
                               "ho_so": {str(i): hs(3 if i == 8 else 2) for i in range(1, 12)}})
 with open(T._f_lich_su(G, pl), "w") as fh:
     json.dump({"luc": "15:33 26/11/2026", "diem": [{"stt": str(i), "ten": f"Cột {i}", "domain": f"pl{i}.ddns.net", "muc": "do" if i == 6 else "xanh", "tong": "0/2 cam đạt" if i == 6 else "ĐẠT",
-               "cam": [cam(n + 1, "do" if i == 6 else "xanh") for n in range(3 if i == 8 else 2)]} for i in range(1, 12)]}, fh)
+               "cam": [cam(n + 1, "do" if i == 6 else "xanh", f"pl{i}.ddns.net") for n in range(3 if i == 8 else 2)]} for i in range(1, 12)]}, fh)
 # Tà Lài mở rộng: 6 ghim từ LiteMark, 5 tên miền; cài TAY nên app có thể KHÔNG có hồ sơ 2 cam ở điểm 1 (đúng như máy anh Huan đang hiện "5 cam")
 def talai(co_ho_so_2cam):
     d = {str(i): {"ten": f"Điểm {i}", "domain": f"tl{i}.ddns.net", "u": "u", "p": "p", "so": 1} for i in range(1, 6)}
@@ -76,14 +76,30 @@ for ten_da in ("Camera Xa Phu Ly", "Dự án cam an ninh Tà Lài mở rộng"):
     mh = H.du_lieu(K.GOC, next(x["ma"] for x in hs_ if x["ten"] == ten_da))
     cams = [c for d in mh["diem"] for c in d["cam"]]
     print(f"   {ten_da}: {len(cams)} cam trong hồ sơ, ví dụ: {cams[0]['link']}")
-    kt(f"N11 ({ten_da}): MỌI cam có tên miền đều có link trang cam + user + mật khẩu + QR mở trang xem CamLink riêng; không có QR nào trỏ LiteMark / https; không có thứ gì ngoài cam (modem, DDNS)",
-       all(c["link"].startswith("http://") and c["qr"].startswith(H.TRANG_XEM + "#") and c["user"] and "pass" in c for c in cams if c.get("http") and c["link"])
-       and all(c["link"] for d in mh["diem"] if d["domain"] for c in d["cam"]) and "litemark" not in json.dumps(mh).lower() and "https://" not in json.dumps(mh).replace("https://www.google.com/maps/", "").replace(H.TRANG_XEM, "")
+    c0 = cams[0]
+    print(f"      cạnh mã của cam đầu: QR → {c0['qr']} | User: {c0['user'] or '(không in)'} | cảnh báo tài khoản quản trị: {'có' if c0['user'] and not c0['tk_xem'] else 'không'}")
+    kt(f"N11 ({ten_da}) — vừa cập nhật 2.14.2, CHƯA kiểm lại: cam đang lên → QR ra ảnh bằng tài khoản đang có + có đánh dấu để in cảnh báo; cam chưa có ảnh → QR mở trang cam và KHÔNG in tài khoản; "
+       "mọi link là http; không còn trang trung gian / lời mời tải app / LiteMark; không có thứ gì ngoài cam (modem, DDNS)",
+       all(c["link"].startswith("http://") and c["qr"].startswith("http://") for c in cams if c["link"]) and all(c["link"] for d in mh["diem"] if d["domain"] for c in d["cam"])
+       and all((c["qr"].endswith("/anh.jpg") and c["user"] == "admin" and not c["tk_xem"]) if c["qr_anh"] else (c["qr"] == c["link"] and c["user"] == "" and c["pass"] == "") for c in cams if c["link"])
+       and not any(x in json.dumps(mh).lower().replace("https://www.google.com/maps/", "") for x in ("litemark", "https://", "xem.html", ".apk", "rtsp://"))
        and all("qr" not in d for d in mh["diem"]))
     co_td = [d for d in mh["diem"] if d["toa_do"]]
     print(f"      chỉ đường: {len(co_td)}/{len(mh['diem'])} điểm có link, ví dụ: {co_td[0]['chi_duong'] if co_td else '(dự án chưa có toạ độ)'}")
     kt(f"N11b ({ten_da}): điểm nào có toạ độ thì có link chỉ đường Google Maps, điểm không có toạ độ thì không hiện dòng chỉ đường",
        all(d["chi_duong"].startswith("https://www.google.com/maps/dir/") for d in co_td) and all(d["chi_duong"] == "" for d in mh["diem"] if not d["toa_do"]))
+# ---- 2.14.2: sau MỘT lượt kiểm tra từ xa, app đã tạo tài khoản chỉ xem trên các cam đang lên của Phú Lý → hồ sơ gửi ra ngoài hiện gì?
+import camlink_xem as X
+with open(X._f(G + "/ketqua", pl), "w", encoding="utf-8") as fh:
+    json.dump({f"pl{i}.ddns.net:{8080 + n}": {"u": X.TEN, "p": "Xem-Kq7mTz2w"} for i in range(1, 12) if i != 6 for n in range(3)}, fh)
+mh = H.du_lieu(K.GOC, pl); cams = [c for d in mh["diem"] for c in d["cam"]]; chuoi_pl = json.dumps(mh, ensure_ascii=False)
+print(f"   Phú Lý sau lượt kiểm: QR cam đầu → {cams[0]['qr']} | User: {cams[0]['user']} | Mật khẩu: {cams[0]['pass']}")
+kt("N13: sau lượt kiểm, hồ sơ Phú Lý KHÔNG còn mật khẩu quản trị ở bất kỳ chỗ nào (chữ in, QR, cả dạng đã đổi ký tự); 21 cam đang lên đều có QR ra ảnh bằng tài khoản chỉ xem",
+   "x@1" not in chuoi_pl and "x%401" not in chuoi_pl and '"admin"' not in chuoi_pl
+   and sum(1 for c in cams if c["qr"].startswith("http://xemhoso:Xem-Kq7mTz2w@") and c["tk_xem"] and c["qr_anh"]) == 21)
+kt("N13b: 2 cam đang rớt ở điểm 6 (chưa từng có tài khoản chỉ xem) → chỉ có QR mở trang cam, không in tài khoản nào; không có dòng nào mời tải app",
+   [(c["qr"], c["user"], c["pass"]) for d in mh["diem"] if d["stt"] == "6" for c in d["cam"]] == [("http://pl6.ddns.net:8080/", "", ""), ("http://pl6.ddns.net:8081/", "", "")])
+os.remove(X._f(G + "/ketqua", pl))
 # ---- 2.13.0: trên máy anh Huan Phú Lý cài TAY (chưa có cửa vào modem). Bấm Sửa từ xa ở điểm mất luật mở port → màn báo cáo hiện gì?
 import camlink_tuxa as T
 kq_gia = {"du_an": "Camera Xa Phu Ly", "diem": [{"stt": "6", "ten": "Cột 6", "domain": "pl6.ddns.net", "muc": "vang", "tong": "1/2 cam đạt", "viec": [], "cam": [
