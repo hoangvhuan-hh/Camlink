@@ -40,8 +40,16 @@
         <activity android:name=".BanDoActivity" android:exported="false" />
         <activity android:name=".GiamSatActivity" android:exported="false" android:configChanges="orientation|screenSize" />
         <activity android:name=".XacMinhActivity" android:exported="false" android:configChanges="orientation|screenSize" />
-        <activity android:name=".XemLiveActivity" android:exported="false"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
+        <!-- 2.14.0: quét mã QR trong hồ sơ → trang xem → camlink://xem?d=<mã cam> → vào thẳng hình live (không cần thiết lập gì trong app) -->
+        <activity android:name=".XemLiveActivity" android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="camlink" android:host="xem" />
+            </intent-filter>
+        </activity>
         <service android:name=".TheoDoiService" android:exported="false" android:foregroundServiceType="dataSync" />
         <provider
             android:name="androidx.core.content.FileProvider"

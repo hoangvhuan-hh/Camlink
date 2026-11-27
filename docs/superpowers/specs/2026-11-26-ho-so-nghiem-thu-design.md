@@ -54,3 +54,25 @@ không phụ thuộc phần tự cài.
   Ghim dùng chung modem chỉ đường tới toạ độ của chính ghim đó. Điểm chưa có toạ độ thì không hiện dòng này.
 - Dòng "Báo cáo được thực hiện bằng app CamLink" dưới tên dự án ở trang đầu và ở chân mọi trang (kèm số trang).
 - Link Google Maps là link https duy nhất trong hồ sơ; link cam vẫn http.
+
+## Sửa 2.14.0 — QR mở live bằng CamLink + trang gợi ý (anh Huan chốt 27/11/2026 18:05–18:11)
+
+Vì sao: bản 2.13.x QR mở trang web của cam kèm tài khoản trong link → cam Oryza vẫn hiện ô đăng nhập ("QR làm cái gì"). Trang web của cam đăng nhập
+bằng chuỗi trao đổi mã hoá nên không link nào tự điền được; chỉ LINK VIDEO (rtsp) nhận tài khoản ngay trong link.
+
+Anh Huan chốt:
+- Dùng CamLink để xem (không dùng VLC) — "một tên bắn hai nhạn"; xem không cần bản trả phí, cài đơn giản.
+- Máy chưa có CamLink: gợi ý "muốn xem live thì cài, không thì tự nhập user và mật khẩu". Lời kêu gọi phải đủ hấp dẫn để khách dùng miễn phí trước; đưa lên CH Play làm sau.
+- Phương án (a): in lại user + mật khẩu cạnh mã QR trong hồ sơ.
+- Mở mục Hồ sơ là ra bản mới, không phải quét lại (2.13.4 gộp vào đây).
+
+Cách làm:
+- QR = `https://hoangvhuan-hh.github.io/Camlink/xem.html#<mã cam>`; mã = base64url(JSON {v, da, t, l, wp}) nằm sau dấu # nên không gửi lên máy chủ.
+  `l` là đúng link video app đang phát ở tab Giám sát. User / mật khẩu / tên miền cho lối tự nhập tách từ `l` (giữ mã ngắn, QR dễ quét).
+- `web/xem.html` (trang tĩnh, tự chứa): Android → tự thử mở `camlink://xem?d=<mã>` (qua intent, có đường lui về chính trang kèm `?chua=1`);
+  khối "Chưa có CamLink? Dùng miễn phí" (4 lợi ích + nút tải); lối "Không muốn cài" (user, mật khẩu có nút sao chép, nút mở trang cam). iPhone / máy tính: chỉ lối tự nhập.
+  Link tải app nằm ở MỘT biến `TAI` — lên CH Play chỉ đổi một dòng, QR đã phát không phải in lại.
+- App: `XemLiveActivity` nhận `camlink://xem` (exported, BROWSABLE), tự giải mã, phát bằng bộ phát sẵn có; không gọi lõi Python, không cần dự án / PIN.
+- CI đưa `web/xem.html` lên nhánh `gh-pages` mỗi lần phát hành. GitHub Pages phải được BẬT một lần trong Settings của kho (API bật Pages bị chặn ở phiên này).
+
+Chưa thử trên thiết bị thật: quét trên điện thoại (trình duyệt có cho tự mở app hay phải bấm nút "Xem live ngay"; app quét trong Zalo); hình live trong CamLink khi mở từ mã.

@@ -76,9 +76,9 @@ for ten_da in ("Camera Xa Phu Ly", "Dự án cam an ninh Tà Lài mở rộng"):
     mh = H.du_lieu(K.GOC, next(x["ma"] for x in hs_ if x["ten"] == ten_da))
     cams = [c for d in mh["diem"] for c in d["cam"]]
     print(f"   {ten_da}: {len(cams)} cam trong hồ sơ, ví dụ: {cams[0]['link']}")
-    kt(f"N11 ({ten_da}): MỌI cam có tên miền đều có link http + QR xem trực tiếp riêng, không in user / mật khẩu ra chữ; không có QR nào trỏ LiteMark / https; không có thứ gì ngoài cam (modem, DDNS)",
-       all(c["link"].startswith("http://") and c["qr"].startswith("http://") and c["qr"].endswith(f":{c['http']}/") and "user" not in c and "pass" not in c for c in cams if c.get("http") and c["link"])
-       and all(c["link"] for d in mh["diem"] if d["domain"] for c in d["cam"]) and "litemark" not in json.dumps(mh).lower() and "https://" not in json.dumps(mh).replace("https://www.google.com/maps/", "")
+    kt(f"N11 ({ten_da}): MỌI cam có tên miền đều có link trang cam + user + mật khẩu + QR mở trang xem CamLink riêng; không có QR nào trỏ LiteMark / https; không có thứ gì ngoài cam (modem, DDNS)",
+       all(c["link"].startswith("http://") and c["qr"].startswith(H.TRANG_XEM + "#") and c["user"] and "pass" in c for c in cams if c.get("http") and c["link"])
+       and all(c["link"] for d in mh["diem"] if d["domain"] for c in d["cam"]) and "litemark" not in json.dumps(mh).lower() and "https://" not in json.dumps(mh).replace("https://www.google.com/maps/", "").replace(H.TRANG_XEM, "")
        and all("qr" not in d for d in mh["diem"]))
     co_td = [d for d in mh["diem"] if d["toa_do"]]
     print(f"      chỉ đường: {len(co_td)}/{len(mh['diem'])} điểm có link, ví dụ: {co_td[0]['chi_duong'] if co_td else '(dự án chưa có toạ độ)'}")

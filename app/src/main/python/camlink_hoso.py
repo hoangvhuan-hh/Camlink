@@ -6,7 +6,10 @@ toạ độ ghim, tên miền + port, kết quả ĐẠT / CHƯA ĐẠT kèm lý
 Lý do: đây là giai đoạn cài đặt, file chia trong nhóm cài đặt; bên quản lý tiếp quản rồi tự đổi mật khẩu. Bỏ QR LiteMark (người không dùng LiteMark không xem được).
 KHÔNG in mật khẩu modem, user/mật khẩu DDNS, đường RTSP; link luôn là http (https qua DDNS thất thường).
 2.13.1 (anh Huan 27/11 16:39): QR mở TRANG XEM TRỰC TIẾP của cam (không mở link ảnh chụp — một tấm ảnh không chứng minh cam đang chạy);
-ảnh chụp trong báo cáo vẫn giữ; user/mật khẩu cam chỉ nằm trong QR để đăng nhập, KHÔNG in ra chữ (là thứ bên giao cấp cho mình).
+ảnh chụp trong báo cáo vẫn giữ.
+2.14.0 (anh Huan chốt 27/11 18:11): trang web của cam KHÔNG tự đăng nhập bằng tài khoản trong link (cam Oryza bắt gõ) → QR mở TRANG XEM của CamLink
+(web/xem.html trên GitHub Pages): máy có CamLink thì vào thẳng hình live (link video có sẵn tài khoản); chưa có thì trang gợi ý dùng CamLink miễn phí,
+hoặc tự nhập. Mã cam nằm sau dấu # của link nên không gửi lên máy chủ. Cạnh QR in link trang cam + user + mật khẩu cho người không cài app.
 Lõi tự gọi sau mỗi lượt kiểm tra từ xa và sau khi cài xong một điểm — người dùng không phải bấm tạo.
 
 du_lieu() là hàm thuần (kiểm được bằng bài thử); ve_pdf() chỉ vẽ đúng những gì du_lieu() trả.
@@ -15,7 +18,8 @@ Thiết kế: docs/superpowers/specs/2026-11-26-ho-so-nghiem-thu-design.md
 import os
 import json
 import time
-from urllib.parse import quote
+import base64
+import re
 
 
 TIEU_DE = "HỒ SƠ HỆ THỐNG CAMERA HIỆN TẠI"
@@ -43,13 +47,44 @@ def _gio_tep(f):
         return ""
 
 
-def _link_cam(dom, http, user, pw):
-    """(link để đọc, QR để quét) của một cam. Luôn http, luôn theo tên miền + port của cam = trang XEM TRỰC TIẾP của cam.
-    Link để đọc không kèm tài khoản; QR kèm user/pass (đã mã hoá ký tự lạ như @ # :) để quét là vào, không phải gõ."""
-    if not dom or not http:
-        return "", ""
-    tk = f"{quote(str(user), safe='')}:{quote(str(pw), safe='')}@" if user else ""
-    return f"http://{dom}:{http}/", f"http://{tk}{dom}:{http}/"
+TRANG_XEM = "https://hoangvhuan-hh.github.io/Camlink/xem.html"      # trang tĩnh; nguồn ở web/xem.html, CI đưa lên nhánh gh-pages
+
+
+def ma_xem(du_an, ten, live, cong_web, may="", user="", pw=""):
+    """Mã của MỘT cam để gắn sau dấu # của TRANG_XEM: base64url(JSON gọn) — trang web và app (XemLiveActivity) cùng giải được.
+    l = link video có sẵn tài khoản (đúng link app đang phát ở tab Giám sát); wp = cổng trang web của cam.
+    Giữ mã NGẮN để QR dễ quét: tên miền, user, mật khẩu cho lối 'không cài app, tự nhập' được TÁCH TỪ l (xem tach_link_video);
+    chỉ khi cam chưa có link video mới ghi riêng h, u, p."""
+    d = {"v": 1, "da": du_an, "t": ten, "l": live, "wp": int(cong_web or 0)}
+    if not live:
+        d.update(h=may, u=user, p=pw)
+    return base64.urlsafe_b64encode(json.dumps(d, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).decode("ascii").rstrip("=")
+
+
+def tach_link_video(l):
+    """rtsp://user:pass@tên-miền:cổng/đường → (user, pass, tên miền). Mật khẩu có thể chứa @ và : nên: user = tới dấu ':' ĐẦU TIÊN,
+    mật khẩu = tới dấu '@' CUỐI CÙNG trước dấu '/' đầu tiên. web/xem.html dùng đúng quy tắc này."""
+    m = re.match(r"^rtsp://(?:([^/]*)@)?([^@/:]+)", l or "")
+    if not m:
+        return "", "", ""
+    tk = m.group(1) or ""
+    u, _, p = tk.partition(":")
+    return u, p, m.group(2)
+
+
+def giai_ma_xem(ma):
+    """Giải mã cam và điền đủ các thứ trang xem hiện ra: w (link trang cam), u, p."""
+    d = json.loads(base64.urlsafe_b64decode(ma + "=" * (-len(ma) % 4)).decode("utf-8"))
+    u, p, h = tach_link_video(d.get("l", ""))
+    d["u"], d["p"], h = d.get("u") or u, d.get("p") or p, d.pop("h", "") or h
+    d["w"] = f"http://{h}:{d.pop('wp')}/" if h and d.get("wp") else ""
+    d.pop("wp", None)
+    return d
+
+
+def _link_cam(dom, http):
+    """Link trang web của cam để in ra chữ (http, theo tên miền + port, không kèm tài khoản)."""
+    return f"http://{dom}:{http}/" if dom and http else ""
 
 
 def du_lieu(goc, ma):
@@ -79,7 +114,7 @@ def du_lieu(goc, ma):
                 out[_so(c.get("so"))] = {"so": _so(c.get("so")), "http": c.get("http"), "rtsp": c.get("rtsp"), "dat": dat_,
                                          "ly_do": "" if dat_ else (c.get("nguyen_nhan") or c.get("nhan") or p.get("tong") or "chưa xem được"),
                                          "anh": f, "gio": (_gio_tep(f) if f else "") or str(kq.get("luc", "")),
-                                         "_tk": (c.get("user") or "", c.get("pass") or "")}
+                                         "_tk": (c.get("user") or "", c.get("pass") or ""), "_live": c.get("live") or ""}
         else:
             try:
                 with open(K._file_so_do(ma, a), encoding="utf-8") as fh:
@@ -92,7 +127,7 @@ def du_lieu(goc, ma):
                 dat_ = bool(c.get("ngoai"))
                 out[_so(c.get("so"))] = {"so": _so(c.get("so")), "http": c.get("http"), "rtsp": c.get("rtsp"), "dat": dat_,
                                          "ly_do": "" if dat_ else (c.get("loi_ngoai") or "chưa xem được qua tên miền"),
-                                         "anh": f, "gio": str(sd.get("luc", ""))}
+                                         "anh": f, "gio": str(sd.get("luc", "")), "_live": c.get("live") or ""}
         can = max([_so(diem[a].get("so"))] + list(T.cam_chung(da, a)) + [0])      # số cam phải có trên modem này
         for n in range(1, can + 1):
             if n not in out:
@@ -102,8 +137,11 @@ def du_lieu(goc, ma):
         cd = C.cd_diem(diem[a], C.doc_cai_dat())          # user/pass cam của điểm này (riêng của điểm nếu có, không thì của hệ thống)
         dom = diem[a].get("domain", "")
         for c in out.values():
-            u, p = c.pop("_tk", ("", ""))      # tài khoản cam chỉ đi vào QR, không giữ trong dữ liệu để khỏi bị in ra chữ
-            c["link"], c["qr"] = _link_cam(dom, c.get("http"), u or cd.get("cam_user", "admin"), p or cd.get("cam_pw", ""))
+            u, p = c.pop("_tk", ("", ""))
+            c["user"], c["pass"] = u or cd.get("cam_user", "admin"), p or cd.get("cam_pw", "")
+            c["link"] = _link_cam(dom, c.get("http"))
+            # link video: đường thật app đã hỏi từ cam ở lượt kiểm (đang phát được ở tab Giám sát); chưa có thì theo quy ước tên miền + cổng video
+            c["_live"] = c.get("_live") or (f"rtsp://{c['user']}:{c['pass']}@{dom}:{c['rtsp']}/" if dom and c.get("rtsp") else "")
         return out
 
     ds = []
@@ -120,6 +158,10 @@ def du_lieu(goc, ma):
             cams = [tat_ca[n] for n in sorted(tat_ca) if n not in cua_ghim_khac]
             ghi = ""
         dom = diem.get(a, {}).get("domain", "")
+        cams = [dict(x) for x in cams]      # bản riêng của ghim này (cam ở ghim dùng chung modem mang tên ghim của nó)
+        for x in cams:
+            live = x.pop("_live", "")
+            x["qr"] = (TRANG_XEM + "#" + ma_xem(da.get("ten", ""), f"{d.get('ten', '')} · Cam {x['so']}", live, x.get("http"), dom, x["user"], x["pass"])) if x["link"] else ""
         ds.append({"stt": k, "ten": d.get("ten", ""), "toa_do": td.get(k) or [], "chi_duong": _chi_duong(td.get(k) or []), "domain": dom, "ghi_chu": ghi, "cam": cams})
     modem = [k for k in diem if not K._chung(diem[k])]
     tat = [c for p in ds for c in p["cam"]]
@@ -160,7 +202,7 @@ def ve_pdf(m, duong):
     khung = lambda cot_dam=True: TableStyle([("GRID", (0, 0), (-1, -1), 0.5, VIEN), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EEF1F4")),
                                             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)])
     t, e = m["tong"], []
-    R_ANH, R_QR = 74 * mm, 30 * mm
+    R_ANH, R_QR = 62 * mm, 38 * mm
     # ---------------- trang tổng
     e += [P(m.get("tieu_de") or TIEU_DE, 16, dam, giua=1), Spacer(1, 2 * mm), P(m["du_an"], 13, dam, giua=1), Spacer(1, 1.5 * mm),
           Paragraph(m["thuc_hien"].replace(TEN_APP, f'<font name="{dam}" color="{MAU_APP}" size="13.5">{TEN_APP}</font>'),
@@ -170,7 +212,7 @@ def ve_pdf(m, duong):
     e += [P(f"{t['dinh_vi']} định vị   ·   {t['cam']} cam   ·   {t['modem']} modem", 12, dam, giua=1), Spacer(1, 1.5 * mm),
           P(f"ĐẠT {t['dat']}/{t['cam']} cam" + ("" if du else f"   ·   CHƯA ĐẠT {t['chua']} cam"), 13, dam, XANH if du else DO, giua=1), Spacer(1, 2 * mm),
           P("Ảnh trong hồ sơ được chụp qua tên miền của từng điểm, từ ngoài mạng (4G) — đúng như đơn vị sử dụng nhìn từ xa.", 9, mau=MO, giua=1), Spacer(1, 1 * mm),
-          P("Quét mã QR cạnh từng cam để vào xem trực tiếp cam đó. Mỗi điểm có link chỉ đường Google Maps. Tài liệu dành cho nhóm cài đặt.", 9, mau=MO, giua=1), Spacer(1, 5 * mm)]
+          P("Quét mã QR cạnh từng cam để xem trực tiếp bằng app CamLink (máy chưa có app sẽ được hướng dẫn). Mỗi điểm có link chỉ đường Google Maps. Tài liệu dành cho nhóm cài đặt.", 9, mau=MO, giua=1), Spacer(1, 5 * mm)]
     dong = [[P(x, 9, dam) for x in ("STT", "Vị trí", "Tên miền", "Cam", "Kết quả")]]
     for p in m["diem"]:
         n, ok = len(p["cam"]), sum(1 for c in p["cam"] if c["dat"])
@@ -210,7 +252,7 @@ def ve_pdf(m, duong):
             bc = Table(dc, colWidths=[18 * mm, 24 * mm, 26 * mm, 28 * mm, 82 * mm], repeatRows=1)
             bc.setStyle(khung())
             e += [bc, Spacer(1, 4 * mm)]
-        # mỗi cam một hàng: ảnh chụp | QR xem trực tiếp | link (chữ, không kèm tài khoản)
+        # mỗi cam một hàng: ảnh chụp | QR xem trực tiếp bằng CamLink | link trang cam + user + mật khẩu (cho người không cài app)
         hang = []
         for c in p["cam"]:
             if not (c["anh"] or c.get("qr")):
@@ -220,19 +262,20 @@ def ve_pdf(m, duong):
                 try:
                     im = Image(c["anh"])
                     ti = im.imageHeight / float(im.imageWidth or 1)
-                    im.drawWidth, im.drawHeight = R_ANH, min(R_ANH * ti, 42 * mm)
+                    im.drawWidth, im.drawHeight = R_ANH, min(R_ANH * ti, 38 * mm)
                     o_anh = im
                 except Exception:
                     o_anh = P("không đọc được ảnh", 8.5, mau=DO)
             o_qr = ""
             if c.get("qr"):
-                w = QrCodeWidget(c["qr"])
+                w = QrCodeWidget(c["qr"], barLevel="L")      # link dài (~290 ký tự): mức sửa lỗi thấp + mã to hơn cho ô vuông đủ lớn để quét
                 x0, y0, x1, y1 = w.getBounds()
                 o_qr = Drawing(R_QR, R_QR, transform=[R_QR / (x1 - x0), 0, 0, R_QR / (y1 - y0), 0, 0])
                 o_qr.add(w)
             chu = [P(f"Cam {c['so']}" + (f" — chụp {c['gio']}" if c["anh"] and c["gio"] else ""), 9.5, dam)]
             if c.get("link"):
-                chu += [P("Quét mã để xem trực tiếp cam này", 8.5, mau=MO), P(c["link"], 9)]
+                chu += [Paragraph(f'Quét mã: xem trực tiếp bằng app <font name="{dam}" color="{MAU_APP}">{TEN_APP}</font>', st(8.5, mau=MO)),
+                        P("Không cài app: mở trang cam, tự nhập", 8.5, mau=MO), P(c["link"], 9), P(f"User: {c['user']}", 9), P(f"Mật khẩu: {c['pass']}", 9)]
             hang.append([o_anh, o_qr, chu])
         if hang:
             e.append(Table(hang, colWidths=[R_ANH + 4 * mm, R_QR + 4 * mm, 178 * mm - R_ANH - R_QR - 8 * mm],

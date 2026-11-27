@@ -71,6 +71,13 @@ jobs:
           echo "${GITHUB_SHA}" > version.txt
           git add . && git commit -qm "APK ${GITHUB_SHA}"
           git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" apk
+      - name: Publish trang xem (web/xem.html) to branch gh-pages
+        run: |
+          mkdir -p /tmp/web && cp web/xem.html /tmp/web/xem.html && touch /tmp/web/.nojekyll
+          cd /tmp/web && git init -q && git checkout -q -b gh-pages
+          git config user.name "camlink-ci" && git config user.email "ci@users.noreply.github.com"
+          git add -A && git commit -qm "Trang xem ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
       - name: Upload build log on failure
         if: failure()
         run: |
