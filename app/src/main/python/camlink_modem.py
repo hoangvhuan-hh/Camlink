@@ -15,10 +15,27 @@ import requests
 MAT_KHAU_XUAT_XUONG = [("admin", "admin")]      # thử tối đa vài cặp để không làm modem khoá đăng nhập
 
 
+def _goc(host, port, https=False):
+    """Địa chỉ gốc trang modem. https=True: cửa từ xa trỏ thẳng vào cổng https của modem (chứng chỉ tự ký)."""
+    gt, mac_dinh = ("https", 443) if https else ("http", 80)
+    return f"{gt}://{host}" if int(port) == mac_dinh else f"{gt}://{host}:{port}"
+
+
+def _cong_cua(goc):
+    """Cổng mà trang quản trị modem đang thật sự phục vụ (sau khi modem tự chuyển http → https nếu có)."""
+    m = re.match(r"(https?)://[^/:]+(?::(\d+))?", goc)
+    return int(m.group(2)) if m and m.group(2) else (443 if m and m.group(1) == "https" else 80)
+
+
 class Bcm:
-    def __init__(self, host, user, pw, port=80, cho=8):
-        self.goc = f"http://{host}:{port}" if int(port) != 80 else f"http://{host}"
+    kieu = "bcm"
+
+    def __init__(self, host, user, pw, port=80, cho=8, https=False):
+        self.goc = _goc(host, port, https)
         self.user, self.pw, self.cho = user or "admin", pw or "", cho
+
+    def cong_web(self):
+        return _cong_cua(self.goc)
 
     def _lay(self, duong, pw=None):
         return requests.get(f"{self.goc}/{duong}", auth=(self.user, self.pw if pw is None else pw), timeout=self.cho)
@@ -55,12 +72,14 @@ class Bcm:
                 out.append((so[0], ip))
         return out
 
-    def them_nat(self, ten, port, ip):
+    def them_nat(self, ten, port, ip, port_trong=None):
+        """port_trong: cổng của máy trong mạng (mặc định = cổng ngoài). Khác cổng ngoài khi mở cửa vào chính trang modem."""
+        trong = int(port_trong or port)
         if (int(port), ip) in self.luat():
             return True, f"modem đã có luật {port} → {ip}"
         k, t = self._khoa("scvrtsrv.html")
         r = self._lay("scvrtsrv.cmd?action=add&srvName=" + requests.utils.quote(ten) + f"&dstWanIf={self.cong_wan(t)}&srvAddr={ip}"
-                      f"&proto=1,&eStart={port},&eEnd={port},&iStart={port},&iEnd={port},&sessionKey={k}")
+                      f"&proto=1,&eStart={port},&eEnd={port},&iStart={trong},&iEnd={trong},&sessionKey={k}")
         ok = (int(port), ip) in self.luat()
         return ok, (f"đã thêm luật mở port {port} → {ip}" if ok else f"modem không nhận luật {port} → {ip} (mã {r.status_code})")
 
@@ -89,8 +108,10 @@ class Owrt:
     AN TOÀN: chỉ thêm luật khi tường lửa của modem ĐÚNG kiểu OpenWrt (có vùng wan + lan); thêm xong đọc lại để kiểm;
     không đổi mật khẩu, không đụng cấu hình khác. CHƯA kiểm trên modem thật — bước nào không qua thì báo rõ bước đó."""
 
-    def __init__(self, host, user, pw, port=80, cho=8):
-        self.goc = f"http://{host}:{port}" if int(port) != 80 else f"http://{host}"
+    kieu = "owrt"
+
+    def __init__(self, host, user, pw, port=80, cho=8, https=False):
+        self.goc = _goc(host, port, https)
         self.user, self.pw, self.cho = user or "admin", pw or "", cho
         self.sid, self.buoc = "", ""      # buoc: câu mô tả chỗ đang kẹt (ghi nhật ký)
         # Mẫu thật 25/11: modem tự chuyển http → https (cổng 443) với chứng chỉ TỰ KÝ → phải bỏ kiểm chứng chỉ (thiết bị trong mạng LAN)
@@ -157,6 +178,9 @@ class Owrt:
     def vao_duoc(self, pw=None):
         return self.nhan_ra() and self.dang_nhap(pw)
 
+    def cong_web(self):
+        return _cong_cua(self.goc)
+
     def tuong_lua(self):
         ma, d = self._ubus("uci", "get", {"config": "firewall"})
         if ma != 0 or not isinstance(d, dict):
@@ -173,7 +197,7 @@ class Owrt:
                     pass
         return out
 
-    def them_nat(self, ten, port, ip):
+    def them_nat(self, ten, port, ip, port_trong=None):
         fw = self.tuong_lua()
         vung = {str(v.get("name")) for v in fw.values() if v.get(".type") == "zone"}
         if not {"wan", "lan"} <= vung:
@@ -185,7 +209,7 @@ class Owrt:
             return False, f"port {port} trên modem đang trỏ về IP khác — kiểm tra lại bằng tay, app không ghi đè"
         ma, d = self._ubus("uci", "add", {"config": "firewall", "type": "redirect", "values": {
             "name": "camlink_" + re.sub(r"[^A-Za-z0-9_]", "_", ten), "target": "DNAT", "src": "wan", "dest": "lan", "proto": "tcp",
-            "src_dport": str(port), "dest_ip": ip, "dest_port": str(port)}})
+            "src_dport": str(port), "dest_ip": ip, "dest_port": str(port_trong or port)}})
         if ma != 0:
             return False, f"modem không cho thêm luật mở port (mã {ma}) — tài khoản không đủ quyền"
         ma, _ = self._ubus("uci", "commit", {"config": "firewall"})
@@ -206,8 +230,10 @@ class VnptLuci:
     → mỗi lượt chỉ thử đăng nhập MỘT lần, xong việc luôn đăng xuất.
     Trang mở port là nat.html ("NAT Forwarding" → Virtual Server): lệnh natvirtualserver.json, xem chú thích ở hàm them_nat."""
 
-    def __init__(self, host, user, pw, port=80, cho=10):
-        self.goc = f"http://{host}:{port}" if int(port) != 80 else f"http://{host}"
+    kieu = "vnpt_ax3000"
+
+    def __init__(self, host, user, pw, port=80, cho=10, https=False):
+        self.goc = _goc(host, port, https)
         self.user, self.pw, self.cho = user or "admin", pw or "", cho
         self.key, self.buoc, self.lan_dau = "", "", False
         self.s = requests.Session()
@@ -281,6 +307,9 @@ class VnptLuci:
     def vao_duoc(self, pw=None):
         return self.nhan_ra() and self.dang_nhap()
 
+    def cong_web(self):
+        return _cong_cua(self.goc)
+
     def dang_xuat(self):
         if not self.key:
             return
@@ -326,8 +355,10 @@ class VnptLuci:
     def luat(self):
         return [(a, ip) for a, b, ip in self._tach(self._bang_nat())]
 
-    def them_nat(self, ten, port, ip):
+    def them_nat(self, ten, port, ip, port_trong=None):
+        """port_trong: cổng của máy trong mạng (mặc định = cổng ngoài). Khác cổng ngoài khi mở cửa vào chính trang modem."""
         port = int(port)
+        trong = int(port_trong or port)
         j = self._bang_nat()
         if str(j.get("enblNat", "1")) != "1":
             return False, "modem đang tắt NAT (đường WAN không phải kiểu định tuyến) → không mở port được trên modem này"
@@ -350,7 +381,7 @@ class VnptLuci:
         chon = next((w for w in wan if any(k in w[0].lower() for k in ("internet", "pppoe", "ipoe", "hsi"))), wan[-1])      # trang modem mặc định chọn dòng cuối
         ten_sach = re.sub(r"[^A-Za-z0-9_]", "_", ten)[:32] or "camlink"
         j2, tho = self.hoi("natvirtualserver.json", f"action=add&serviceName={ten_sach}&dstWanIf={chon[1]}&srvAddr={ip}"
-                                                    f"&proto=1,&eStart={port},&eEnd={port},&iStart={port},&iEnd={port},")
+                                                    f"&proto=1,&eStart={port},&eEnd={port},&iStart={trong},&iEnd={trong},")
         if isinstance(j2, str):
             try:
                 j2 = json.loads(j2)
@@ -367,6 +398,51 @@ class VnptLuci:
         if ok:
             return True, f"đã thêm luật mở port {port} → {ip} trên modem (WAN {chon[1]})"
         return False, f"modem không nhận luật {port} → {ip} (trả lời: {st or tho[:60] or 'trống'})"
+
+
+def vao_tu_xa(host, port, user, pw, kieu="", cho=10):
+    """SỬA TỪ XA: vào trang quản trị modem qua CỬA đã mở lúc cài (tên miền:port → trang modem). Trả (modem đã đăng nhập, "") hoặc (None, lý do).
+    Chỉ thử đăng nhập ĐÚNG MỘT LẦN bằng user/pass modem đã lưu (modem VNPT sai 3 lần khoá 3 phút); xong việc nơi gọi phải đăng xuất.
+    Cửa có thể trỏ vào cổng https hoặc http của modem → thử cả hai cách nói chuyện, chưa đăng nhập gì ở bước nhận ra."""
+    thu_tu = [k for k in (kieu, "vnpt_ax3000", "owrt", "bcm") if k]
+    da = set()
+    for k in thu_tu:
+        if k in da:
+            continue
+        da.add(k)
+        for https in (True, False):
+            try:
+                if k == "vnpt_ax3000":
+                    m = VnptLuci(host, user, pw, port, cho, https)
+                    if not m.nhan_ra():
+                        continue
+                    return (m, "") if m.dang_nhap() else (None, m.buoc or "modem không cho đăng nhập")
+                if k == "owrt":
+                    m = Owrt(host, user, pw, port, cho, https)
+                    if not m.nhan_ra():
+                        continue
+                    return (m, "") if m.dang_nhap() else (None, m.buoc or "modem không cho đăng nhập")
+                if k == "bcm" and not https:
+                    m = Bcm(host, user, pw, port, cho)
+                    if m.vao_duoc():
+                        return m, ""
+                    try:
+                        if requests.get(m.goc + "/scvrtsrv.html", timeout=cho).status_code == 401:
+                            return None, "modem không nhận user/pass modem đã lưu trong app"
+                    except requests.RequestException:
+                        pass
+            except requests.RequestException:
+                continue
+    return None, f"port {port} không dẫn tới trang quản trị modem (cửa đã mất, modem mất cấu hình, hoặc nhà mạng chặn)"
+
+
+def dong(m):
+    """Đăng xuất nếu modem có khái niệm đăng xuất (modem VNPT chỉ cho một nơi đăng nhập một lúc)."""
+    try:
+        if m is not None and hasattr(m, "dang_xuat"):
+            m.dang_xuat()
+    except Exception:
+        pass
 
 
 DA_THU = []        # nhãn các khoá đã thử ở lượt gần nhất (không chứa mật khẩu) — để báo "đã thử những gì"

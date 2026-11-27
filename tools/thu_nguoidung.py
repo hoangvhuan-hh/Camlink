@@ -80,4 +80,18 @@ for ten_da in ("Camera Xa Phu Ly", "Dự án cam an ninh Tà Lài mở rộng"):
        all(c["link"].startswith("http://") and c["qr"].startswith("http://") and c["user"] and "pass" in c for c in cams if c.get("http") and c["link"])
        and all(c["link"] for d in mh["diem"] if d["domain"] for c in d["cam"]) and "litemark" not in json.dumps(mh).lower() and "https://" not in json.dumps(mh)
        and all("qr" not in d for d in mh["diem"]))
+# ---- 2.13.0: trên máy anh Huan Phú Lý cài TAY (chưa có cửa vào modem). Bấm Sửa từ xa ở điểm mất luật mở port → màn báo cáo hiện gì?
+import camlink_tuxa as T
+kq_gia = {"du_an": "Camera Xa Phu Ly", "diem": [{"stt": "6", "ten": "Cột 6", "domain": "pl6.ddns.net", "muc": "vang", "tong": "1/2 cam đạt", "viec": [], "cam": [
+    {"so": 1, "http": 8080, "rtsp": 554, "muc": "xanh", "nhan": "Đạt", "nguyen_nhan": "", "viec": [], "sua": []},
+    {"so": 2, "http": 8081, "rtsp": 5541, "muc": "vang", "nhan": "Không thấy cam / thiếu NAT", "nguyen_nhan": "Modem có mạng nhưng từ chối port 8081", "viec": ["Không vào được web modem: ra điểm chạy lại CamLink."], "sua": ["them_nat"]}]}]}
+quet_lai = []
+goc_kiem = T.kiem_du_an; T.kiem_du_an = lambda *a, **k: quet_lai.append(1) or goc_kiem(*a, **k)
+bc = T.sua_tat_ca(K.GOC, K._doc_du_an(pl), pl, kq_gia, C.doc_cai_dat(), log=lambda s: None)["bao_cao_sua"]
+T.kiem_du_an = goc_kiem
+for b in bc:
+    print("   BÁO CÁO SỬA:", b["diem"], "·", b["cam"], "·", b["ket_qua"]); [print("      →", g) for g in b["giai_phap"]]
+chu = json.dumps(bc, ensure_ascii=False)
+kt("N12: điểm cài tay chưa có cửa modem → báo cáo nói thật 'chưa có cửa vào modem từ xa' + 'Ai xử lý: Cần người tại điểm'; không còn câu 'chờ mẫu modem'; app không quét lại vô ích",
+   len(bc) == 1 and bc[0]["ket_qua"] == "CHƯA" and bc[0]["giai_phap"][0] == "Ai xử lý: Cần người tại điểm" and "chưa có cửa vào modem từ xa" in chu and "chờ mẫu" not in chu and quet_lai == [])
 print(f"\n✓ đi thử như người dùng: {dat}/{dat} đạt")

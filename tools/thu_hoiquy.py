@@ -14,6 +14,7 @@
 #   10 Bấm cài khi chưa có tên miền thì cài mù .................. HQ10 (file này) + thu_tenmien.py
 #   11 Cam nằm ở ghim khác ghim đặt modem → báo "thiếu tên miền" . thu_chungmodem.py (Tà Lài 6 định vị · 6 cam · 5 modem)
 #   12 Bấm "điểm lỗi" ở Trang chủ lại hỏi chọn dự án (cả dự án chưa cài) . thu_diemloi.py
+#   13 Sửa từ xa không bao giờ chạy 2 việc trên modem (mất luật mở port vẫn bảo "ra điểm") . thu_suamodem.py (M1, M2)
 import os, sys, json, shutil, tempfile, time, socket
 os.environ["CAMLINK_THU_NOI_BO"] = "1"
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "../app/src/main/python"))

@@ -67,3 +67,5 @@ python3 tools/chay_test.py thu_hoiquy     # một bài
   Đặt tên theo thứ nó LÀ (trạng thái hiện tại), không theo một dịp dùng nó.
 - 26/11/2026 — QR hồ sơ trỏ sang LiteMark: người không dùng LiteMark quét ra không xem được gì; anh Huan đổi thành QR từng cam = link http kèm user/mật khẩu cam.
   Thứ đưa cho người ngoài (file, QR, link) phải dùng được mà KHÔNG cần cài app nào của mình; và mức bảo mật theo giai đoạn do anh Huan quyết, không tự siết.
+- 27/11/2026 — "Sửa từ xa" có sẵn 2 việc trên modem nhưng danh sách việc-được-chạy không chứa chúng → chưa từng chạy lần nào, và tôi còn đề xuất "nhờ người tại điểm" cho app sửa TỪ XA.
+  Tính năng nào cũng phải có bài thử đi TRỌN đường (hỏng thật → bấm nút → hết hỏng) trên thiết bị giả có tác dụng thật; và đề xuất phải đứng ở vai người dùng của app (thợ ở xa), không phải vai người viết code.

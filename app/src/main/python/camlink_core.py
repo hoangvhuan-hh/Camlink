@@ -321,6 +321,8 @@ def chay(ma, stt, may_ip, gw, log):
         da.setdefault("ho_so", {})[stt] = {"luc": time.strftime("%d/%m/%Y %H:%M"), "wan": k.get("wan", ""),
                                            "gw": k.get("gw", ""), "upnp": k.get("upnp"), "luat": k.get("luat", []),
                                            "web_modem": k.get("web_modem", 0), "viec_con": k.get("viec_con", []), "bao_cao": k.get("bao_cao", []),
+                                           "wan_modem": k.get("wan_modem", ""), "ip_ngoai": k.get("ip_ngoai", ""), "modem_kieu": k.get("modem_kieu", ""),
+                                           "sua_tu_xa": k.get("sua_tu_xa") or {},
                                            "cam": [{"so": c["so"], "ip": c["ip"], "mac": c.get("mac", ""),
                                                     "model": c.get("model", "")} for c in k.get("cam", [])]}
         # Số cam của điểm theo SỰ THẬT vừa đếm tại chỗ: file/ghim ghi ít hơn (vd "0 cam") thì nâng lên, để Giám sát / Kiểm tra từ xa
@@ -586,6 +588,10 @@ def bang_chung(ma, stt, log):
                 m = "port vẫn mở nhưng user/pass cam trong app SAI → sửa ở nút User / pass"
             c["loi_ngoai"] = m[:160]
             C.log(f"   ✖ Cam {c['so']}: {c['loi_ngoai']}")
+    try:
+        _thu_cua_modem(ma, stt, da, kq, ip, chua_tro)      # 2.13.0: đang ở 4G → thử luôn cửa vào modem từ ngoài
+    except Exception as e:
+        C.log(f"   · Thử cửa vào modem từ xa lỗi: {str(e)[:100]}")
     kq["luc"] = time.strftime("%d/%m/%Y %H:%M")
     with open(_file_so_do(ma, stt), "w", encoding="utf-8") as fh:
         json.dump(kq, fh, ensure_ascii=False)
@@ -593,6 +599,55 @@ def bang_chung(ma, stt, log):
     C.log(f"   → Xem được từ ngoài: {n}/{len(kq['cam'])} cam")
     ho_so_tu_dong(ma)      # cam lên → hồ sơ hệ thống tự cập nhật
     return json.dumps(kq, ensure_ascii=False)
+
+
+def _thu_cua_modem(ma, stt, da, kq, ip_ten_mien, chua_tro):
+    """Thử VÀO MODEM TỪ NGOÀI qua cửa đã mở lúc cài (đúng một lần đăng nhập, xong đăng xuất) → ghi 'Sửa modem từ xa: ĐƯỢC / CHƯA + lý do'
+    vào kết quả và hồ sơ điểm. Hai IP (IP WAN trên modem, IP nhìn từ ngoài) chỉ dùng để GIẢI THÍCH khi thử không qua."""
+    import camlink_modem
+    hs = (da.get("ho_so") or {}).get(stt) or {}
+    wm = int(kq.get("web_modem") or hs.get("web_modem") or 0)
+    truoc = kq.get("sua_tu_xa") or hs.get("sua_tu_xa") or {}
+    d = da["diem"][stt]
+    dom = d["domain"]
+    if not wm:
+        if not hs and "web_modem" not in kq:      # điểm cài tay, app chưa từng chạy cài ở đây → không có gì để thử
+            return
+        kq["sua_tu_xa"] = {"duoc": False, "ly_do": truoc.get("ly_do") or "lúc cài chưa mở được cửa vào modem từ xa"}
+    elif not ip_ten_mien or chua_tro:
+        kq["sua_tu_xa"] = {"duoc": False, "ly_do": "tên miền chưa trỏ về điểm nên chưa thử được cửa vào modem — bấm Kiểm tra từ xa sau ít phút"}
+    else:
+        cd = C.cd_diem(d, C.doc_cai_dat())
+        C.log(f"   thử vào modem từ ngoài qua {dom}:{wm} …")
+        m, ly = camlink_modem.vao_tu_xa(dom, wm, cd.get("modem_user", "admin"), cd.get("modem_pw", ""), kq.get("modem_kieu") or hs.get("modem_kieu") or "")
+        if m is not None:
+            try:
+                m.luat()
+                kq["sua_tu_xa"] = {"duoc": True, "ly_do": ""}
+            except Exception as e:
+                kq["sua_tu_xa"] = {"duoc": False, "ly_do": f"vào được modem từ ngoài nhưng không đọc được bảng mở port ({str(e)[:60]})"}
+            finally:
+                camlink_modem.dong(m)
+        else:
+            wan_m, ngoai = str(kq.get("wan_modem") or hs.get("wan_modem") or ""), str(kq.get("ip_ngoai") or hs.get("ip_ngoai") or "")
+            if wan_m and ngoai and wan_m != ngoai:
+                ly += (f". IP WAN trên modem là {wan_m} nhưng IP nhìn từ ngoài là {ngoai} → nhà mạng đang cấp IP dùng chung, kết nối từ ngoài không tới được modem; "
+                       "chỉ nhà mạng gỡ được (xin IP riêng cho đường truyền)")
+            kq["sua_tu_xa"] = {"duoc": False, "ly_do": ly}
+    st = kq["sua_tu_xa"]
+    C.log(f"   {'✔' if st['duoc'] else '✖'} Sửa modem từ xa: {'ĐƯỢC' if st['duoc'] else 'CHƯA — ' + st['ly_do']}")
+    for b in kq.get("bao_cao") or []:
+        if b.get("ngan") == "Sửa modem từ xa":
+            b["xong"], b["ly_do"] = bool(st["duoc"]), "" if st["duoc"] else st["ly_do"]
+    if hs:      # lưu vào hồ sơ điểm: lần sau bấm Sửa từ xa app biết điểm này có cửa hay không
+        da_moi = _doc_du_an(ma)
+        h2 = (da_moi.get("ho_so") or {}).get(stt)
+        if h2 is not None:
+            h2["sua_tu_xa"] = dict(st)
+            for b in h2.get("bao_cao") or []:
+                if b.get("ngan") == "Sửa modem từ xa":
+                    b["xong"], b["ly_do"] = bool(st["duoc"]), "" if st["duoc"] else st["ly_do"]
+            _ghi_du_an(ma, da_moi)
 
 
 def so_do_gan_nhat():

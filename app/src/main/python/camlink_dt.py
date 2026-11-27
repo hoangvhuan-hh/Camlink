@@ -741,24 +741,6 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
         ma, t = upnp_goi(igd, "GetExternalIPAddress", {})
         m = re.search(r"<NewExternalIPAddress>(.*?)<", t)
         wan = m and m.group(1)
-        # 2.8 — mở quản trị modem từ xa: chỉ khi mật khẩu modem KHÔNG còn mặc định/yếu
-        if pass_modem_yeu(modem_user, modem_pw):
-            log("   ⚠ CHƯA mở quản trị modem từ xa: mật khẩu modem còn mặc định/yếu — mở ra Internet là bị chiếm modem. "
-                "Đổi mật khẩu modem (từ 8 ký tự), nhập mật khẩu mới vào app rồi chạy lại điểm này.")
-        else:
-            try:
-                ma, t = upnp_goi(igd, "AddPortMapping", {"NewRemoteHost": "", "NewExternalPort": PORT_WEB_MODEM, "NewProtocol": "TCP",
-                                 "NewInternalPort": 80, "NewInternalClient": gw, "NewEnabled": 1,
-                                 "NewPortMappingDescription": "camlink_modem", "NewLeaseDuration": 0})
-                if ma == 200 or "718" in t or "Conflict" in t:
-                    web_modem = PORT_WEB_MODEM
-                    log(f"   ✔ Mở quản trị modem từ xa: {d['domain']}:{PORT_WEB_MODEM} → trang modem {gw} (đăng nhập bằng mật khẩu modem)")
-                else:
-                    log("   ⚠ Modem không cho mở port vào chính nó qua UPnP → muốn quản trị modem từ xa phải bật 'Remote management' "
-                        "trong trang modem (app cần mẫu modem này để tự bật).")
-                    CAN_MAU.append("modem")
-            except Exception as e:
-                log(f"   ⚠ Mở quản trị modem từ xa lỗi: {str(e)[:80]}")
     else:
         if mdm is not None:
             dem = 0
@@ -778,6 +760,8 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
         else:
             log("   ⚠ Modem tắt UPnP → tạm mở port tay theo bảng dưới (Virtual Servers)")
             CAN_MAU.append("modem")
+    # 2.13.0 — CỬA VÀO MODEM TỪ XA (để sau này sửa modem không phải ra điểm): UPnP trước, không được thì qua trang quản trị modem
+    web_modem, ly_do_cua = mo_cua_modem(mdm, igd, gw, modem_user, modem_pw)
     try:      # modem chỉ cho một nơi đăng nhập một lúc → app xong việc phải đăng xuất, kẻo người dùng không vào được trang modem
         if mdm is not None and hasattr(mdm, "dang_xuat"):
             mdm.dang_xuat()
@@ -796,30 +780,21 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
 
     tien_do(88)
     log("-- Kiểm tra")
-    wan_ngoai = False
-    if not wan:      # modem không cho đọc IP WAN (UPnP tắt, chưa vào được trang modem) → hỏi Internet "IP công cộng của mạng này là gì"
-        log("   hỏi IP công cộng của điểm …")
-        for u in ("https://api.ipify.org", "https://checkip.amazonaws.com", "https://ifconfig.me/ip"):
-            try:
-                t = requests.get(u, timeout=6).text.strip()
-                if re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", t):
-                    wan, wan_ngoai = t, True
-                    break
-            except requests.RequestException:
-                pass
-        if not wan:
-            log("   ⚠ Chưa biết IP công cộng của điểm (modem chưa có Internet?) → chưa đối chiếu được tên miền")
+    wan_modem = wan or ""      # IP WAN modem tự báo (qua UPnP); có thể là IP nội bộ của nhà mạng
+    log("   hỏi IP của điểm nhìn từ ngoài …")
+    ip_ngoai = hoi_ip_ngoai()
+    if wan_modem or ip_ngoai:
+        log(f"   IP WAN trên modem: {wan_modem or '(modem không cho đọc)'} · IP nhìn từ ngoài: {ip_ngoai or '(chưa hỏi được)'}"
+            + (" — hai IP khác nhau: app chỉ ghi lại, lát nữa thử vào từ ngoài rồi mới kết luận" if wan_modem and ip_ngoai and wan_modem != ip_ngoai else ""))
+    else:
+        log("   ⚠ Chưa biết IP của điểm (modem chưa có Internet?) → chưa đối chiếu được tên miền")
+    wan = ip_ngoai or wan_modem      # tên miền (DDNS) bám theo IP nhìn từ ngoài
     if wan:
-        a = ipaddress.ip_address(wan)
-        if a.is_private or a in ipaddress.ip_network("100.64.0.0/10"):
-            log(f"   ✖ CGNAT: IP WAN {wan} là IP nội bộ nhà mạng → gọi nhà mạng xin IP public")
-        else:
-            log(f"   IP WAN {wan}")
-            try:
-                ip_dom = socket.gethostbyname(d["domain"])
-            except OSError:
-                ip_dom = None
-            log(f"   {'✔' if ip_dom == wan else '⚠'} {d['domain']} → {ip_dom} (cần {wan}; DDNS có thể mất 1–5 phút)")
+        try:
+            ip_dom = socket.gethostbyname(d["domain"])
+        except OSError:
+            ip_dom = None
+        log(f"   {'✔' if ip_dom == wan else '⚠'} {d['domain']} → {ip_dom} (cần {wan}; DDNS có thể mất 1–5 phút)")
     # BÁO CÁO TỪNG VIỆC (Huan chốt 25/11): việc nào hoàn tất báo ĐÃ HOÀN TẤT, việc nào chưa báo CHƯA kèm lý do
     bao_cao = []
     for k in ket_qua:
@@ -841,8 +816,12 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
     if luat:
         bao_cao.append({"ngan": "Mở port modem", "viec": f"Mở {len(luat)} port trên modem (" + ", ".join(str(p) for _, p, _ in luat) + ")", "xong": da_mo >= len(luat),
                         "ly_do": "" if da_mo >= len(luat) else f"mới mở {da_mo}/{len(luat)} — " + ("chưa đăng nhập được modem" if mdm is None else "modem không nhận lệnh thêm luật")})
+    bao_cao.append({"ngan": "Sửa modem từ xa", "viec": f"Mở cửa vào modem từ xa (port {PORT_WEB_MODEM}) để sau này sửa modem không phải ra điểm",
+                    "xong": bool(web_modem), "ly_do": "" if web_modem else ly_do_cua})
     global KQ_CUOI
-    KQ_CUOI = {"stt": stt, "ten": d["ten"], "domain": d["domain"], "gw": gw, "wan": wan or "", "web_modem": web_modem,
+    KQ_CUOI = {"stt": stt, "ten": d["ten"], "domain": d["domain"], "gw": gw, "wan": wan or "", "wan_modem": wan_modem, "ip_ngoai": ip_ngoai,
+               "web_modem": web_modem, "modem_kieu": getattr(mdm, "kieu", "") if mdm is not None else "",
+               "sua_tu_xa": {"duoc": None, "ly_do": "" if web_modem else ly_do_cua},
                "upnp": bool(igd), "luat": [{"ten": t, "port": p, "ip": ip} for t, p, ip in luat], "viec_con": list(VIEC_CON), "bao_cao": bao_cao,
                "cam": [{"so": k["so"], "ip": k["ip"], "http": k["http"], "rtsp": k["rtsp"], "model": k.get("model", ""),
                         "mac": k.get("mac", ""), "ok": bool(k.get("ok")), "ghi": "; ".join(k["ghi"])} for k in ket_qua]}
@@ -869,6 +848,60 @@ def chay(stt, cam_user, cam_pw, modem_user, modem_pw, ds_ip=None):
     log(f"Đã lưu nhật ký: {f}")
     tien_do(92)
     tu_thu_mau(cam_user, cam_pw)
+
+
+def hoi_ip_ngoai():
+    """IP công cộng của mạng đang dùng, do Internet nhìn thấy. '' nếu không hỏi được."""
+    for u in ("https://api.ipify.org", "https://checkip.amazonaws.com", "https://ifconfig.me/ip"):
+        try:
+            t = requests.get(u, timeout=6).text.strip()
+            if re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", t):
+                return t
+        except requests.RequestException:
+            pass
+    return ""
+
+
+def mo_cua_modem(mdm, igd, gw, modem_user, modem_pw, log=None):
+    """Mở CỬA VÀO MODEM TỪ XA: port ngoài PORT_WEB_MODEM → trang quản trị của chính modem. Trả (port đã mở | 0, lý do nếu chưa mở).
+    Thứ tự: UPnP → trang quản trị modem (đã đăng nhập bằng tài khoản modem người dùng nhập). Mật khẩu modem còn yếu thì KHÔNG mở."""
+    log = log or globals()["log"]
+    if pass_modem_yeu(modem_user, modem_pw):
+        log("   ⚠ CHƯA mở cửa vào modem từ xa: mật khẩu modem còn mặc định/yếu — mở ra Internet là bị chiếm modem. "
+            "Đổi mật khẩu modem (từ 8 ký tự), nhập mật khẩu mới vào app rồi chạy lại điểm này.")
+        return 0, "mật khẩu modem còn mặc định/yếu nên app không mở modem ra Internet — đổi mật khẩu modem (từ 8 ký tự) rồi cài lại"
+    cong_trong = 80
+    try:
+        if mdm is not None and hasattr(mdm, "cong_web"):
+            cong_trong = int(mdm.cong_web())
+    except Exception:
+        pass
+    ly_do = ""
+    if igd:
+        try:
+            ma, t = upnp_goi(igd, "AddPortMapping", {"NewRemoteHost": "", "NewExternalPort": PORT_WEB_MODEM, "NewProtocol": "TCP",
+                             "NewInternalPort": cong_trong, "NewInternalClient": gw, "NewEnabled": 1,
+                             "NewPortMappingDescription": "camlink_modem", "NewLeaseDuration": 0})
+            if ma == 200 or "718" in t or "Conflict" in t:
+                log(f"   ✔ Mở cửa vào modem từ xa (UPnP): port {PORT_WEB_MODEM} → trang modem {gw}:{cong_trong}")
+                return PORT_WEB_MODEM, ""
+            ly_do = "modem không cho mở port vào chính nó qua UPnP"
+        except Exception as e:
+            ly_do = f"UPnP lỗi: {str(e)[:60]}"
+    if mdm is not None:
+        try:
+            ok, tb = mdm.them_nat("camlink_modem", PORT_WEB_MODEM, gw, cong_trong)
+        except Exception as e:
+            ok, tb = False, str(e)[:100]
+        if ok:
+            log(f"   ✔ Mở cửa vào modem từ xa (qua trang modem): port {PORT_WEB_MODEM} → trang modem {gw}:{cong_trong}")
+            return PORT_WEB_MODEM, ""
+        ly_do = f"modem không nhận luật mở cửa vào chính nó ({tb})"
+        CAN_MAU.append("modem")
+    elif not ly_do:
+        ly_do = "app chưa đăng nhập được trang quản trị modem và modem tắt UPnP"
+    log(f"   ⚠ Chưa mở được cửa vào modem từ xa: {ly_do}")
+    return 0, ly_do
 
 
 def tu_thu_mau(cam_user, cam_pw):
@@ -920,6 +953,25 @@ def _thu_modem(z, thu_muc, goc, tk):
                         lenh.update(re.findall(r'send_http_request\(\s*["\']([A-Za-z0-9_./-]+)["\']', r.text))
                 except Exception as e:
                     ghi(f"trang_{ten_file(trang)}.LOI.txt", str(e)[:300])
+            # 2.13.0 — mã (JS) của các trang còn lại để bổ sung lệnh: khởi động lại, danh sách thiết bị, quản trị từ xa.
+            # Chỉ lấy tệp mã tĩnh (không gọi lệnh nào); bỏ hẳn trang có mật khẩu (WAN/PPPoE, WiFi, tài khoản, TR-069, VoIP).
+            ne = ("wan", "wifi", "wlan", "wireless", "pppoe", "pass", "account", "user", "tr069", "voip", "ssid", "login")
+            try:
+                r = v.lay("home.html")
+                trang_khac = [t for t in dict.fromkeys(re.findall(r'(?:src|href)=["\']([^"\'#?]+\.html)', r.text, re.I))
+                              if not any(k in t.lower() for k in ne)][:40]
+                for trang in trang_khac:
+                    try:
+                        r1 = v.lay(trang.lstrip("/"))
+                        for src in re.findall(r'(?:src|href)=["\']([^"\']+\.js)', r1.text, re.I):
+                            if src in da_lay or "jquery" in src or "bootstrap" in src or any(k in src.lower() for k in ne):
+                                continue
+                            da_lay.add(src)
+                            ghi(f"js_{ten_file(src)}.txt", v.lay(src.lstrip("/")).text)
+                    except Exception as e:
+                        ghi(f"trang_{ten_file(trang)}.LOI.txt", str(e)[:300])
+            except Exception as e:
+                ghi("trang_home.LOI.txt", str(e)[:300])
             ghi("nat_cac_lenh.json", sorted(lenh))
             cam_goi = ("cmd", "send", "add", "del", "remove", "set", "save", "apply", "reset", "reboot", "restore", "update", "upgrade", "enable", "disable", "edit", "change", "logout", "login")
             for ten in sorted(lenh | {"support.json"}):      # chỉ gọi lệnh ĐỌC (.json, tên không mang nghĩa ghi/xoá/đổi)

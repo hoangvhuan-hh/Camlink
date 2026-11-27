@@ -205,10 +205,10 @@ def _kiem_diem_goc(stt, d, cd, anh_dir, ma, ho_so=None):
              "t_http": "", "t_rtsp": "", "ms_http": 0, "ms_rtsp": 0, "onvif": "", "bang_chung": []} for i in range(so)]
     kq["cam"] = cams
 
-    def ca_diem(muc, tong, nguyen, viec):
+    def ca_diem(muc, tong, nguyen, viec, sua=None):
         kq.update(muc=muc, tong=tong, viec=viec)
         for c in cams:
-            _ket(c, muc, nguyen, viec, nhan=tong)
+            _ket(c, muc, nguyen, viec, sua, nhan=tong)
         return _xong(kq)
 
     # Tầng 1 — tên miền
@@ -270,8 +270,11 @@ def _kiem_diem_goc(stt, d, cd, anh_dir, ma, ho_so=None):
         if ho_so and ho_so.get("wan") and ho_so["wan"] != ip:
             viec.insert(0, f"Lúc cài IP WAN là {ho_so['wan']}, nay tên miền trỏ {ip} → nghiêng về (b).")
         kq["quet"]["ip_song"] = [x for x in cong if ket[x][0] != "im_lang"]
+        cua_song = bool(wm) and ket.get(wm, ("",))[0] == "mo"      # cửa vào modem còn thông → app soát và mở lại luật trên modem được
+        if cua_song:
+            viec.insert(0, "Cửa vào modem từ xa còn thông → bấm Sửa từ xa: app vào modem soát và mở lại các luật mở port của cam (modem mất / sai cấu hình là sửa được ngay).")
         return ca_diem(DO, "KHÔNG CAM NÀO TRẢ LỜI (IP còn sống)",
-                       f"IP {ip} có trả lời ở port {', '.join(map(str, kq['quet']['ip_song']))} nhưng mọi port cam đều im lặng", viec)
+                       f"IP {ip} có trả lời ở port {', '.join(map(str, kq['quet']['ip_song']))} nhưng mọi port cam đều im lặng", viec, ["them_nat"] if cua_song else None)
 
     # cam phát hiện thêm ở port không có trong cấu hình
     du_kien = {c["http"] for c in cams}
@@ -298,9 +301,10 @@ def _kiem_diem_goc(stt, d, cd, anh_dir, ma, ho_so=None):
                 c["tung_thay"] = bool(tung)   # sẽ bổ sung từ lịch sử kiểm ở kiem_du_an
                 _ket(c, DO, f"IP của điểm còn trả lời nhưng port {c['http']} (cam {c['so']}) KHÔNG trả lời → cam mất nguồn/lỏng dây/đổi IP, "
                             f"HOẶC modem chưa mở port này (modem VNPT không báo từ chối nên từ ngoài không phân biệt được)",
-                     goi_y + [f"Gọi người tại điểm kiểm tra đèn nguồn cam {c['so']} và dây mạng/PoE.",
-                              "Nếu cam vẫn sáng: kiểm tra luật mở port trên modem, hoặc cam bị reset IP → ra điểm chạy lại CamLink.",
-                              "Có web modem: bấm Sửa từ xa để khởi động lại modem."], ["khoi_dong_modem"], "Cam không trả lời")
+                     goi_y + ([f"Bấm Sửa từ xa: app vào modem soát luật mở port {c['http']}/{c['rtsp']} — mất thì mở lại; luật đúng thì là cam {c['so']} mất nguồn / lỏng dây."] if wm else [])
+                     + [f"Gọi người tại điểm kiểm tra đèn nguồn cam {c['so']} và dây mạng/PoE.",
+                        "Nếu cam vẫn sáng: kiểm tra luật mở port trên modem, hoặc cam bị reset IP → ra điểm chạy lại CamLink."]
+                     + ([] if wm else ["Có web modem: bấm Sửa từ xa để khởi động lại modem."]), ["them_nat"] if wm else ["khoi_dong_modem"], "Cam không trả lời")
             else:
                 _ket(c, VANG, f"Port {c['http']} mở nhưng không phải cam trả lời (ONVIF tắt hoặc cam treo)",
                      [f"Mở web {c['web']} xem có vào được không.", "Bấm Sửa từ xa để khởi động lại modem; còn lỗi thì ra điểm khởi động lại cam."],
@@ -1133,7 +1137,7 @@ def xuat_excel(goc, ket_qua):
 
 # ------------------------------------------------------------------ sửa từ xa
 TEN_SUA = {"dat_port_http": "Đặt lại port web/video đúng cấu hình", "khoi_phuc_mang": "Khôi phục gateway + DNS trong cam", "khoi_dong_cam": "Khởi động lại cam", "dat_port_rtsp": "Đặt lại port RTSP cho cam",
-           "them_nat": "Thêm luật mở port trên modem", "khoi_dong_modem": "Khởi động lại modem",
+           "them_nat": "Soát / mở lại port trên modem", "khoi_dong_modem": "Khởi động lại modem",
            "nhap_lai_ddns": "Nhập lại DDNS trên cam 1"}
 
 
@@ -1185,28 +1189,83 @@ def sua(d, so, viec, cd, log=print, gw_dung=""):
         if viec == "nhap_lai_ddns":
             host = d.get("_host") or dom      # tên miền hỏng thì đi vào cam bằng IP dự phòng
             return nhap_ddns_qua(host, http, cd.get("cam_user", "admin"), cd.get("cam_pw", ""), dom, d.get("u", ""), d.get("p", ""))
-        if viec in ("them_nat", "khoi_dong_modem") and int((d.get("_hs") or {}).get("web_modem") or 0):
-            import camlink_modem      # điểm đã mở quản trị modem từ xa lúc cài → điều khiển modem qua port đó
-            hs = d["_hs"]
-            m = camlink_modem.Bcm(d.get("_host") or dom, cd.get("modem_user", "admin"), cd.get("modem_pw", ""), int(hs["web_modem"]))
-            if not m.vao_duoc():
-                return False, f"Không vào được trang quản trị modem qua port {hs['web_modem']} (modem đổi mật khẩu, mất luật mở port, hoặc khác kiểu) → ra điểm chạy lại CamLink."
-            if viec == "khoi_dong_modem":
-                return m.khoi_dong()
-            ip_cam = next((x.get("ip") for x in hs.get("luat", []) if int(x.get("port") or 0) in (rtsp, http)), "") or \
-                next((x.get("ip") for x in hs.get("cam", []) if int(x.get("so") or 0) == int(so)), "")
-            if not ip_cam:
-                return False, "Hồ sơ điểm không có IP trong của cam này → ra điểm chạy lại CamLink."
-            ok1, tb1 = m.them_nat(f"cam{so}", http, ip_cam)
-            ok2, tb2 = m.them_nat(f"cam{so}_rtsp", rtsp, ip_cam)
-            return ok1 and ok2, f"{tb1}; {tb2}"
-        if viec in ("them_nat", "khoi_dong_modem"):
-            return False, ("App chưa có lệnh điều khiển modem VNPT từ xa (đang chờ mẫu modem). Tạm thời: "
-                           + ("ra điểm chạy lại CamLink để mở port." if viec == "them_nat"
-                              else "nhờ người tại điểm rút điện modem 10 giây rồi cắm lại."))
+        if viec in VIEC_MODEM:
+            return sua_modem(d, so, viec, cd, http, rtsp)
         return False, f"Không có thao tác {viec}"
     except Exception as e:
         return False, f"{TEN_SUA.get(viec, viec)} lỗi: {str(e)[:120]}"
+
+
+VIEC_MODEM = ("them_nat", "khoi_dong_modem")
+CHUA_CO_CUA = ("Điểm này chưa có cửa vào modem từ xa (cài tay, hoặc lúc cài modem không cho mở) → chưa sửa modem từ xa được. "
+               "Lần tới ghé điểm, chạy CamLink một lượt để app mở cửa này.")
+
+
+def co_cua(ho_so):
+    return int((ho_so or {}).get("web_modem") or 0)
+
+
+def sua_modem(d, so, viec, cd, http, rtsp):
+    """2.13.0 — sửa TRÊN MODEM từ xa, qua cửa đã mở lúc cài (tên miền:port → trang quản trị modem). Trả (xong, thông báo).
+    them_nat = SOÁT luật mở port của cam này: thiếu → thêm lại; trỏ sai → báo đúng luật sai; đúng cả → cam không còn trên mạng (cần người tại điểm).
+    Đăng nhập đúng MỘT lần, xong luôn đăng xuất."""
+    import camlink_modem
+    hs = d.get("_hs") or {}
+    wm = co_cua(hs)
+    if not wm:
+        return False, CHUA_CO_CUA
+    kieu = hs.get("modem_kieu") or ""
+    if viec == "khoi_dong_modem" and kieu and not hasattr({"vnpt_ax3000": camlink_modem.VnptLuci, "owrt": camlink_modem.Owrt, "bcm": camlink_modem.Bcm}.get(kieu), "khoi_dong"):
+        return False, "App chưa có lệnh khởi động lại cho loại modem này (cần mẫu trang modem — lần tới ở điểm bấm 'Thu mẫu thiết bị' gửi Claude). Chưa gửi lệnh nào tới modem."
+    m, ly = camlink_modem.vao_tu_xa(d.get("_host") or d["domain"], wm, cd.get("modem_user", "admin"), cd.get("modem_pw", ""), kieu)
+    if m is None:
+        return False, f"Không vào được modem qua cửa từ xa (port {wm}): {ly}"
+    try:
+        if viec == "khoi_dong_modem":
+            if not hasattr(m, "khoi_dong"):
+                return False, "App chưa có lệnh khởi động lại cho loại modem này (cần mẫu trang modem). Chưa gửi lệnh khởi động lại."
+            return m.khoi_dong()
+        ip_cam = next((x.get("ip") for x in hs.get("cam", []) if int(x.get("so") or 0) == int(so)), "") or \
+            next((x.get("ip") for x in hs.get("luat", []) if int(x.get("port") or 0) in (rtsp, http)), "")
+        if not ip_cam:
+            return False, "Hồ sơ điểm không có IP trong của cam này → ra điểm chạy lại CamLink."
+        co = m.luat()
+        dung, them, sai, hong = [], [], [], []
+        for ten, p in ((f"cam{so}", http), (f"cam{so}_rtsp", rtsp)):
+            if (int(p), ip_cam) in co:
+                dung.append(p)
+                continue
+            khac = [x for q, x in co if int(q) == int(p)]
+            if khac:
+                sai.append(f"port {p} đang trỏ về {khac[0]} (cần {ip_cam})")
+                continue
+            ok, tb = m.them_nat(ten, p, ip_cam)
+            (them if ok else hong).append(p if ok else tb)
+        if sai:
+            return False, ("Luật mở port trên modem SAI: " + "; ".join(sai) + " → app chưa có lệnh xoá luật của modem này nên không ghi đè; "
+                           "xoá luật sai trên trang modem (hoặc ra điểm chạy lại CamLink)." + (f" Đã thêm lại port {', '.join(map(str, them))}." if them else ""))
+        if hong:
+            return False, "Modem không nhận luật mở port: " + "; ".join(hong)
+        if them:
+            return True, f"đã mở lại port {', '.join(map(str, them))} → {ip_cam} trên modem" + (f" (port {', '.join(map(str, dung))} vẫn đúng)" if dung else "")
+        return False, (f"Luật mở port trên modem ĐÚNG ({http}, {rtsp} → {ip_cam}) → cam {so} không còn trả lời trong mạng của điểm: "
+                       "cam mất nguồn / lỏng dây / cam bị đổi IP → cần người tại điểm kiểm tra nguồn và dây cam.")
+    finally:
+        camlink_modem.dong(m)
+
+
+def ai_xu_ly(p, c, da_lam=None):
+    """Lỗi này thuộc ai: nhà mạng / điện lực · sửa từ xa được · cần người tại điểm · người giữ tài khoản."""
+    tong, nhan, chu = str((p or {}).get("tong", "")), str((c or {}).get("nhan", "")), " ".join(da_lam or [])
+    if "MẤT ĐIỆN / MẤT MẠNG" in tong or "IP NỘI BỘ" in tong:
+        return "Nhà mạng / điện lực"
+    if "TÊN MIỀN KHÔNG HOẠT ĐỘNG" in tong or "Sai user/pass" in nhan or "Không vào được modem" in chu:
+        return "Người giữ tài khoản (No-IP / mật khẩu cam, modem)"
+    if "cần người tại điểm" in chu or "chưa có cửa vào modem" in chu or "ra điểm" in chu:
+        return "Cần người tại điểm"
+    if any(v in CHAY_DUOC or v in VIEC_MODEM for v in (c or {}).get("sua", [])):
+        return "Sửa từ xa được (bấm Sửa từ xa lần nữa)"
+    return "Cần người tại điểm"
 
 
 # ------------------------------------------------------------------ SỬA TẤT CẢ (người dùng bấm)
@@ -1240,16 +1299,18 @@ def sua_tat_ca(goc, da, ma, kq, cd, log=print, chi_diem=None):
     """Gom MỌI vấn đề trong kết quả kiểm tra → chạy hết các cách sửa app làm được → kiểm tra lại →
     báo cáo từng vấn đề: HOÀN THÀNH, hoặc CHƯA kèm nguyên nhân + giải pháp."""
     diem = da["diem"]
+    hs_all = da.get("ho_so") or {}
+    duoc = lambda stt, v: v in CHAY_DUOC or v in VIEC_MODEM      # việc trên modem: điểm chưa có cửa thì sua() tự nói rõ, không đăng nhập mò
     muc_sua, dong_diem = [], set()
     for p in kq["diem"]:
         if chi_diem and p["stt"] not in chi_diem:      # sửa đúng (các) điểm được chỉ định; điểm khác không đụng tới
             continue
         ca_diem = p["muc"] == DO and p["tong"].isupper() and not any(c["muc"] == XANH for c in p["cam"])
         cams = [c for c in p["cam"] if c["muc"] != XANH]
-        if ca_diem and cams:
+        if ca_diem and cams and not any("them_nat" in c.get("sua", []) for c in cams):      # soát modem thì phải làm cho TỪNG cam
             cams = cams[:1]
         for c in cams:
-            chay = [v for v in c.get("sua", []) if v in CHAY_DUOC]
+            chay = [v for v in c.get("sua", []) if duoc(p["stt"], v)]
             muc_sua.append({"stt": p["stt"], "ten": p["ten"], "domain": p["domain"], "so": c["so"], "http": c["http"],
                             "ca_diem": ca_diem, "van_de": p["tong"] if ca_diem else c.get("nhan", ""),
                             "nguyen_nhan_truoc": c.get("nguyen_nhan", ""), "chay": chay, "da_lam": [],
@@ -1266,9 +1327,14 @@ def sua_tat_ca(goc, da, ma, kq, cd, log=print, chi_diem=None):
                 if v == "nhap_lai_ddns" and m.get("trung"):
                     m["da_lam"].append("Không nhập lại DDNS: cam này đang xuất hiện ở nhiều tên miền, phải xác định cam thuộc điểm nào trước (tránh ghi đè DDNS của điểm khác).")
                     continue
+                if v in VIEC_MODEM and not co_cua(hs_all.get(m["stt"])):      # điểm chưa có cửa modem: nói thật, không đăng nhập mò, không quét lại vô ích
+                    m["da_lam"].append(f"{TEN_SUA[v]}: chưa được — {CHUA_CO_CUA}")
+                    continue
                 log(f"🔧 Điểm {m['stt']} cam {m['so']}: {TEN_SUA[v]} …")
-                ok, tb = sua(diem[m["stt"]], m["so"], v, cd, log, m.get("gw_dung", ""))
+                ok, tb = sua(dict(diem[m["stt"]], _hs=hs_all.get(m["stt"]) or {}), m["so"], v, cd, log, m.get("gw_dung", ""))
                 m["da_lam"].append(f"{TEN_SUA[v]}: {'xong' if ok else 'chưa được'} — {tb}")
+                if v in VIEC_MODEM and not ok:
+                    m["tb_modem"] = tb      # điều app vừa thấy TRÊN MODEM là nguyên nhân sát nhất
                 dong_diem.add(m["stt"])
         if not dong_diem:
             break
@@ -1280,7 +1346,7 @@ def sua_tat_ca(goc, da, ma, kq, cd, log=print, chi_diem=None):
         for m in muc_sua:   # việc sửa mới lộ ra sau vòng trước
             c = next((x for x in theo[m["stt"]]["cam"] if x["http"] == m["http"]), None)
             if c and c["muc"] != XANH:
-                m["chay"] = [v for v in c.get("sua", []) if v in CHAY_DUOC]
+                m["chay"] = [v for v in c.get("sua", []) if duoc(m["stt"], v)]
                 m["gw_dung"] = c.get("gw_dung", "")
     theo = {p["stt"]: p for p in kq["diem"]}
     bao_cao = []
@@ -1294,9 +1360,13 @@ def sua_tat_ca(goc, da, ma, kq, cd, log=print, chi_diem=None):
         if not xong:
             dong["nguyen_nhan"] = (c or {}).get("nguyen_nhan") or m["nguyen_nhan_truoc"]
             gp = _bo_dong_bam((c or {}).get("viec") or (p.get("viec") or []))
-            if any(v in ("them_nat", "khoi_dong_modem") for v in (c or {}).get("sua", [])):
+            if any(v in VIEC_MODEM for v in (c or {}).get("sua", [])) and not co_cua(hs_all.get(m["stt"])):
                 dau = [g for g in gp if g.startswith("Thực tế quét")]
-                gp = dau + ["App chưa điều khiển được modem VNPT từ xa (đang chờ mẫu modem) → ra điểm chạy lại CamLink, hoặc nhờ người tại điểm rút điện modem 10 giây."] + [g for g in gp if g not in dau]
+                gp = dau + [CHUA_CO_CUA] + [g for g in gp if g not in dau and "web modem" not in g]
+            if m.get("tb_modem"):
+                dong["nguyen_nhan"] = m["tb_modem"]
+            dong["ai"] = ai_xu_ly(p, c, m["da_lam"])
+            gp = [f"Ai xử lý: {dong['ai']}"] + gp
             dong["giai_phap"] = gp or ["Ra điểm kiểm tra trực tiếp."]
         bao_cao.append(dong)
     kq["bao_cao_sua"] = bao_cao
