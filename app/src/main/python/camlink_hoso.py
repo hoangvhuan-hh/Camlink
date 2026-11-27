@@ -13,6 +13,8 @@ hoặc tự nhập. Mã cam nằm sau dấu # của link nên không gửi lên 
 2.14.2 (anh Huan chốt 27/11 20:40): QR mở thẳng ẢNH CAM CHỤP NGAY LÚC QUÉT (đường ảnh của cam qua tên miền, http) — không cần app, không qua trang trung gian,
 không còn chỗ tải CamLink. QR và chữ in dùng tài khoản CHỈ XEM do app tự tạo trên cam (camlink_xem); cam chưa có thì dùng tài khoản đang có và in rõ dòng cảnh báo.
 web/xem.html vẫn nằm đó cho mã QR của hồ sơ 2.14.0 / 2.14.1 đã phát (đã bỏ nút tải app).
+2.14.3 (anh Huan 27/11 21:48): dồn file cho NGẮN — các điểm nối liền nhau (không còn mỗi ghim một trang), ảnh 44 mm, QR 27 mm, bỏ bảng cam lặp lại
+(kết quả, giờ chụp, port ghi ngay trên hàng của cam). Phú Lý 23 cam: 12 → 5 trang; 100 cam: 51 → 19 trang. Nội dung không bớt.
 Lõi tự gọi sau mỗi lượt kiểm tra từ xa và sau khi cài xong một điểm — người dùng không phải bấm tạo.
 
 du_lieu() là hàm thuần (kiểm được bằng bài thử); ve_pdf() chỉ vẽ đúng những gì du_lieu() trả.
@@ -203,6 +205,10 @@ def C_RTSP(n):
     return C.RTSP[n - 1] if 1 <= n <= len(C.RTSP) else None
 
 
+def _xml(s):
+    return str(s).replace("&", "&amp;").replace("<", "&lt;")
+
+
 def tep(goc, ma):
     return os.path.join(goc, "ketqua", f"HoSo_HeThongCamera_{ma}.pdf")
 
@@ -214,7 +220,7 @@ def ve_pdf(m, duong):
     from reportlab.lib import colors
     from reportlab.lib.units import mm
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak, CondPageBreak, HRFlowable, KeepTogether
     from reportlab.graphics.shapes import Drawing
     from reportlab.graphics.barcode.qr import QrCodeWidget
     thuong, dam = TD._font()
@@ -224,7 +230,7 @@ def ve_pdf(m, duong):
     khung = lambda cot_dam=True: TableStyle([("GRID", (0, 0), (-1, -1), 0.5, VIEN), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EEF1F4")),
                                             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)])
     t, e = m["tong"], []
-    R_ANH, R_QR = 62 * mm, 38 * mm
+    R_ANH, R_QR = 44 * mm, 27 * mm
     # ---------------- trang tổng
     e += [P(m.get("tieu_de") or TIEU_DE, 16, dam, giua=1), Spacer(1, 2 * mm), P(m["du_an"], 13, dam, giua=1), Spacer(1, 1.5 * mm),
           Paragraph(m["thuc_hien"].replace(TEN_APP, f'<font name="{dam}" color="{MAU_APP}" size="13.5">{TEN_APP}</font>'),
@@ -246,68 +252,67 @@ def ve_pdf(m, duong):
     ky = Table([[P("BÊN GIAO (đơn vị thi công)", 10, dam, giua=1), P("BÊN NHẬN", 10, dam, giua=1)],
                 [P("(ký, ghi rõ họ tên)", 8.5, mau=MO, giua=1), P("(ký, ghi rõ họ tên)", 8.5, mau=MO, giua=1)]], colWidths=[89 * mm, 89 * mm])
     e.append(ky)
-    # ---------------- mỗi ghim một trang
+    # ---------------- các điểm nối liền nhau (2.14.3 — anh Huan 27/11 21:48: dồn file cho ngắn, ảnh và QR nhỏ lại, đủ mà không thiếu)
+    # Mỗi điểm: 1 dòng tên + kết quả, 1 dòng toạ độ / chỉ đường / tên miền; mỗi cam MỘT hàng: ảnh | QR | kết quả, giờ chụp, port, tài khoản, link.
+    e += [Spacer(1, 20 * mm), HRFlowable(width="100%", thickness=0.8, color=VIEN, spaceAfter=3 * mm)]      # chừa chỗ ký rồi nối luôn các điểm, không ngắt trang
+    fd = lambda s_, mau: f'<font name="{dam}" color="{mau}">{s_}</font>'
     for p in m["diem"]:
-        e.append(PageBreak())
         n, ok = len(p["cam"]), sum(1 for c in p["cam"] if c["dat"])
-        e += [P(f"Điểm {p['stt']}. {p['ten']}", 14, dam), Spacer(1, 1.5 * mm),
-              P(f"ĐẠT {ok}/{n} cam" if n and ok == n else (f"CHƯA ĐẠT {n - ok}/{n} cam" if n else "Chưa có cam"), 11, dam, XANH if n and ok == n else DO), Spacer(1, 2 * mm)]
-        dong_tt = []
+        kq_d = f"ĐẠT {ok}/{n} cam" if n and ok == n else (f"CHƯA ĐẠT {n - ok}/{n} cam" if n else "Chưa có cam")
+        dau = [Paragraph(f'<font name="{dam}" size="11.5">Điểm {_xml(p["stt"])}. {_xml(p["ten"])}</font>   ' + fd(kq_d, "#067647" if n and ok == n else "#B42318"), st(10))]
+        tt = []
         if p["toa_do"]:
-            dong_tt.append(f"Toạ độ: {p['toa_do'][0]:.6f}, {p['toa_do'][1]:.6f}")
+            tt.append(f"Toạ độ: {p['toa_do'][0]:.6f}, {p['toa_do'][1]:.6f}")
         if p["chi_duong"]:      # bấm được trong PDF; in cả link ra chữ để copy
-            e.append(Paragraph(f'Toạ độ: {p["toa_do"][0]:.6f}, {p["toa_do"][1]:.6f}   ·   <a href="{p["chi_duong"].replace("&", "&amp;")}" color="#175CD3"><u>Chỉ đường (Google Maps)</u></a>', st(10)))
-            e.append(Paragraph(f'<a href="{p["chi_duong"].replace("&", "&amp;")}" color="#175CD3">{p["chi_duong"].replace("&", "&amp;")}</a>', st(8.5)))
-            dong_tt.pop()
+            tt.append(f'<a href="{_xml(p["chi_duong"])}" color="#175CD3"><u>Chỉ đường (Google Maps)</u></a>')
         if p["domain"]:
-            dong_tt.append(f"Tên miền: {p['domain']}")
+            tt.append(f"Tên miền: {_xml(p['domain'])}")
         if p["ghi_chu"]:
-            dong_tt.append(p["ghi_chu"])
-        for s in dong_tt:
-            e.append(P(s, 10))
-        e.append(Spacer(1, 3 * mm))
-        if p["cam"]:
-            dc = [[P(x, 9, dam) for x in ("Cam", "Port web", "Port video", "Kết quả", "Giờ chụp / lý do")]]
-            for c in p["cam"]:
-                dc.append([P(f"Cam {c['so']}", 9), P(c["http"] or "—", 9), P(c["rtsp"] or "—", 9),
-                           P("ĐẠT" if c["dat"] else "CHƯA ĐẠT", 9, dam, XANH if c["dat"] else DO), P(c["gio"] if c["dat"] else c["ly_do"], 9)])
-            bc = Table(dc, colWidths=[18 * mm, 24 * mm, 26 * mm, 28 * mm, 82 * mm], repeatRows=1)
-            bc.setStyle(khung())
-            e += [bc, Spacer(1, 4 * mm)]
-        # mỗi cam một hàng: ảnh chụp | QR xem trực tiếp bằng CamLink | link trang cam + user + mật khẩu (cho người không cài app)
+            tt.append(_xml(p["ghi_chu"]))
+        if tt:
+            dau.append(Paragraph("   ·   ".join(tt), st(8.5)))
+        if p["chi_duong"]:
+            dau.append(Paragraph(f'<a href="{_xml(p["chi_duong"])}" color="#175CD3">{_xml(p["chi_duong"])}</a>', st(7.5)))
         hang = []
         for c in p["cam"]:
-            if not (c["anh"] or c.get("qr")):
-                continue
-            o_anh = P("(chưa có ảnh)", 8.5, mau=MO)
+            o_anh = ""
             if c["anh"]:
                 try:
                     im = Image(c["anh"])
                     ti = im.imageHeight / float(im.imageWidth or 1)
-                    im.drawWidth, im.drawHeight = R_ANH, min(R_ANH * ti, 38 * mm)
+                    im.drawWidth, im.drawHeight = R_ANH, min(R_ANH * ti, 26 * mm)
                     o_anh = im
                 except Exception:
-                    o_anh = P("không đọc được ảnh", 8.5, mau=DO)
+                    o_anh = P("không đọc được ảnh", 8, mau=DO)
             o_qr = ""
             if c.get("qr"):
-                w = QrCodeWidget(c["qr"], barLevel="M")      # link ngắn (đường ảnh của cam) → mã thưa, dễ quét
+                w = QrCodeWidget(c["qr"], barLevel="L")      # link ngắn (đường ảnh của cam) + mức sửa lỗi thấp → ô vuông vẫn to dù mã in nhỏ
                 x0, y0, x1, y1 = w.getBounds()
                 o_qr = Drawing(R_QR, R_QR, transform=[R_QR / (x1 - x0), 0, 0, R_QR / (y1 - y0), 0, 0])
                 o_qr.add(w)
-            chu = [P(f"Cam {c['so']}" + (f" — chụp {c['gio']}" if c["anh"] and c["gio"] else ""), 9.5, dam)]
+            chu = [Paragraph(f'<font name="{dam}">Cam {c["so"]}</font>   ' + fd("ĐẠT" if c["dat"] else "CHƯA ĐẠT", "#067647" if c["dat"] else "#B42318")
+                             + (f'   ·   chụp {_xml(c["gio"])}' if c["dat"] and c["gio"] else ""), st(9))]
+            if not c["dat"] and c["ly_do"]:
+                chu.append(P(c["ly_do"], 8, mau=DO))
+            chu.append(P("   ·   ".join(x for x in (f"Port web {c['http']}" if c["http"] else "", f"Port video {c['rtsp']}" if c["rtsp"] else "", f"Trang cam: {c['link']}" if c.get("link") else "") if x), 8, mau=MO))
             if c.get("qr"):
-                chu += [P("Quét mã: xem ảnh cam chụp ngay lúc quét" if c.get("qr_anh") else "Quét mã: mở trang cam, tự nhập tài khoản", 9, dam, colors.HexColor("#1F2933")),
-                        P("Không cần cài app. Máy hỏi tài khoản thì nhập:" if c.get("qr_anh") else "Tài khoản:", 8.5, mau=MO),
-                        P(f"User: {c['user']}", 9), P(f"Mật khẩu: {c['pass']}", 9), P(f"Trang cam: {c['link']}", 8.5, mau=MO)]
                 if not c["user"]:
-                    chu = chu[:1] + [P("Quét mã: mở trang cam", 9, dam, colors.HexColor("#1F2933")), P(f"Trang cam: {c['link']}", 8.5, mau=MO)]
-                elif not c.get("tk_xem"):
-                    chu.append(P("Tài khoản quản trị — cam chưa có tài khoản chỉ xem", 8, mau=DO))
+                    chu.append(P("Quét mã: mở trang cam", 8.5, dam, colors.HexColor("#1F2933")))
+                else:
+                    chu += [P("Quét mã: xem ảnh cam chụp ngay lúc quét" if c.get("qr_anh") else "Quét mã: mở trang cam, tự nhập tài khoản", 8.5, dam, colors.HexColor("#1F2933")),
+                            Paragraph(f"User: {_xml(c['user'])}   ·   Mật khẩu: {_xml(c['pass'])}" + ('   <font color="#5B6776" size="7.5">(nhập nếu máy hỏi)</font>' if c.get("qr_anh") else ""), st(8.5))]
+                    if not c.get("tk_xem"):
+                        chu.append(P("Tài khoản quản trị — cam chưa có tài khoản chỉ xem", 7.5, mau=DO))
             hang.append([o_anh, o_qr, chu])
-        if hang:
-            e.append(Table(hang, colWidths=[R_ANH + 4 * mm, R_QR + 4 * mm, 178 * mm - R_ANH - R_QR - 8 * mm],
-                           style=TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LINEBELOW", (0, 0), (-1, -2), 0.5, VIEN),
-                                             ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)])))
+        bang = Table(hang, colWidths=[R_ANH + 3 * mm, R_QR + 3 * mm, 178 * mm - R_ANH - R_QR - 6 * mm],
+                     style=TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LINEBELOW", (0, 0), (-1, -2), 0.4, VIEN), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                                       ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)])) if hang else None
+        # tên điểm không bao giờ nằm trơ trọi cuối trang: giữ liền với hàng cam đầu tiên
+        ke = HRFlowable(width="100%", thickness=0.8, color=VIEN, spaceBefore=1.5 * mm, spaceAfter=2.5 * mm)
+        if len(hang) <= 4:      # điểm ít cam: giữ nguyên khối trên một trang (cam không bị tách khỏi tên điểm của nó)
+            e.append(KeepTogether(dau + [Spacer(1, 1 * mm)] + ([bang] if bang else []) + [ke]))
+        else:                   # điểm nhiều cam: cho phép sang trang, nhưng tên điểm không nằm trơ trọi cuối trang
+            e += [CondPageBreak(42 * mm)] + dau + [Spacer(1, 1 * mm), bang, ke]
     os.makedirs(os.path.dirname(duong), exist_ok=True)
     tam = duong + ".tam"
     def chan(cv, doc):      # chân mọi trang: tên app + số trang

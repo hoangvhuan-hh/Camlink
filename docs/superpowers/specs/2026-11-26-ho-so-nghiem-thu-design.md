@@ -100,3 +100,13 @@ Lý do đổi hướng (anh Huan 20:27): người đã có CamLink thì mở app
 - **Để sau** (cùng đợt cấp phép): máy chủ đứng giữa cho link ngắn không chứa mật khẩu, thu hồi được.
 - **CHƯA thử trên cam Oryza thật**: (1) trình duyệt điện thoại + cam có nhận tài khoản trong link ảnh không — không nhận thì máy hiện ô hỏi user / mật khẩu (đã in cạnh QR);
   (2) cam có cho tạo tài khoản mức User qua ONVIF không; (3) tài khoản mức User trên Oryza có thật sự không sửa được cấu hình không. Cam giả trong bộ thử không chứng minh được ba điều này.
+
+
+## 2.14.3 — dồn hồ sơ cho ngắn (anh Huan 27/11/2026 21:48, 21:51)
+
+"Đủ mà không thiếu, không quá dài; có điểm cả trăm cam … ảnh nhỏ hơn tí, QR nhỏ lại; 3–4 cam một trang, không cần trình bày lại, chỉ cần dồn lên."
+- Trang đầu giữ nguyên; các điểm nối liền ngay sau chỗ ký (không ngắt trang sau trang đầu, không còn mỗi ghim một trang).
+- Mỗi điểm: 1 dòng tên + kết quả, 1 dòng toạ độ · chỉ đường · tên miền, 1 dòng link chỉ đường in chữ. Mỗi cam một hàng: ảnh 44 mm | QR 27 mm | kết quả + giờ chụp, port web · port video · link trang cam, dòng quét mã, user · mật khẩu.
+- Bỏ bảng cam riêng của từng điểm (lặp lại đúng những thứ đã nằm trên hàng cam). Điểm từ 4 cam trở xuống không bị tách sang hai trang.
+- Đo: Phú Lý 11 điểm · 23 cam 12 → 5 trang; 50 điểm · 100 cam 51 → 19 trang (khoảng 5–6 cam một trang). QR 27 mm: máy đọc được 22/23 mã ở 150 dpi (QR 22 mm chỉ đọc được 2/10 nên không dùng).
+- Chưa thử: quét mã 27 mm trên giấy in thật / trên màn hình điện thoại của anh Huan.

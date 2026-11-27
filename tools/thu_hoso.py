@@ -98,7 +98,8 @@ so_trang = len(re.findall(rb"/Type\s*/Page(?![a-zA-Z])", raw))
 kt("H2a: ra đúng MỘT file PDF, tên có mã dự án", f.endswith(".pdf") and os.path.basename(f) == f"HoSo_HeThongCamera_{pl}.pdf" and raw[:5] == b"%PDF-")
 kt("H2d: tiêu đề là 'HỒ SƠ HỆ THỐNG CAMERA HIỆN TẠI' (anh Huan 26/11: hợp với mọi thời điểm, không chỉ lúc nghiệm thu) — không còn chữ 'nghiệm thu'",
    m["tieu_de"] == "HỒ SƠ HỆ THỐNG CAMERA HIỆN TẠI" and "nghiệm thu" not in json.dumps(m, ensure_ascii=False).lower())
-kt(f"H2b: 1 trang tổng + 11 trang điểm = 12 trang (đếm được {so_trang})", so_trang == 12)
+# 2.14.3 — anh Huan 27/11 21:48: file phải NGẮN lại (ảnh nhỏ hơn, QR nhỏ hơn, dồn lại), đủ mà không thiếu; dự án cả trăm cam không được dài lê thê
+kt(f"H2b: Phú Lý 11 điểm · 23 cam: trung bình từ 4 cam một trang trở lên, kể cả trang đầu (anh Huan: 3–4 cam / trang; trước là 12 trang; đếm được {so_trang})", so_trang <= 6)
 kt("H2c: file có nhúng ảnh thật của cam (21 ảnh)", len(re.findall(rb"/Subtype\s*/Image", raw)) >= 21)
 
 # ================= H3: TỰ ĐỘNG — cam lên thì hồ sơ tự cập nhật, người dùng không bấm tạo
@@ -134,7 +135,7 @@ da_tl = K._doc_du_an(tl); da_tl["diem"]["2"]["rieng"] = {"cam_pw": "Rieng#Diem2"
 p2 = {d["stt"]: d for d in H.du_lieu(G, tl)["diem"]}["2"]["cam"][0]
 kt("H4f: điểm có mật khẩu cam RIÊNG, chưa có tài khoản chỉ xem → QR và chữ in dùng đúng mật khẩu riêng của điểm đó (ký tự lạ được đổi đúng chuẩn link)", p2["qr"] == "http://admin:Rieng%23Diem2@t2.ddns.net:8080/anh.jpg" and p2["pass"] == "Rieng#Diem2" and not p2["tk_xem"], p2)
 f2 = K.ho_so_tao(tl)
-kt("H4d: PDF Tà Lài: 1 + 3 = 4 trang", len(re.findall(rb"/Type\s*/Page(?![a-zA-Z])", open(f2, "rb").read())) == 4)
+kt("H4d: PDF Tà Lài 3 định vị · 3 cam gói trong tối đa 2 trang (trước là 4)", len(re.findall(rb"/Type\s*/Page(?![a-zA-Z])", open(f2, "rb").read())) <= 2)
 src_hs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../app/src/main/python/camlink_hoso.py"), encoding="utf-8").read()
 kt("H5a: PDF vẽ QR cho TỪNG CAM (trong vòng lặp cam), không còn câu chữ LiteMark", "QrCodeWidget(c[\"qr\"]" in src_hs and "LiteMark" not in src_hs.split("def ve_pdf")[1])
 kt("H5c: PDF in cạnh mã: 'xem ảnh cam chụp ngay lúc quét' + user + mật khẩu + link trang cam; có dòng cảnh báo khi phải dùng tài khoản quản trị; không còn lời mời cài app",
@@ -162,4 +163,16 @@ kt("H6d: file cũ không có dấu phiên bản (do bản 2.13.3 trở về trư
 vp = src_hs.split("def ve_pdf")[1]
 kt("H5f: chữ CamLink được NHẤN (chữ đậm, màu riêng, to hơn chữ thường) ở trang đầu và ở chân trang — không in chung màu xám mờ với cả dòng",
    "MAU_APP" in src_hs and vp.count("MAU_APP") >= 2 and 'P(m["thuc_hien"], 9.5, mau=MO' not in vp and "cv.setFont(dam" in vp)
+# ---- dự án lớn: 50 điểm · 100 cam (kiểu Tân Triều cài xong)
+dl = {str(i): {"ten": f"Ngã tư số {i}", "domain": f"tt{i}.ddns.net", "u": "u", "p": "p", "so": 2} for i in range(1, 51)}
+lon = tao("Du an 100 cam", {"diem": dl, "toa_do": {str(i): [10.9 + i * 0.001, 106.8] for i in range(1, 51)}, "da_xong": {str(i): "x" for i in range(1, 51)}, "ho_so": {}})
+with open(T._f_lich_su(G, lon), "w", encoding="utf-8") as fh:
+    json.dump({"luc": "21:00:00 27/11/2026", "diem": [{"stt": str(i), "ten": f"Ngã tư số {i}", "domain": f"tt{i}.ddns.net", "muc": "xanh", "tong": "ĐẠT",
+               "cam": [cam(lon, str(i), n + 1, dom=f"tt{i}.ddns.net") for n in range(2)]} for i in range(1, 51)]}, fh, ensure_ascii=False)
+rl = open(K.ho_so_tao(lon), "rb").read(); tr = len(re.findall(rb"/Type\s*/Page(?![a-zA-Z])", rl))
+kt(f"H7a: dự án 50 điểm · 100 cam: trung bình từ 4 cam một trang trở lên → tối đa 25 trang (kiểu cũ là 51 trang; đếm được {tr})", tr <= 25)
+kt("H7b: dồn lại nhưng KHÔNG thiếu: đủ 100 ảnh cam, đủ link chỉ đường của 50 điểm", len(re.findall(rb"/Subtype\s*/Image", rl)) >= 100 and rl.count(b"google.com/maps/dir/") >= 50)
+vp = src_hs.split("def ve_pdf")[1]
+kt("H7c: mỗi cam vẫn in đủ: kết quả, giờ chụp / lý do, port web, port video, QR, tài khoản, link trang cam",
+   all(x in vp for x in ('c["gio"]', 'c["ly_do"]', 'c["http"]', 'c["rtsp"]', 'c["qr"]', "User:", "Mật khẩu:", "Trang cam:", "ĐẠT")))
 print(f"\n✓ 2.12.20 hồ sơ hệ thống camera: {dat}/{dat} đạt")

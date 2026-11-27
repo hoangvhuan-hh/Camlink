@@ -82,3 +82,6 @@ python3 tools/chay_test.py thu_hoiquy     # một bài
   Dữ liệu giả trong bài thử phải lấy đúng dạng mà chính code của app sinh ra (gọi hàm thật để tạo), không tự gõ tay theo trí nhớ.
 - 27/11/2026 — Bốn bản liền (2.13.1 → 2.14.1) tôi dựng đường "QR → trang trung gian → cài app → xem live", rồi anh Huan hỏi một câu là gỡ hết: người đã có app thì đâu cần quét.
   Thứ gửi ra ngoài phải qua hai câu hỏi TRƯỚC khi code: người nhận không cài gì có dùng được không; tờ giấy này lọt ra thì mất gì (hồ sơ chỉ mang tài khoản chỉ xem, không mang tài khoản quản trị).
+
+- 27/11/2026 — Hồ sơ "mỗi ghim một trang" trông gọn ở Phú Lý (12 trang) nhưng dự án 100 cam thành 51 trang: tôi chỉ dựng ảnh trang của dự án nhỏ ra xem.
+  Thứ in theo số lượng (điểm, cam) phải dựng thử ở cỡ LỚN NHẤT sẽ gặp và đếm số trang trước khi giao; thu nhỏ QR thì phải thử đọc lại bằng máy.
