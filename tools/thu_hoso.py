@@ -117,12 +117,12 @@ p = {d["stt"]: d for d in m["diem"]}
 kt("H4a: Tà Lài — 3 định vị · 3 cam · 2 modem, 3/3 đạt", (m["tong"]["dinh_vi"], m["tong"]["cam"], m["tong"]["modem"], m["tong"]["dat"]) == (3, 3, 2, 3))
 kt("H4b: trang ghim 1 chỉ có cam 1; cam 2 nằm ở trang ghim 6 (ghi rõ dùng modem điểm 1)", [c["so"] for c in p["1"]["cam"]] == [1] and [c["so"] for c in p["6"]["cam"]] == [2] and "điểm 1" in p["6"]["ghi_chu"])
 kt("H4c: điểm 2 chưa có trong lượt kiểm từ xa → lấy bằng chứng lúc cài (ảnh + giờ)", p["2"]["cam"][0]["dat"] and os.path.exists(p["2"]["cam"][0]["anh"]) and "26/11/2026" in p["2"]["cam"][0]["gio"])
-kt("H4e: cam 2 ở ghim 6 (dùng modem điểm 1) → link + QR theo tên miền điểm 1, port cam 2", p["6"]["cam"][0]["link"] == "http://t1.ddns.net:8081/" and H.giai_ma_xem(p["6"]["cam"][0]["qr"].split("#")[1])["l"] == "rtsp://admin:PassCam@BiMat1@t1.ddns.net:5541/")
+kt("H4e: cam 2 ở ghim 6 (dùng modem điểm 1) → link + QR theo tên miền điểm 1, port cam 2", p["6"]["cam"][0]["link"] == "http://t1.ddns.net:8081/" and H.giai_ma_xem(p["6"]["cam"][0]["qr"].split("#")[1])["l"] == "rtsp://admin:PassCam@BiMat1@t1.ddns.net:5541/" and H.giai_ma_xem(p["6"]["cam"][0]["qr"].split("#")[1])["p"] == "PassCam@BiMat1")
 kt("H4g: điểm KHÔNG có toạ độ → không bịa link chỉ đường; ghim 6 có toạ độ riêng → chỉ đường tới đúng ghim 6 (không phải ghim đặt modem)",
    p["2"]["chi_duong"] == "" and p["6"]["chi_duong"].endswith("destination=11.300900,107.300000") and p["1"]["chi_duong"].endswith("destination=11.300000,107.300000"), (p["2"]["chi_duong"], p["6"]["chi_duong"]))
 da_tl = K._doc_du_an(tl); da_tl["diem"]["2"]["rieng"] = {"cam_pw": "Rieng#Diem2"}; K._ghi_du_an(tl, da_tl)
 p2 = {d["stt"]: d for d in H.du_lieu(G, tl)["diem"]}["2"]["cam"][0]
-kt("H4f: điểm có mật khẩu cam RIÊNG (chưa có lượt kiểm từ xa) → QR và chữ in dùng đúng mật khẩu riêng của điểm đó", H.giai_ma_xem(p2["qr"].split("#")[1])["l"] == "rtsp://admin:Rieng#Diem2@t2.ddns.net:554/" and p2["pass"] == "Rieng#Diem2")
+kt("H4f: điểm có mật khẩu cam RIÊNG (chưa có lượt kiểm từ xa) → QR và chữ in dùng đúng mật khẩu riêng của điểm đó", H.giai_ma_xem(p2["qr"].split("#")[1])["l"] == "rtsp://admin:Rieng%23Diem2@t2.ddns.net:554/" and H.giai_ma_xem(p2["qr"].split("#")[1])["p"] == "Rieng#Diem2" and p2["pass"] == "Rieng#Diem2")
 f2 = K.ho_so_tao(tl)
 kt("H4d: PDF Tà Lài: 1 + 3 = 4 trang", len(re.findall(rb"/Type\s*/Page(?![a-zA-Z])", open(f2, "rb").read())) == 4)
 src_hs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../app/src/main/python/camlink_hoso.py"), encoding="utf-8").read()

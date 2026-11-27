@@ -20,6 +20,7 @@ import json
 import time
 import base64
 import re
+from urllib.parse import quote, unquote
 
 
 TIEU_DE = "HỒ SƠ HỆ THỐNG CAMERA HIỆN TẠI"
@@ -53,23 +54,27 @@ TRANG_XEM = "https://hoangvhuan-hh.github.io/Camlink/xem.html"      # trang tĩn
 def ma_xem(du_an, ten, live, cong_web, may="", user="", pw=""):
     """Mã của MỘT cam để gắn sau dấu # của TRANG_XEM: base64url(JSON gọn) — trang web và app (XemLiveActivity) cùng giải được.
     l = link video có sẵn tài khoản (đúng link app đang phát ở tab Giám sát); wp = cổng trang web của cam.
-    Giữ mã NGẮN để QR dễ quét: tên miền, user, mật khẩu cho lối 'không cài app, tự nhập' được TÁCH TỪ l (xem tach_link_video);
-    chỉ khi cam chưa có link video mới ghi riêng h, u, p."""
+    Giữ mã NGẮN để QR dễ quét: tên miền, user, mật khẩu cho lối 'không cài app, tự nhập' được TÁCH TỪ l (xem tach_link_video).
+    Hễ tách ra KHÔNG đúng user / mật khẩu thật (cam chưa có link video, mật khẩu có dấu % …) thì ghi thẳng h, u, p — trang không bao giờ hiện sai."""
     d = {"v": 1, "da": du_an, "t": ten, "l": live, "wp": int(cong_web or 0)}
-    if not live:
-        d.update(h=may, u=user, p=pw)
+    u, p, h = tach_link_video(live)
+    if user and (u, p) != (user, pw):
+        d.update(u=user, p=pw)
+    if may and h != may:
+        d["h"] = may
     return base64.urlsafe_b64encode(json.dumps(d, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).decode("ascii").rstrip("=")
 
 
 def tach_link_video(l):
     """rtsp://user:pass@tên-miền:cổng/đường → (user, pass, tên miền). Mật khẩu có thể chứa @ và : nên: user = tới dấu ':' ĐẦU TIÊN,
-    mật khẩu = tới dấu '@' CUỐI CÙNG trước dấu '/' đầu tiên. web/xem.html dùng đúng quy tắc này."""
+    mật khẩu = tới dấu '@' CUỐI CÙNG trước dấu '/' đầu tiên; rồi ĐỔI NGƯỢC %xx (link app lấy từ cam đã đổi @ thành %40 —
+    lỗi 27/11: trang hiện mật khẩu 'Aa…%40'). web/xem.html dùng đúng quy tắc này."""
     m = re.match(r"^rtsp://(?:([^/]*)@)?([^@/:]+)", l or "")
     if not m:
         return "", "", ""
     tk = m.group(1) or ""
     u, _, p = tk.partition(":")
-    return u, p, m.group(2)
+    return unquote(u), unquote(p), m.group(2)
 
 
 def giai_ma_xem(ma):
@@ -141,7 +146,7 @@ def du_lieu(goc, ma):
             c["user"], c["pass"] = u or cd.get("cam_user", "admin"), p or cd.get("cam_pw", "")
             c["link"] = _link_cam(dom, c.get("http"))
             # link video: đường thật app đã hỏi từ cam ở lượt kiểm (đang phát được ở tab Giám sát); chưa có thì theo quy ước tên miền + cổng video
-            c["_live"] = c.get("_live") or (f"rtsp://{c['user']}:{c['pass']}@{dom}:{c['rtsp']}/" if dom and c.get("rtsp") else "")
+            c["_live"] = c.get("_live") or (f"rtsp://{quote(str(c['user']), safe='')}:{quote(str(c['pass']), safe='')}@{dom}:{c['rtsp']}/" if dom and c.get("rtsp") else "")
         return out
 
     ds = []

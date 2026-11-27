@@ -78,3 +78,5 @@ python3 tools/chay_test.py thu_hoiquy     # một bài
   File app tự sinh phải ghi dấu phiên bản đã sinh ra nó và sinh lại khi phiên bản / dữ liệu đổi; "xem file mẫu trên máy mình" không phải là "người dùng đã thấy".
 - 27/11/2026 — QR gắn user/mật khẩu vào link trang web của cam: quét ra vẫn là ô đăng nhập (cam Oryza bỏ qua tài khoản trong link) — tôi đã ghi "chưa thử trên máy thật" rồi vẫn phát hành.
   "Tự động" chỉ được nói khi đã đi hết đường trên thiết bị thật hoặc trên đúng thứ thiết bị đó chấp nhận (link video nhận tài khoản, trang web thì không); chưa chắc thì đưa anh Huan một mẫu thử trước, đừng đưa vào bản phát hành.
+- 27/11/2026 — Trang xem hiện mật khẩu "Aa…%40": bài thử của tôi dùng link video tự bịa (chưa đổi ký tự), còn link THẬT app lấy từ cam đã đổi @ thành %40.
+  Dữ liệu giả trong bài thử phải lấy đúng dạng mà chính code của app sinh ra (gọi hàm thật để tạo), không tự gõ tay theo trí nhớ.

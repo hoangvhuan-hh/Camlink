@@ -67,6 +67,7 @@ body{margin:0;background:#EEF2F7;font-family:system-ui,-apple-system,"Segoe UI",
     <div class="dong"><span>User</span><b id="u"></b><button type="button" data-chep="u">Sao chép</button></div>
     <div class="dong"><span>Mật khẩu</span><b id="p"></b><button type="button" data-chep="p">Sao chép</button></div>
     <a class="nut nhat" id="nut-web" href="#" style="margin-top:8px">Mở trang cam</a>
+    <p class="duoi an" id="goi-y-ios" style="margin:8px 0 0">Nếu trang cam trắng: bấm dấu ··· rồi chọn "Mở bằng Safari".</p>
   </div>
 
   <p class="chan">CamLink: app cài đặt và kiểm tra camera cho thợ thi công</p>
@@ -97,8 +98,10 @@ body{margin:0;background:#EEF2F7;font-family:system-ui,-apple-system,"Segoe UI",
   var m = /^rtsp:\/\/(?:([^\/]*)@)?([^@\/:]+)/.exec(j.l || "");
   if (m) {
     var tk = m[1] || "", c = tk.indexOf(":");
-    if (!j.u) j.u = c < 0 ? tk : tk.slice(0, c);
-    if (!j.p) j.p = c < 0 ? "" : tk.slice(c + 1);
+    // link app lấy từ cam đã đổi ký tự lạ thành %xx (vd @ → %40) → đổi ngược lại để hiện đúng mật khẩu thật
+    var nguoc = function (t) { try { return decodeURIComponent(t); } catch (e) { return t; } };
+    if (!j.u) j.u = nguoc(c < 0 ? tk : tk.slice(0, c));
+    if (!j.p) j.p = nguoc(c < 0 ? "" : tk.slice(c + 1));
     if (!j.h) j.h = m[2];
   }
   if (!j.w && j.h && j.wp) j.w = "http://" + j.h + ":" + j.wp + "/";
@@ -122,6 +125,21 @@ body{margin:0;background:#EEF2F7;font-family:system-ui,-apple-system,"Segoe UI",
   if (laIos) {
     $("khoi-live").className = "an"; $("khoi-tai").className = "an";
     bao("CamLink hiện có cho điện thoại Android. Trên iPhone, hãy mở trang cam và nhập user, mật khẩu bên dưới.");
+    if (j.w) {
+      // Đã ở Safari (link có web=1) → vào thẳng trang cam qua tên miền.
+      if (/[?&]web=1/.test(location.search)) { location.replace(j.w); return; }
+      // Trang cam hay bị trắng trong trình duyệt nhúng của app quét mã (27/11) → bấm nút thì thử chuyển sang Safari trước;
+      // máy không nhận kiểu link này thì sau 1,5 giây mở thẳng trang cam như cũ.
+      var quaSafari = "x-safari-https://" + location.host + location.pathname + "?web=1#" + ma;
+      $("goi-y-ios").className = "duoi"; $("goi-y-ios").style.display = "block";
+      $("nut-web").addEventListener("click", function (e) {
+        e.preventDefault();
+        var daRoi = false, roi = function () { daRoi = true; };
+        document.addEventListener("visibilitychange", roi); window.addEventListener("pagehide", roi);
+        location.href = quaSafari;
+        setTimeout(function () { if (!daRoi && !document.hidden) location.href = j.w; }, 1500);
+      });
+    }
     return;
   }
   if (!j.l) { $("khoi-live").className = "an"; bao("Cam này chưa có link xem trực tiếp. Hãy mở trang cam và nhập user, mật khẩu bên dưới."); return; }

@@ -76,3 +76,13 @@ Cách làm:
 - CI đưa `web/xem.html` lên nhánh `gh-pages` mỗi lần phát hành. GitHub Pages phải được BẬT một lần trong Settings của kho (API bật Pages bị chặn ở phiên này).
 
 Chưa thử trên thiết bị thật: quét trên điện thoại (trình duyệt có cho tự mở app hay phải bấm nút "Xem live ngay"; app quét trong Zalo); hình live trong CamLink khi mở từ mã.
+
+## Sửa 2.14.1 — sau khi anh Huan thử thật (27/11/2026 19:31)
+
+Kết quả thử thật: Android có CamLink quét mã → xem live ĐƯỢC. iPhone (không có CamLink): (1) mật khẩu hiện `…%40`; (2) bấm "Mở trang cam" bị trắng trang
+trong trình duyệt nhúng của app quét mã, trong khi trước đó quét QR http thẳng trên iPhone thì vào được trang cam; trên Android nút này chạy bình thường.
+- (1) Gốc: link video app lấy từ cam (`Onvif.luong_video`) đã đổi ký tự lạ thành %xx; trang tách mật khẩu từ link mà không đổi ngược. Sửa ở cả `tach_link_video` và `web/xem.html`;
+  `ma_xem` ghi thẳng user / mật khẩu thật khi tách ra không khớp.
+- (2) Chưa xác định chắc nguyên nhân (trang cam Oryza nặng ~2,7 MB, tải được tiêu đề rồi trắng). Làm: trên iPhone nút "Mở trang cam" thử chuyển sang Safari
+  (`x-safari-https://…/xem.html?web=1#mã` → trang tự vào thẳng trang cam), sau 1,5 giây không đi được thì mở thẳng như cũ; thêm dòng "Nếu trang cam trắng: bấm ··· rồi chọn Mở bằng Safari".
+  Kiểu link `x-safari-https` không phải cách chính thức của Apple (được báo chạy trên iOS 15/17/18, không chạy iOS 16) → CHƯA thử trên iPhone thật.
