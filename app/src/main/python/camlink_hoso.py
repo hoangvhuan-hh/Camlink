@@ -5,6 +5,8 @@ toạ độ ghim, tên miền + port, kết quả ĐẠT / CHƯA ĐẠT kèm lý
 2.12.22 (anh Huan 26/11 23:17): mỗi cam có QR = link http kèm user/mật khẩu CAM để quét là vào xem, và in link + user + mật khẩu ra chữ.
 Lý do: đây là giai đoạn cài đặt, file chia trong nhóm cài đặt; bên quản lý tiếp quản rồi tự đổi mật khẩu. Bỏ QR LiteMark (người không dùng LiteMark không xem được).
 KHÔNG in mật khẩu modem, user/mật khẩu DDNS, đường RTSP; link luôn là http (https qua DDNS thất thường).
+2.13.1 (anh Huan 27/11 16:39): QR mở TRANG XEM TRỰC TIẾP của cam (không mở link ảnh chụp — một tấm ảnh không chứng minh cam đang chạy);
+ảnh chụp trong báo cáo vẫn giữ; user/mật khẩu cam chỉ nằm trong QR để đăng nhập, KHÔNG in ra chữ (là thứ bên giao cấp cho mình).
 Lõi tự gọi sau mỗi lượt kiểm tra từ xa và sau khi cài xong một điểm — người dùng không phải bấm tạo.
 
 du_lieu() là hàm thuần (kiểm được bằng bài thử); ve_pdf() chỉ vẽ đúng những gì du_lieu() trả.
@@ -13,7 +15,7 @@ Thiết kế: docs/superpowers/specs/2026-11-26-ho-so-nghiem-thu-design.md
 import os
 import json
 import time
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote
 
 
 TIEU_DE = "HỒ SƠ HỆ THỐNG CAMERA HIỆN TẠI"
@@ -30,17 +32,13 @@ def _gio_tep(f):
         return ""
 
 
-def _link_cam(dom, http, user, pw, anh_url=""):
-    """(link để đọc, QR để quét) của một cam. Luôn http, luôn theo tên miền + port của cam; QR kèm user/pass (đã mã hoá ký tự lạ như @ # :)
-    và mở thẳng đường ảnh của cam nếu app đã biết (anh_url), chưa biết thì mở trang cam."""
+def _link_cam(dom, http, user, pw):
+    """(link để đọc, QR để quét) của một cam. Luôn http, luôn theo tên miền + port của cam = trang XEM TRỰC TIẾP của cam.
+    Link để đọc không kèm tài khoản; QR kèm user/pass (đã mã hoá ký tự lạ như @ # :) để quét là vào, không phải gõ."""
     if not dom or not http:
         return "", ""
-    duoi = "/"
-    if anh_url:
-        u = urlsplit(anh_url)
-        duoi = (u.path or "/") + (("?" + u.query) if u.query else "")
     tk = f"{quote(str(user), safe='')}:{quote(str(pw), safe='')}@" if user else ""
-    return f"http://{dom}:{http}/", f"http://{tk}{dom}:{http}{duoi}"
+    return f"http://{dom}:{http}/", f"http://{tk}{dom}:{http}/"
 
 
 def du_lieu(goc, ma):
@@ -70,7 +68,7 @@ def du_lieu(goc, ma):
                 out[_so(c.get("so"))] = {"so": _so(c.get("so")), "http": c.get("http"), "rtsp": c.get("rtsp"), "dat": dat_,
                                          "ly_do": "" if dat_ else (c.get("nguyen_nhan") or c.get("nhan") or p.get("tong") or "chưa xem được"),
                                          "anh": f, "gio": (_gio_tep(f) if f else "") or str(kq.get("luc", "")),
-                                         "user": c.get("user") or "", "pass": c.get("pass") or "", "anh_url": c.get("anh_url") or ""}
+                                         "_tk": (c.get("user") or "", c.get("pass") or "")}
         else:
             try:
                 with open(K._file_so_do(ma, a), encoding="utf-8") as fh:
@@ -83,7 +81,7 @@ def du_lieu(goc, ma):
                 dat_ = bool(c.get("ngoai"))
                 out[_so(c.get("so"))] = {"so": _so(c.get("so")), "http": c.get("http"), "rtsp": c.get("rtsp"), "dat": dat_,
                                          "ly_do": "" if dat_ else (c.get("loi_ngoai") or "chưa xem được qua tên miền"),
-                                         "anh": f, "gio": str(sd.get("luc", "")), "anh_url": c.get("anh_url") or ""}
+                                         "anh": f, "gio": str(sd.get("luc", ""))}
         can = max([_so(diem[a].get("so"))] + list(T.cam_chung(da, a)) + [0])      # số cam phải có trên modem này
         for n in range(1, can + 1):
             if n not in out:
@@ -93,8 +91,8 @@ def du_lieu(goc, ma):
         cd = C.cd_diem(diem[a], C.doc_cai_dat())          # user/pass cam của điểm này (riêng của điểm nếu có, không thì của hệ thống)
         dom = diem[a].get("domain", "")
         for c in out.values():
-            c["user"], c["pass"] = c.get("user") or cd.get("cam_user", "admin"), c.get("pass") or cd.get("cam_pw", "")
-            c["link"], c["qr"] = _link_cam(dom, c.get("http"), c["user"], c["pass"], c.pop("anh_url", ""))
+            u, p = c.pop("_tk", ("", ""))      # tài khoản cam chỉ đi vào QR, không giữ trong dữ liệu để khỏi bị in ra chữ
+            c["link"], c["qr"] = _link_cam(dom, c.get("http"), u or cd.get("cam_user", "admin"), p or cd.get("cam_pw", ""))
         return out
 
     ds = []
@@ -159,7 +157,7 @@ def ve_pdf(m, duong):
     e += [P(f"{t['dinh_vi']} định vị   ·   {t['cam']} cam   ·   {t['modem']} modem", 12, dam, giua=1), Spacer(1, 1.5 * mm),
           P(f"ĐẠT {t['dat']}/{t['cam']} cam" + ("" if du else f"   ·   CHƯA ĐẠT {t['chua']} cam"), 13, dam, XANH if du else DO, giua=1), Spacer(1, 2 * mm),
           P("Ảnh trong hồ sơ được chụp qua tên miền của từng điểm, từ ngoài mạng (4G) — đúng như đơn vị sử dụng nhìn từ xa.", 9, mau=MO, giua=1), Spacer(1, 1 * mm),
-          P("Quét mã QR cạnh từng cam để vào xem cam (đã kèm user và mật khẩu cam). Tài liệu dành cho nhóm cài đặt.", 9, mau=MO, giua=1), Spacer(1, 5 * mm)]
+          P("Quét mã QR cạnh từng cam để vào xem trực tiếp cam đó. Tài liệu dành cho nhóm cài đặt.", 9, mau=MO, giua=1), Spacer(1, 5 * mm)]
     dong = [[P(x, 9, dam) for x in ("STT", "Vị trí", "Tên miền", "Cam", "Kết quả")]]
     for p in m["diem"]:
         n, ok = len(p["cam"]), sum(1 for c in p["cam"] if c["dat"])
@@ -195,7 +193,7 @@ def ve_pdf(m, duong):
             bc = Table(dc, colWidths=[18 * mm, 24 * mm, 26 * mm, 28 * mm, 82 * mm], repeatRows=1)
             bc.setStyle(khung())
             e += [bc, Spacer(1, 4 * mm)]
-        # mỗi cam một hàng: ảnh | QR vào xem cam | link + user + mật khẩu (chữ)
+        # mỗi cam một hàng: ảnh chụp | QR xem trực tiếp | link (chữ, không kèm tài khoản)
         hang = []
         for c in p["cam"]:
             if not (c["anh"] or c.get("qr")):
@@ -217,7 +215,7 @@ def ve_pdf(m, duong):
                 o_qr.add(w)
             chu = [P(f"Cam {c['so']}" + (f" — chụp {c['gio']}" if c["anh"] and c["gio"] else ""), 9.5, dam)]
             if c.get("link"):
-                chu += [P("Quét mã để vào xem cam, hoặc mở:", 8.5, mau=MO), P(c["link"], 9), P(f"User: {c['user']}", 9), P(f"Mật khẩu: {c['pass']}", 9)]
+                chu += [P("Quét mã để xem trực tiếp cam này", 8.5, mau=MO), P(c["link"], 9)]
             hang.append([o_anh, o_qr, chu])
         if hang:
             e.append(Table(hang, colWidths=[R_ANH + 4 * mm, R_QR + 4 * mm, 178 * mm - R_ANH - R_QR - 8 * mm],

@@ -40,3 +40,10 @@ không phụ thuộc phần tự cài.
 - Lý do anh Huan nêu: giai đoạn cài đặt, file chia trong nhóm cài đặt; bên quản lý tiếp quản sẽ tự đổi mật khẩu.
 - Chưa thử trên thiết bị thật: trình duyệt / app quét QR trên điện thoại có nhận user/mật khẩu trong link hay không (một số app quét bỏ phần này → khi đó gõ user/mật khẩu in bên cạnh).
 - Bài thử: `tools/thu_hoso.py` H1g–H1n, H4e–H4f, H5; `tools/thu_tuxa10.py` (lưu đường ảnh); `tools/thu_nguoidung.py` N11.
+
+## Sửa 2.13.1 — QR xem trực tiếp (anh Huan 27/11/2026 16:39)
+
+- QR mỗi cam mở TRANG XEM TRỰC TIẾP của cam (http://tên miền:port/, kèm user/mật khẩu cam trong link) — không mở link ảnh chụp nữa.
+- Ảnh chụp trong báo cáo vẫn giữ (bằng chứng lúc kiểm).
+- KHÔNG in user / mật khẩu cam ra chữ; chỉ in link không kèm tài khoản. Dữ liệu `du_lieu()` không còn trường user / pass.
+- Chưa thử trên thiết bị thật: trang cam Oryza / UNV trên trình duyệt điện thoại có tự đăng nhập bằng tài khoản trong link và có phát được hình trực tiếp hay không.
