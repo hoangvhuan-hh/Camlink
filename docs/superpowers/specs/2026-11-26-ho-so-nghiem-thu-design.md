@@ -110,3 +110,13 @@ Lý do đổi hướng (anh Huan 20:27): người đã có CamLink thì mở app
 - Bỏ bảng cam riêng của từng điểm (lặp lại đúng những thứ đã nằm trên hàng cam). Điểm từ 4 cam trở xuống không bị tách sang hai trang.
 - Đo: Phú Lý 11 điểm · 23 cam 12 → 5 trang; 50 điểm · 100 cam 51 → 19 trang (khoảng 5–6 cam một trang). QR 27 mm: máy đọc được 22/23 mã ở 150 dpi (QR 22 mm chỉ đọc được 2/10 nên không dùng).
 - Chưa thử: quét mã 27 mm trên giấy in thật / trên màn hình điện thoại của anh Huan.
+
+## 2.14.4 — bỏ tài khoản chỉ xem, QR dùng tài khoản admin khách cấp (anh Huan chốt 27/11/2026 23:01)
+
+Đảo hướng 2.14.2. Lý do anh Huan: VINA LITE là thầu phụ (nhận khoán qua công ty khác rồi mới tới chủ đầu tư); tự tạo một tài khoản trên cam khi chưa được phép
+chẳng khác gì backdoor, và ai vào tài khoản admin cũng thấy nó, xoá là app cũng mất quyền — lợi mỏng, tiếng nặng.
+- App KHÔNG tạo / sửa / xoá tài khoản nào trên cam trong lúc kiểm tra từ xa hay lúc cài (gỡ `camlink_xem.dam_bao` khỏi `camlink_tuxa` và `camlink_core`; xoá module tạo tài khoản).
+- QR hồ sơ và chữ in cạnh QR dùng ĐÚNG tài khoản admin khách đã cấp — họ cấp cho mình, hồ sơ chỉ nhắc lại; file chỉ chia trong nhóm công ty. Lộ ra ngoài là do người trong nhóm tuồn.
+- Sau bàn giao, người quản trị hệ thống chủ động đổi mật khẩu; lúc đó QR tự hết tác dụng và app cũng báo "Sai user/pass cam" khi scan — không còn gì nằm lại trên cam.
+- KHÔNG làm nút "gỡ xemhoso" (anh Huan chốt bỏ). Các cam Phú Lý đã bị 2.14.2/2.14.3 tạo `xemhoso`: anh Huan tự xử lý trên cam nếu muốn.
+- Tính năng admin thủ công `qt_tao_tai_khoan_xem` (chủ động cấp tài khoản xem cho khách, có mã PIN) GIỮ NGUYÊN — đó là hành động có chủ đích của chủ app, không phải tự tạo ngầm.

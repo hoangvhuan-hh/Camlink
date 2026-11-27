@@ -85,3 +85,5 @@ python3 tools/chay_test.py thu_hoiquy     # một bài
 
 - 27/11/2026 — Hồ sơ "mỗi ghim một trang" trông gọn ở Phú Lý (12 trang) nhưng dự án 100 cam thành 51 trang: tôi chỉ dựng ảnh trang của dự án nhỏ ra xem.
   Thứ in theo số lượng (điểm, cam) phải dựng thử ở cỡ LỚN NHẤT sẽ gặp và đếm số trang trước khi giao; thu nhỏ QR thì phải thử đọc lại bằng máy.
+- 27/11/2026 — Bản 2.14.2 cho app TỰ TẠO tài khoản 'xemhoso' trên cam để QR không lộ mật khẩu admin; anh Huan (thầu phụ) chỉ ra: tự thêm tài khoản trên cam của chủ đầu tư khi chưa được phép = backdoor,
+  và ai vào admin cũng thấy. Không bao giờ tự tạo / để lại tài khoản, cấu hình hay dấu vết trên thiết bị của bên khác; app chỉ DÙNG thứ họ đã cấp. Giải pháp "bảo mật" mà thêm quyền cho mình trên máy người khác là sai, dù ý tốt.

@@ -35,11 +35,6 @@ ds = [{"stt": str(i), "ten": f"Cột {i}", "domain": f"pl{i}.ddns.net", "noip_us
        "tong": "0/2 cam đạt" if i == 6 else "ĐẠT", "cam": [cam(pl, str(i), n + 1, i != 6) for n in range(3 if i == 8 else 2)]} for i in range(1, 12)]
 with open(T._f_lich_su(G, pl), "w", encoding="utf-8") as fh:
     json.dump({"luc": "15:33:10 26/11/2026", "diem": ds}, fh, ensure_ascii=False)
-# sổ tài khoản CHỈ XEM (camlink_xem) — mọi cam Phú Lý đã có, TRỪ điểm 3 (cam không cho tạo)
-import camlink_xem as X
-XEM_PW = "Xem-Ab3dEf7h"
-with open(X._f(G + "/ketqua", pl), "w", encoding="utf-8") as fh:
-    json.dump({f"pl{i}.ddns.net:{8080 + n}": {"u": X.TEN, "p": XEM_PW} for i in range(1, 12) if i != 3 for n in range(3)}, fh)
 tt = tao("Cam an ninh tan trieu 2", {"diem": {str(i): {"ten": f"Ghim {i}", "domain": "", "so": 0} for i in range(1, 4)}, "toa_do": {}, "da_xong": {}, "ho_so": {}})
 
 # ================= H1: dữ liệu hồ sơ (thuần) — đúng sự thật, không làm đẹp số
@@ -55,37 +50,27 @@ chuoi = json.dumps(m, ensure_ascii=False)
 chuoi_cam = chuoi.replace("https://www.google.com/maps/", "")      # link chỉ đường Google Maps (https) là thứ duy nhất được phép https
 kt("H1g: KHÔNG có mật khẩu modem / DDNS, không user DDNS, không đường RTSP, không link https, không link LiteMark, không còn trang trung gian xem.html trong dữ liệu hồ sơ",
    all(x not in chuoi_cam for x in ("PassModem@BiMat2", "PassDdns@BiMat3", "ddnsuser", "rtsp://", "https://", "litemark", "xem.html", "github")))
-# 2.14.2 — anh Huan chốt 27/11 20:40: QR mở thẳng ẢNH CAM CHỤP NGAY LÚC QUÉT (http, không cần app), dùng tài khoản CHỈ XEM;
-# hồ sơ không còn mật khẩu quản trị; không còn chỗ tải CamLink trên đường quét. Ảnh trong báo cáo vẫn giữ.
-kt("H1h: cạnh mã in tài khoản CHỈ XEM (không phải admin) + link trang cam http không kèm tài khoản",
-   [(c["link"], c["user"], c["pass"], c["tk_xem"]) for c in d8["cam"]] == [(f"http://pl8.ddns.net:{p}/", "xemhoso", XEM_PW, True) for p in (8080, 8081, 8082)], d8["cam"])
-kt("H1i: QR mỗi cam = đường ảnh của chính cam đó qua tên miền, http, kèm tài khoản chỉ xem → quét là cam chụp và trả ảnh ngay lúc đó",
-   [c["qr"] for c in d8["cam"]] == [f"http://xemhoso:{XEM_PW}@pl8.ddns.net:{p}/anh.jpg" for p in (8080, 8081, 8082)] and all(c["qr_anh"] for c in d8["cam"]), [c["qr"] for c in d8["cam"]])
-co_xem = json.dumps([d for d in m["diem"] if d["stt"] not in ("3", "6")], ensure_ascii=False)
-kt("H1i2: điểm đã có tài khoản chỉ xem → KHÔNG còn mật khẩu quản trị ở bất kỳ chỗ nào của điểm đó (chữ in lẫn QR, kể cả dạng đã đổi ký tự)",
-   "PassCam" not in co_xem and '"admin"' not in co_xem)
-d3 = next(d for d in m["diem"] if d["stt"] == "3")
-kt("H1i3: điểm 3 — cam không cho tạo tài khoản chỉ xem → QR vẫn ra ảnh bằng tài khoản đang có, và hồ sơ ĐÁNH DẤU rõ (tk_xem = False) để in cảnh báo",
-   [(c["qr"], c["user"], c["tk_xem"], c["qr_anh"]) for c in d3["cam"]] == [(f"http://admin:PassCam%40BiMat1@pl3.ddns.net:{p}/anh.jpg", "admin", False, True) for p in (8080, 8081)], d3["cam"])
+# 2.14.4 — anh Huan chốt 27/11 23:01: app KHÔNG tạo tài khoản nào trên cam. QR mở thẳng ẢNH CAM CHỤP NGAY LÚC QUÉT (http, không cần app),
+# dùng ĐÚNG tài khoản admin khách đã cấp; cạnh mã in user + mật khẩu đó (họ cấp cho mình, hồ sơ chỉ nhắc lại). Ảnh trong báo cáo vẫn giữ.
+kt("H1h: cạnh mã in tài khoản admin khách cấp + link trang cam http không kèm tài khoản",
+   [(c["link"], c["user"], c["pass"]) for c in d8["cam"]] == [(f"http://pl8.ddns.net:{p}/", "admin", "PassCam@BiMat1") for p in (8080, 8081, 8082)], d8["cam"])
+kt("H1i: QR mỗi cam = đường ảnh của chính cam đó qua tên miền, http, kèm tài khoản admin → quét là cam chụp và trả ảnh ngay lúc đó",
+   [c["qr"] for c in d8["cam"]] == [f"http://admin:PassCam%40BiMat1@pl8.ddns.net:{p}/anh.jpg" for p in (8080, 8081, 8082)] and all(c["qr_anh"] for c in d8["cam"]), [c["qr"] for c in d8["cam"]])
+kt("H1i2: app KHÔNG tự tạo tài khoản nào trên cam (không còn sổ xem_<mã>.json, không còn tên xemhoso trong hồ sơ)",
+   not os.path.exists(os.path.join(G, "ketqua", f"xem_{pl}.json")) and "xemhoso" not in json.dumps(m, ensure_ascii=False))
 kt("H1j: ảnh chụp trong báo cáo VẪN có đủ cho cam đạt", all(c["anh"] and os.path.exists(c["anh"]) for c in d8["cam"]))
 kt("H1k: không còn QR chung của điểm (trước trỏ sang LiteMark — người không dùng LiteMark không xem được)", all("qr" not in d and "qr_litemark" not in d for d in m["diem"]))
-kt("H1l: cam đang rớt mà app vẫn nhớ tài khoản chỉ xem của nó → QR mở trang cam (chưa có ảnh để chụp), in tài khoản chỉ xem; tuyệt đối không in tài khoản quản trị",
-   all(c["qr"] == c["link"] == f"http://pl6.ddns.net:{c['http']}/" and not c["qr_anh"] and (c["user"], c["pass"]) == ("xemhoso", XEM_PW) for c in d6["cam"]), d6["cam"])
+kt("H1l: cam đang rớt (chưa có ảnh) → QR mở trang cam, vẫn in tài khoản admin khách cấp (dùng khi vào xem lại)",
+   all(c["qr"] == c["link"] == f"http://pl6.ddns.net:{c['http']}/" and not c["qr_anh"] and (c["user"], c["pass"]) == ("admin", "PassCam@BiMat1") for c in d6["cam"]), d6["cam"])
 import camlink_litemark as L
 L.noi(pl, {"id": "ct123", "ten": "Phú Lý"})
 ds[7]["cam"][0]["anh_url"] = "https://pl8.ddns.net:8080/LAPI/V1.0/Channels/0/Media/Video/Streams/0/Snapshot?a=1&b=2"
-ds[2]["muc"], ds[2]["cam"][1] = "do", cam(pl, "3", 2, False)      # điểm 3 cam 2 vừa rớt: không có ảnh, không có tài khoản chỉ xem
 with open(T._f_lich_su(G, pl), "w", encoding="utf-8") as fh:
     json.dump({"luc": "15:33:10 26/11/2026", "diem": ds}, fh, ensure_ascii=False)
-m2 = H.du_lieu(G, pl); e8 = next(d for d in m2["diem"] if d["stt"] == "8"); e3 = next(d for d in m2["diem"] if d["stt"] == "3")
+m2 = H.du_lieu(G, pl); e8 = next(d for d in m2["diem"] if d["stt"] == "8")
 kt("H1m: dự án ĐÃ nối LiteMark thì QR vẫn là link cam, không có chữ litemark / https nào", "litemark" not in json.dumps(m2).lower() and "https://" not in json.dumps(m2).replace("https://www.google.com/maps/", ""))
 kt("H1n: QR dùng ĐÚNG đường ảnh cam đã trả ở lượt kiểm (giữ nguyên phần sau dấu ?), ép về http; không có đường video nào trong hồ sơ",
-   e8["cam"][0]["qr"] == f"http://xemhoso:{XEM_PW}@pl8.ddns.net:8080/LAPI/V1.0/Channels/0/Media/Video/Streams/0/Snapshot?a=1&b=2" and "rtsp://" not in json.dumps(m2) and "anh_url" not in json.dumps(m2), e8["cam"][0]["qr"])
-kt("H1o: cam rớt, không có tài khoản chỉ xem → QR chỉ mở trang cam, KHÔNG in user / mật khẩu quản trị ra hồ sơ",
-   (e3["cam"][1]["qr"], e3["cam"][1]["user"], e3["cam"][1]["pass"]) == ("http://pl3.ddns.net:8081/", "", "") and "PassCam" not in json.dumps(e3["cam"][1]), e3["cam"][1])
-ds[2]["muc"], ds[2]["cam"][1] = "xanh", cam(pl, "3", 2)
-with open(T._f_lich_su(G, pl), "w", encoding="utf-8") as fh:
-    json.dump({"luc": "15:33:10 26/11/2026", "diem": ds}, fh, ensure_ascii=False)
+   e8["cam"][0]["qr"] == "http://admin:PassCam%40BiMat1@pl8.ddns.net:8080/LAPI/V1.0/Channels/0/Media/Video/Streams/0/Snapshot?a=1&b=2" and "rtsp://" not in json.dumps(m2) and "anh_url" not in json.dumps(m2), e8["cam"][0]["qr"])
 
 # 2.13.2 — anh Huan 27/11 16:51: thêm CHỈ ĐƯỜNG (bên nhận không dùng LiteMark là mù đường) + dòng "thực hiện bằng app CamLink"
 kt("H1p: điểm có toạ độ → có link chỉ đường Google Maps tới đúng toạ độ ghim (bấm hoặc copy là đi)",
@@ -133,13 +118,13 @@ kt("H4g: điểm KHÔNG có toạ độ → không bịa link chỉ đường; g
    p["2"]["chi_duong"] == "" and p["6"]["chi_duong"].endswith("destination=11.300900,107.300000") and p["1"]["chi_duong"].endswith("destination=11.300000,107.300000"), (p["2"]["chi_duong"], p["6"]["chi_duong"]))
 da_tl = K._doc_du_an(tl); da_tl["diem"]["2"]["rieng"] = {"cam_pw": "Rieng#Diem2"}; K._ghi_du_an(tl, da_tl)
 p2 = {d["stt"]: d for d in H.du_lieu(G, tl)["diem"]}["2"]["cam"][0]
-kt("H4f: điểm có mật khẩu cam RIÊNG, chưa có tài khoản chỉ xem → QR và chữ in dùng đúng mật khẩu riêng của điểm đó (ký tự lạ được đổi đúng chuẩn link)", p2["qr"] == "http://admin:Rieng%23Diem2@t2.ddns.net:8080/anh.jpg" and p2["pass"] == "Rieng#Diem2" and not p2["tk_xem"], p2)
+kt("H4f: điểm có mật khẩu cam RIÊNG → QR và chữ in dùng đúng mật khẩu riêng của điểm đó (ký tự lạ được đổi đúng chuẩn link)", p2["qr"] == "http://admin:Rieng%23Diem2@t2.ddns.net:8080/anh.jpg" and p2["pass"] == "Rieng#Diem2", p2)
 f2 = K.ho_so_tao(tl)
 kt("H4d: PDF Tà Lài 3 định vị · 3 cam gói trong tối đa 2 trang (trước là 4)", len(re.findall(rb"/Type\s*/Page(?![a-zA-Z])", open(f2, "rb").read())) <= 2)
 src_hs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../app/src/main/python/camlink_hoso.py"), encoding="utf-8").read()
 kt("H5a: PDF vẽ QR cho TỪNG CAM (trong vòng lặp cam), không còn câu chữ LiteMark", "QrCodeWidget(c[\"qr\"]" in src_hs and "LiteMark" not in src_hs.split("def ve_pdf")[1])
-kt("H5c: PDF in cạnh mã: 'xem ảnh cam chụp ngay lúc quét' + user + mật khẩu + link trang cam; có dòng cảnh báo khi phải dùng tài khoản quản trị; không còn lời mời cài app",
-   all(x in src_hs.split("def ve_pdf")[1] for x in ("xem ảnh cam chụp ngay lúc quét", "User:", "Mật khẩu:", "Trang cam:", "chưa có tài khoản chỉ xem")) and "bằng app <font" not in src_hs.split("def ve_pdf")[1])
+kt("H5c: PDF in cạnh mã: 'xem ảnh cam chụp ngay lúc quét' + user + mật khẩu + link trang cam; không còn lời mời cài app",
+   all(x in src_hs.split("def ve_pdf")[1] for x in ("xem ảnh cam chụp ngay lúc quét", "User:", "Mật khẩu:", "Trang cam:")) and "bằng app <font" not in src_hs.split("def ve_pdf")[1])
 kt("H5b: lõi lưu đường ảnh của cam sau kiểm tra từ xa và sau bằng chứng lúc cài", "anh_url" in src and "anh_url" in open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../app/src/main/python/camlink_tuxa.py"), encoding="utf-8").read())
 pdf = open(K.ho_so_tao(pl), "rb").read()
 kt("H5d: trong PDF link chỉ đường BẤM ĐƯỢC (mở Google Maps) cho điểm có toạ độ", pdf.count(b"google.com/maps/dir/") >= 1, pdf.count(b"google.com/maps"))

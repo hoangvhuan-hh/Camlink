@@ -10,8 +10,9 @@ KHÔNG in mật khẩu modem, user/mật khẩu DDNS, đường RTSP; link luôn
 2.14.0 (anh Huan chốt 27/11 18:11): trang web của cam KHÔNG tự đăng nhập bằng tài khoản trong link (cam Oryza bắt gõ) → QR mở TRANG XEM của CamLink
 (web/xem.html trên GitHub Pages): máy có CamLink thì vào thẳng hình live (link video có sẵn tài khoản); chưa có thì trang gợi ý dùng CamLink miễn phí,
 hoặc tự nhập. Mã cam nằm sau dấu # của link nên không gửi lên máy chủ. Cạnh QR in link trang cam + user + mật khẩu cho người không cài app.
-2.14.2 (anh Huan chốt 27/11 20:40): QR mở thẳng ẢNH CAM CHỤP NGAY LÚC QUÉT (đường ảnh của cam qua tên miền, http) — không cần app, không qua trang trung gian,
-không còn chỗ tải CamLink. QR và chữ in dùng tài khoản CHỈ XEM do app tự tạo trên cam (camlink_xem); cam chưa có thì dùng tài khoản đang có và in rõ dòng cảnh báo.
+2.14.2 → 2.14.3 (27/11): QR mở ẢNH CAM CHỤP NGAY LÚC QUÉT (đường ảnh của cam qua tên miền, http) — không cần app; hồ sơ dồn lại cho ngắn (ảnh + QR nhỏ, các điểm nối liền).
+2.14.4 (anh Huan chốt 27/11 23:01): app KHÔNG tạo tài khoản nào trên cam nữa (VINA LITE là thầu phụ, tự thêm tài khoản khi chưa được phép = backdoor).
+QR và chữ in dùng ĐÚNG tài khoản admin khách đã cấp — họ cấp cho mình, hồ sơ chỉ nhắc lại; file chỉ chia trong nhóm công ty. Khách đổi mật khẩu là QR tự hết tác dụng, không còn gì nằm lại trên cam.
 web/xem.html vẫn nằm đó cho mã QR của hồ sơ 2.14.0 / 2.14.1 đã phát (đã bỏ nút tải app).
 2.14.3 (anh Huan 27/11 21:48): dồn file cho NGẮN — các điểm nối liền nhau (không còn mỗi ghim một trang), ảnh 44 mm, QR 27 mm, bỏ bảng cam lặp lại
 (kết quả, giờ chụp, port ghi ngay trên hàng của cam). Phú Lý 23 cam: 12 → 5 trang; 100 cam: 51 → 19 trang. Nội dung không bớt.
@@ -111,7 +112,6 @@ def du_lieu(goc, ma):
     import camlink_core as K
     import camlink_tuxa as T
     import camlink_dt as C
-    import camlink_xem as XEM
     da = K._doc_du_an(ma)
     diem, td = da.get("diem", {}), da.get("toa_do", {})
     try:
@@ -157,10 +157,8 @@ def du_lieu(goc, ma):
         dom = diem[a].get("domain", "")
         for c in out.values():
             u, p = c.pop("_tk", ("", ""))
-            qu, qp = u or cd.get("cam_user", "admin"), p or cd.get("cam_pw", "")      # tài khoản app đang dùng để vào cam (quản trị)
-            xu, xp = XEM.cua_cam(os.path.join(goc, "ketqua"), ma, dom, c.get("http"))
-            c["tk_xem"] = bool(xu)                      # True: QR + chữ in dùng tài khoản CHỈ XEM; False: cam chưa có → dùng tài khoản đang có
-            c["user"], c["pass"] = (xu, xp) if xu else (qu, qp)
+            # 2.14.4: app KHÔNG tạo tài khoản nào trên cam — QR và chữ in dùng ĐÚNG tài khoản admin khách đã cấp (họ cấp cho mình, hồ sơ chỉ nhắc lại)
+            c["user"], c["pass"] = u or cd.get("cam_user", "admin"), p or cd.get("cam_pw", "")
             c["link"] = _link_cam(dom, c.get("http"))
         return out
 
@@ -180,12 +178,10 @@ def du_lieu(goc, ma):
         dom = diem.get(a, {}).get("domain", "")
         cams = [dict(x) for x in cams]      # bản riêng của ghim này (cam ở ghim dùng chung modem mang tên ghim của nó)
         for x in cams:
-            # QR = đường ảnh của cam kèm tài khoản → quét là ra ảnh cam chụp ngay lúc đó; cam chưa từng cho đường ảnh thì QR mở trang cam
+            # QR = đường ảnh của cam kèm tài khoản admin → quét là ra ảnh cam chụp ngay lúc đó; cam chưa từng cho đường ảnh thì QR mở trang cam
             x["qr"] = link_anh(x.pop("_anh_url", ""), x["user"], x["pass"])
             x["qr_anh"] = bool(x["qr"])
             x["qr"] = x["qr"] or x["link"]
-            if not (x["qr_anh"] or x["tk_xem"]):      # không có ảnh để quét và không có tài khoản chỉ xem → KHÔNG in tài khoản quản trị ra hồ sơ
-                x["user"] = x["pass"] = ""
         ds.append({"stt": k, "ten": d.get("ten", ""), "toa_do": td.get(k) or [], "chi_duong": _chi_duong(td.get(k) or []), "domain": dom, "ghi_chu": ghi, "cam": cams})
     modem = [k for k in diem if not K._chung(diem[k])]
     tat = [c for p in ds for c in p["cam"]]
@@ -296,13 +292,9 @@ def ve_pdf(m, duong):
                 chu.append(P(c["ly_do"], 8, mau=DO))
             chu.append(P("   ·   ".join(x for x in (f"Port web {c['http']}" if c["http"] else "", f"Port video {c['rtsp']}" if c["rtsp"] else "", f"Trang cam: {c['link']}" if c.get("link") else "") if x), 8, mau=MO))
             if c.get("qr"):
-                if not c["user"]:
-                    chu.append(P("Quét mã: mở trang cam", 8.5, dam, colors.HexColor("#1F2933")))
-                else:
-                    chu += [P("Quét mã: xem ảnh cam chụp ngay lúc quét" if c.get("qr_anh") else "Quét mã: mở trang cam, tự nhập tài khoản", 8.5, dam, colors.HexColor("#1F2933")),
-                            Paragraph(f"User: {_xml(c['user'])}   ·   Mật khẩu: {_xml(c['pass'])}" + ('   <font color="#5B6776" size="7.5">(nhập nếu máy hỏi)</font>' if c.get("qr_anh") else ""), st(8.5))]
-                    if not c.get("tk_xem"):
-                        chu.append(P("Tài khoản quản trị — cam chưa có tài khoản chỉ xem", 7.5, mau=DO))
+                chu += [P("Quét mã: xem ảnh cam chụp ngay lúc quét" if c.get("qr_anh") else "Quét mã: mở trang cam, tự nhập tài khoản", 8.5, dam, colors.HexColor("#1F2933"))]
+                if c["user"]:
+                    chu.append(Paragraph(f"User: {_xml(c['user'])}   ·   Mật khẩu: {_xml(c['pass'])}" + ('   <font color="#5B6776" size="7.5">(nhập nếu máy hỏi)</font>' if c.get("qr_anh") else ""), st(8.5)))
             hang.append([o_anh, o_qr, chu])
         bang = Table(hang, colWidths=[R_ANH + 3 * mm, R_QR + 3 * mm, 178 * mm - R_ANH - R_QR - 6 * mm],
                      style=TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LINEBELOW", (0, 0), (-1, -2), 0.4, VIEN), ("LEFTPADDING", (0, 0), (-1, -1), 0),

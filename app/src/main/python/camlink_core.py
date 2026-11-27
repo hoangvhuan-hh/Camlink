@@ -573,10 +573,6 @@ def bang_chung(ma, stt, log):
                     fh.write(jpg)
                 c["anh"] = f
                 c["anh_url"] = getattr(ov, "anh_url", "")
-                import camlink_xem as XEM      # 2.14.2: QR hồ sơ dùng tài khoản CHỈ XEM — tạo ngay lúc cài, cam không cho thì ghi lý do
-                c["xem_ghi"] = XEM.dam_bao(anh_dir, ma, ov, dom, c["http"], c["anh_url"])[2]
-                if c["xem_ghi"]:
-                    C.log(f"   Cam {c['so']}: chưa có tài khoản chỉ xem cho QR hồ sơ — {c['xem_ghi']} (QR dùng tài khoản đang có)")
             except Exception as e:
                 c["loi_ngoai"] = f"không lấy được ảnh: {e}"
             try:

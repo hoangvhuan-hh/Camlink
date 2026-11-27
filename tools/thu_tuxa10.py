@@ -14,19 +14,16 @@ da = {"ten": "PL", "diem": diem}
 r1 = T.kiem_du_an(G, da, "pl", cd, log=lambda s: None, tu_sua=False)
 assert r1["che_do"] == "day_du" and r1["dat"] == 3
 assert [c.get("anh_url") for x in r1["diem"] if x["stt"] == "4" for c in x["cam"]] == ["http://pl4.ddns.net:8080/anh.jpg", "http://pl4.ddns.net:8081/anh.jpg"], "2.12.22: kiểm tra từ xa phải lưu đường ảnh của từng cam (để QR hồ sơ mở thẳng ảnh cam)"
-# 2.14.2 — đi TRỌN đường: kiểm tra từ xa → cam có tài khoản chỉ xem → link trong QR hồ sơ mở ra đúng ảnh cam (như điện thoại quét)
-import requests, camlink_xem as X, camlink_hoso as H
-assert (X.TEN, "User") in c4a.users, "2.14.2: lượt kiểm tra từ xa phải tự tạo tài khoản chỉ xem (mức User) trên cam"
-xu, xp = X.cua_cam(G + "/ketqua", "pl", "pl4.ddns.net", 8080)
-assert xu == X.TEN and xp and xp != cd["cam_pw"], "2.14.2: app phải nhớ tài khoản chỉ xem của cam, khác mật khẩu quản trị"
-lq = H.link_anh("http://pl4.ddns.net:8080/anh.jpg", xu, xp)
-assert requests.get(lq, timeout=5).content[:2] == b"\xff\xd8", "2.14.2: mở link trong QR phải ra ảnh cam"
-assert requests.get(H.link_anh("http://pl4.ddns.net:8080/anh.jpg", xu, "sai-mat-khau"), timeout=5).status_code == 401, "người không có mã không xem được"
-assert all(not c.get("xem_ghi") for x in r1["diem"] if x["stt"] == "4" for c in x["cam"]) and cd["cam_pw"] not in open(X._f(G + "/ketqua", "pl"), encoding="utf-8").read()
-n_tao = c4a.so_lan_tao_user
+# 2.14.4 — đi TRỌN đường: kiểm tra từ xa KHÔNG tạo tài khoản nào trên cam; link QR hồ sơ (tài khoản admin khách cấp) mở ra đúng ảnh cam (như điện thoại quét)
+import requests, camlink_hoso as H
+assert not any(t == "xemhoso" for t, _ in c4a.users) and c4a.so_lan_tao_user == 0, "2.14.4: lượt kiểm tra từ xa KHÔNG được tạo tài khoản nào trên cam"
+assert not os.path.exists(G + "/ketqua/xem_pl.json"), "2.14.4: app không được để lại sổ tài khoản chỉ xem"
+lq = H.link_anh("http://pl4.ddns.net:8080/anh.jpg", cd["cam_user"], cd["cam_pw"])
+assert requests.get(lq, timeout=5).content[:2] == b"\xff\xd8", "2.14.4: mở link QR (tài khoản admin) phải ra ảnh cam"
+assert requests.get(H.link_anh("http://pl4.ddns.net:8080/anh.jpg", cd["cam_user"], "sai-mat-khau"), timeout=5).status_code == 401, "người không có đúng tài khoản không xem được"
 t0 = time.time(); logs = []
 r2 = T.kiem_du_an(G, da, "pl", cd, log=logs.append, tu_sua=False, nhanh=True)
-assert c4a.so_lan_tao_user == n_tao and X.cua_cam(G + "/ketqua", "pl", "pl4.ddns.net", 8080) == (xu, xp), "2.14.2: lượt kiểm sau không được tạo lại / đổi mật khẩu tài khoản chỉ xem (QR đã in phải còn dùng được)"
+assert c4a.so_lan_tao_user == 0, "2.14.4: lượt kiểm sau cũng không tạo tài khoản"
 assert r2["che_do"] == "nhanh" and r2["so_tai_su_dung"] == 1 and r2["so_quet_lai"] == 1, (r2["che_do"], r2["so_tai_su_dung"])
 p4 = [p for p in r2["diem"] if p["stt"] == "4"][0]
 assert p4["tu_lich_su"] and all(c["muc"] == "xanh" and c["tu_lich_su"] for c in p4["cam"]) and r2["dat"] == 3
