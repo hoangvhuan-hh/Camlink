@@ -73,3 +73,4 @@ python3 tools/chay_test.py thu_hoiquy     # một bài
   còn tài khoản đã nằm trong QR thì không in ra. Đừng đổi thứ người dùng yêu cầu ("xem cam") thành thứ dễ làm hơn ("xem ảnh"); thông tin của bên khác giao thì chỉ dùng, không phô ra.
 - 27/11/2026 — Hồ sơ có toạ độ nhưng không có đường đi: bên nhận không dùng LiteMark là "mù đường". Mỗi thông tin in ra phải kèm cách DÙNG nó ngay
   (toạ độ → link chỉ đường bấm được, cam → QR xem trực tiếp); và hồ sơ gửi ra ngoài phải mang tên app làm ra nó.
+- 27/11/2026 — Dòng "thực hiện bằng app CamLink" tôi in chữ xám nhỏ như chú thích → anh Huan thấy tên app "bị làm mờ ẩn". Thứ thêm vào để QUẢNG BÁ thì phải nổi (đậm, màu riêng), đừng trình bày như chữ phụ.

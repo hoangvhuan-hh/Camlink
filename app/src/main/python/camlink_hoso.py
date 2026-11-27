@@ -20,6 +20,7 @@ from urllib.parse import quote
 
 TIEU_DE = "HỒ SƠ HỆ THỐNG CAMERA HIỆN TẠI"
 THUC_HIEN = "Báo cáo được thực hiện bằng app CamLink"      # anh Huan 27/11: hồ sơ gửi đi đâu cũng mang tên app
+TEN_APP, MAU_APP = "CamLink", "#175CD3"      # tên app in ĐẬM, màu riêng, to hơn — không để chìm trong dòng chữ xám
 
 
 def _chi_duong(td):
@@ -162,7 +163,8 @@ def ve_pdf(m, duong):
     R_ANH, R_QR = 74 * mm, 30 * mm
     # ---------------- trang tổng
     e += [P(m.get("tieu_de") or TIEU_DE, 16, dam, giua=1), Spacer(1, 2 * mm), P(m["du_an"], 13, dam, giua=1), Spacer(1, 1.5 * mm),
-          P(m["thuc_hien"], 9.5, mau=MO, giua=1), Spacer(1, 3 * mm),
+          Paragraph(m["thuc_hien"].replace(TEN_APP, f'<font name="{dam}" color="{MAU_APP}" size="13.5">{TEN_APP}</font>'),
+                    ParagraphStyle("app", fontName=thuong, fontSize=10.5, leading=17, textColor=colors.HexColor("#1F2933"), alignment=1)), Spacer(1, 3 * mm),
           P(f"Lập lúc {m['lap_luc']}" + (f"   ·   Lượt kiểm tra gần nhất: {m['kiem_luc']}" if m["kiem_luc"] else ""), 9.5, mau=MO, giua=1), Spacer(1, 5 * mm)]
     du = t["chua"] == 0 and t["cam"] > 0
     e += [P(f"{t['dinh_vi']} định vị   ·   {t['cam']} cam   ·   {t['modem']} modem", 12, dam, giua=1), Spacer(1, 1.5 * mm),
@@ -242,7 +244,13 @@ def ve_pdf(m, duong):
         cv.saveState()
         cv.setFont(thuong, 8)
         cv.setFillColor(MO)
-        cv.drawString(16 * mm, 8 * mm, m["thuc_hien"])
+        dau = m["thuc_hien"].replace(TEN_APP, "")
+        cv.drawString(16 * mm, 8 * mm, dau)
+        cv.setFont(dam, 9.5)
+        cv.setFillColor(colors.HexColor(MAU_APP))
+        cv.drawString(16 * mm + cv.stringWidth(dau, thuong, 8), 8 * mm, TEN_APP)
+        cv.setFont(thuong, 8)
+        cv.setFillColor(MO)
         cv.drawRightString(A4[0] - 16 * mm, 8 * mm, f"Trang {doc.page}")
         cv.restoreState()
 

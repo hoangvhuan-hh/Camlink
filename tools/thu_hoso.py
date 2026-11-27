@@ -126,4 +126,8 @@ pdf = open(K.ho_so_tao(pl), "rb").read()
 kt("H5d: trong PDF link chỉ đường BẤM ĐƯỢC (mở Google Maps) cho điểm có toạ độ", pdf.count(b"google.com/maps/dir/") >= 1, pdf.count(b"google.com/maps"))
 kt("H5e: PDF in dòng 'thực hiện bằng app CamLink' ở trang đầu và chân mọi trang; link chỉ đường cũng in ra chữ để copy",
    "m[\"thuc_hien\"]" in src_hs.split("def ve_pdf")[1] and "onFirstPage" in src_hs and "onLaterPages" in src_hs and "p[\"chi_duong\"]" in src_hs.split("def ve_pdf")[1])
+# 2.13.3 — anh Huan 27/11 17:14: chữ CamLink đang bị mờ, phải nhấn cho nổi
+vp = src_hs.split("def ve_pdf")[1]
+kt("H5f: chữ CamLink được NHẤN (chữ đậm, màu riêng, to hơn chữ thường) ở trang đầu và ở chân trang — không in chung màu xám mờ với cả dòng",
+   "MAU_APP" in src_hs and vp.count("MAU_APP") >= 2 and 'P(m["thuc_hien"], 9.5, mau=MO' not in vp and "cv.setFont(dam" in vp)
 print(f"\n✓ 2.12.20 hồ sơ hệ thống camera: {dat}/{dat} đạt")
