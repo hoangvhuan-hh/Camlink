@@ -47,3 +47,10 @@ không phụ thuộc phần tự cài.
 - Ảnh chụp trong báo cáo vẫn giữ (bằng chứng lúc kiểm).
 - KHÔNG in user / mật khẩu cam ra chữ; chỉ in link không kèm tài khoản. Dữ liệu `du_lieu()` không còn trường user / pass.
 - Chưa thử trên thiết bị thật: trang cam Oryza / UNV trên trình duyệt điện thoại có tự đăng nhập bằng tài khoản trong link và có phát được hình trực tiếp hay không.
+
+## Sửa 2.13.2 — chỉ đường + tên app (anh Huan 27/11/2026 16:51, 16:53)
+
+- Mỗi điểm có toạ độ: dòng "Chỉ đường (Google Maps)" bấm được + in link ra chữ để copy (`https://www.google.com/maps/dir/?api=1&destination=lat,lng`).
+  Ghim dùng chung modem chỉ đường tới toạ độ của chính ghim đó. Điểm chưa có toạ độ thì không hiện dòng này.
+- Dòng "Báo cáo được thực hiện bằng app CamLink" dưới tên dự án ở trang đầu và ở chân mọi trang (kèm số trang).
+- Link Google Maps là link https duy nhất trong hồ sơ; link cam vẫn http.

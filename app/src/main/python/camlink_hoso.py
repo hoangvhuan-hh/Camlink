@@ -19,6 +19,16 @@ from urllib.parse import quote
 
 
 TIEU_DE = "HỒ SƠ HỆ THỐNG CAMERA HIỆN TẠI"
+THUC_HIEN = "Báo cáo được thực hiện bằng app CamLink"      # anh Huan 27/11: hồ sơ gửi đi đâu cũng mang tên app
+
+
+def _chi_duong(td):
+    """Link chỉ đường Google Maps tới toạ độ ghim (bấm trong PDF hoặc copy dán đều mở chỉ đường). '' nếu ghim chưa có toạ độ.
+    Bên nhận hồ sơ không dùng LiteMark vẫn tìm được đường tới điểm."""
+    try:
+        return f"https://www.google.com/maps/dir/?api=1&destination={float(td[0]):.6f},{float(td[1]):.6f}"
+    except (TypeError, ValueError, IndexError):
+        return ""
 
 
 def _so(x):
@@ -109,10 +119,10 @@ def du_lieu(goc, ma):
             cams = [tat_ca[n] for n in sorted(tat_ca) if n not in cua_ghim_khac]
             ghi = ""
         dom = diem.get(a, {}).get("domain", "")
-        ds.append({"stt": k, "ten": d.get("ten", ""), "toa_do": td.get(k) or [], "domain": dom, "ghi_chu": ghi, "cam": cams})
+        ds.append({"stt": k, "ten": d.get("ten", ""), "toa_do": td.get(k) or [], "chi_duong": _chi_duong(td.get(k) or []), "domain": dom, "ghi_chu": ghi, "cam": cams})
     modem = [k for k in diem if not K._chung(diem[k])]
     tat = [c for p in ds for c in p["cam"]]
-    return {"tieu_de": TIEU_DE, "ma": ma, "du_an": da.get("ten", ""), "lap_luc": time.strftime("%H:%M %d/%m/%Y"), "kiem_luc": str(kq.get("luc", "")),
+    return {"tieu_de": TIEU_DE, "thuc_hien": THUC_HIEN, "ma": ma, "du_an": da.get("ten", ""), "lap_luc": time.strftime("%H:%M %d/%m/%Y"), "kiem_luc": str(kq.get("luc", "")),
             "tong": {"dinh_vi": len(diem), "modem": len(modem), "cam": len(tat), "dat": sum(1 for c in tat if c["dat"]),
                      "chua": sum(1 for c in tat if not c["dat"])},
             "diem": ds}
@@ -151,13 +161,14 @@ def ve_pdf(m, duong):
     t, e = m["tong"], []
     R_ANH, R_QR = 74 * mm, 30 * mm
     # ---------------- trang tổng
-    e += [P(m.get("tieu_de") or TIEU_DE, 16, dam, giua=1), Spacer(1, 2 * mm), P(m["du_an"], 13, dam, giua=1), Spacer(1, 4 * mm),
+    e += [P(m.get("tieu_de") or TIEU_DE, 16, dam, giua=1), Spacer(1, 2 * mm), P(m["du_an"], 13, dam, giua=1), Spacer(1, 1.5 * mm),
+          P(m["thuc_hien"], 9.5, mau=MO, giua=1), Spacer(1, 3 * mm),
           P(f"Lập lúc {m['lap_luc']}" + (f"   ·   Lượt kiểm tra gần nhất: {m['kiem_luc']}" if m["kiem_luc"] else ""), 9.5, mau=MO, giua=1), Spacer(1, 5 * mm)]
     du = t["chua"] == 0 and t["cam"] > 0
     e += [P(f"{t['dinh_vi']} định vị   ·   {t['cam']} cam   ·   {t['modem']} modem", 12, dam, giua=1), Spacer(1, 1.5 * mm),
           P(f"ĐẠT {t['dat']}/{t['cam']} cam" + ("" if du else f"   ·   CHƯA ĐẠT {t['chua']} cam"), 13, dam, XANH if du else DO, giua=1), Spacer(1, 2 * mm),
           P("Ảnh trong hồ sơ được chụp qua tên miền của từng điểm, từ ngoài mạng (4G) — đúng như đơn vị sử dụng nhìn từ xa.", 9, mau=MO, giua=1), Spacer(1, 1 * mm),
-          P("Quét mã QR cạnh từng cam để vào xem trực tiếp cam đó. Tài liệu dành cho nhóm cài đặt.", 9, mau=MO, giua=1), Spacer(1, 5 * mm)]
+          P("Quét mã QR cạnh từng cam để vào xem trực tiếp cam đó. Mỗi điểm có link chỉ đường Google Maps. Tài liệu dành cho nhóm cài đặt.", 9, mau=MO, giua=1), Spacer(1, 5 * mm)]
     dong = [[P(x, 9, dam) for x in ("STT", "Vị trí", "Tên miền", "Cam", "Kết quả")]]
     for p in m["diem"]:
         n, ok = len(p["cam"]), sum(1 for c in p["cam"] if c["dat"])
@@ -178,6 +189,10 @@ def ve_pdf(m, duong):
         dong_tt = []
         if p["toa_do"]:
             dong_tt.append(f"Toạ độ: {p['toa_do'][0]:.6f}, {p['toa_do'][1]:.6f}")
+        if p["chi_duong"]:      # bấm được trong PDF; in cả link ra chữ để copy
+            e.append(Paragraph(f'Toạ độ: {p["toa_do"][0]:.6f}, {p["toa_do"][1]:.6f}   ·   <a href="{p["chi_duong"].replace("&", "&amp;")}" color="#175CD3"><u>Chỉ đường (Google Maps)</u></a>', st(10)))
+            e.append(Paragraph(f'<a href="{p["chi_duong"].replace("&", "&amp;")}" color="#175CD3">{p["chi_duong"].replace("&", "&amp;")}</a>', st(8.5)))
+            dong_tt.pop()
         if p["domain"]:
             dong_tt.append(f"Tên miền: {p['domain']}")
         if p["ghi_chu"]:
@@ -223,8 +238,16 @@ def ve_pdf(m, duong):
                                              ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)])))
     os.makedirs(os.path.dirname(duong), exist_ok=True)
     tam = duong + ".tam"
+    def chan(cv, doc):      # chân mọi trang: tên app + số trang
+        cv.saveState()
+        cv.setFont(thuong, 8)
+        cv.setFillColor(MO)
+        cv.drawString(16 * mm, 8 * mm, m["thuc_hien"])
+        cv.drawRightString(A4[0] - 16 * mm, 8 * mm, f"Trang {doc.page}")
+        cv.restoreState()
+
     SimpleDocTemplate(tam, pagesize=A4, leftMargin=16 * mm, rightMargin=16 * mm, topMargin=16 * mm, bottomMargin=14 * mm,
-                      title=f"Hồ sơ hệ thống camera hiện tại — {m['du_an']}", author="CamLink").build(e)
+                      title=f"Hồ sơ hệ thống camera hiện tại — {m['du_an']}", author="CamLink").build(e, onFirstPage=chan, onLaterPages=chan)
     os.replace(tam, duong)
     return duong
 

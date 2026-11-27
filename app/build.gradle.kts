@@ -11,8 +11,8 @@ android {
         applicationId = "vn.vinalite.camlink"
         minSdk = 24
         targetSdk = 34
-        versionCode = 96
-        versionName = "2.13.1"
+        versionCode = 97
+        versionName = "2.13.2"
         ndk { abiFilters += listOf("arm64-v8a") }   // chỉ arm64 (điện thoại Android hiện nay) → APK nhỏ hơn nhiều
     }
     signingConfigs {

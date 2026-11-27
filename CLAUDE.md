@@ -71,3 +71,5 @@ python3 tools/chay_test.py thu_hoiquy     # một bài
   Tính năng nào cũng phải có bài thử đi TRỌN đường (hỏng thật → bấm nút → hết hỏng) trên thiết bị giả có tác dụng thật; và đề xuất phải đứng ở vai người dùng của app (thợ ở xa), không phải vai người viết code.
 - 27/11/2026 — Tôi tự cho QR mở link ẢNH chụp ("vào thẳng, khỏi đăng nhập") và in cả user/mật khẩu ra chữ: anh Huan cần QR mở trang XEM TRỰC TIẾP (ảnh không chứng minh cam đang chạy),
   còn tài khoản đã nằm trong QR thì không in ra. Đừng đổi thứ người dùng yêu cầu ("xem cam") thành thứ dễ làm hơn ("xem ảnh"); thông tin của bên khác giao thì chỉ dùng, không phô ra.
+- 27/11/2026 — Hồ sơ có toạ độ nhưng không có đường đi: bên nhận không dùng LiteMark là "mù đường". Mỗi thông tin in ra phải kèm cách DÙNG nó ngay
+  (toạ độ → link chỉ đường bấm được, cam → QR xem trực tiếp); và hồ sơ gửi ra ngoài phải mang tên app làm ra nó.

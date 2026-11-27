@@ -78,8 +78,12 @@ for ten_da in ("Camera Xa Phu Ly", "Dự án cam an ninh Tà Lài mở rộng"):
     print(f"   {ten_da}: {len(cams)} cam trong hồ sơ, ví dụ: {cams[0]['link']}")
     kt(f"N11 ({ten_da}): MỌI cam có tên miền đều có link http + QR xem trực tiếp riêng, không in user / mật khẩu ra chữ; không có QR nào trỏ LiteMark / https; không có thứ gì ngoài cam (modem, DDNS)",
        all(c["link"].startswith("http://") and c["qr"].startswith("http://") and c["qr"].endswith(f":{c['http']}/") and "user" not in c and "pass" not in c for c in cams if c.get("http") and c["link"])
-       and all(c["link"] for d in mh["diem"] if d["domain"] for c in d["cam"]) and "litemark" not in json.dumps(mh).lower() and "https://" not in json.dumps(mh)
+       and all(c["link"] for d in mh["diem"] if d["domain"] for c in d["cam"]) and "litemark" not in json.dumps(mh).lower() and "https://" not in json.dumps(mh).replace("https://www.google.com/maps/", "")
        and all("qr" not in d for d in mh["diem"]))
+    co_td = [d for d in mh["diem"] if d["toa_do"]]
+    print(f"      chỉ đường: {len(co_td)}/{len(mh['diem'])} điểm có link, ví dụ: {co_td[0]['chi_duong'] if co_td else '(dự án chưa có toạ độ)'}")
+    kt(f"N11b ({ten_da}): điểm nào có toạ độ thì có link chỉ đường Google Maps, điểm không có toạ độ thì không hiện dòng chỉ đường",
+       all(d["chi_duong"].startswith("https://www.google.com/maps/dir/") for d in co_td) and all(d["chi_duong"] == "" for d in mh["diem"] if not d["toa_do"]))
 # ---- 2.13.0: trên máy anh Huan Phú Lý cài TAY (chưa có cửa vào modem). Bấm Sửa từ xa ở điểm mất luật mở port → màn báo cáo hiện gì?
 import camlink_tuxa as T
 kq_gia = {"du_an": "Camera Xa Phu Ly", "diem": [{"stt": "6", "ten": "Cột 6", "domain": "pl6.ddns.net", "muc": "vang", "tong": "1/2 cam đạt", "viec": [], "cam": [

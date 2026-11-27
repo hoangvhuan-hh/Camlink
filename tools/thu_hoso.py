@@ -10,7 +10,7 @@ K.khoi_tao(G)
 cd = C.doc_cai_dat(); cd.update(cam_user="admin", cam_pw="PassCam@BiMat1", modem_user="admin", modem_pw="PassModem@BiMat2"); C.ghi_cai_dat(cd)
 
 dat = 0
-def kt(ten, dk):
+def kt(ten, dk, them=""):
     global dat
     assert dk, "HỎNG: " + ten
     dat += 1; print("✓", ten)
@@ -46,8 +46,9 @@ kt("H1d: cam không lên ghi rõ CHƯA ĐẠT + lý do, không bỏ trống", [c
 kt("H1e: cam lên có ảnh thật + giờ chụp; điểm 8 đủ 3 cam", len(d8["cam"]) == 3 and all(c["dat"] and os.path.exists(c["anh"]) and c["gio"] for c in d8["cam"]))
 kt("H1f: có toạ độ và tên miền, port của từng cam", d8["toa_do"] == [11.28, 107.4] and d8["domain"] == "pl8.ddns.net" and [c["http"] for c in d8["cam"]] == [8080, 8081, 8082])
 chuoi = json.dumps(m, ensure_ascii=False)
+chuoi_cam = chuoi.replace("https://www.google.com/maps/", "")      # link chỉ đường Google Maps (https) là thứ duy nhất được phép https
 kt("H1g: KHÔNG có mật khẩu modem / DDNS, không user DDNS, không đường RTSP, không link https, không link LiteMark trong dữ liệu hồ sơ",
-   all(x not in chuoi for x in ("PassModem@BiMat2", "PassDdns@BiMat3", "ddnsuser", "rtsp://", "https://", "litemark")))
+   all(x not in chuoi_cam for x in ("PassModem@BiMat2", "PassDdns@BiMat3", "ddnsuser", "rtsp://", "https://", "litemark")))
 # 2.12.22 — anh Huan 26/11 23:17: QR là link + user + mật khẩu để vào xem cam luôn (giai đoạn cài đặt, file chia cho nhóm cài đặt); bỏ QR LiteMark
 # 2.13.1 — anh Huan 27/11 16:39: QR là link XEM TRỰC TIẾP (trang cam), không phải link ảnh chụp; user/pass đã nằm trong QR để đăng nhập
 # thì KHÔNG in ra chữ trên báo cáo (user/pass là của bên giao cho mình); ảnh trong báo cáo vẫn phải có.
@@ -64,9 +65,14 @@ ds[7]["cam"][0]["anh_url"] = "http://pl8.ddns.net:8080/LAPI/V1.0/Channels/0/Medi
 with open(T._f_lich_su(G, pl), "w", encoding="utf-8") as fh:
     json.dump({"luc": "15:33:10 26/11/2026", "diem": ds}, fh, ensure_ascii=False)
 m2 = H.du_lieu(G, pl); e8 = next(d for d in m2["diem"] if d["stt"] == "8")
-kt("H1m: dự án ĐÃ nối LiteMark thì QR vẫn là link cam, không có chữ litemark / https nào", "litemark" not in json.dumps(m2).lower() and "https://" not in json.dumps(m2))
+kt("H1m: dự án ĐÃ nối LiteMark thì QR vẫn là link cam, không có chữ litemark / https nào", "litemark" not in json.dumps(m2).lower() and "https://" not in json.dumps(m2).replace("https://www.google.com/maps/", ""))
 kt("H1n: app có biết đường ảnh của cam thì QR VẪN mở trang xem trực tiếp, KHÔNG mở ảnh chụp (ảnh không chứng minh cam đang chạy)",
    e8["cam"][0]["qr"] == "http://admin:PassCam%40BiMat1@pl8.ddns.net:8080/" and "Snapshot" not in json.dumps(m2) and "anh_url" not in json.dumps(m2))
+
+# 2.13.2 — anh Huan 27/11 16:51: thêm CHỈ ĐƯỜNG (bên nhận không dùng LiteMark là mù đường) + dòng "thực hiện bằng app CamLink"
+kt("H1p: điểm có toạ độ → có link chỉ đường Google Maps tới đúng toạ độ ghim (bấm hoặc copy là đi)",
+   d8["chi_duong"] == "https://www.google.com/maps/dir/?api=1&destination=11.280000,107.400000", d8.get("chi_duong"))
+kt("H1r: hồ sơ ghi rõ được thực hiện bằng app CamLink", m["thuc_hien"] == "Báo cáo được thực hiện bằng app CamLink")
 
 # ================= H2: file PDF thật
 f = K.ho_so_tao(pl)
@@ -105,6 +111,8 @@ kt("H4a: Tà Lài — 3 định vị · 3 cam · 2 modem, 3/3 đạt", (m["tong"
 kt("H4b: trang ghim 1 chỉ có cam 1; cam 2 nằm ở trang ghim 6 (ghi rõ dùng modem điểm 1)", [c["so"] for c in p["1"]["cam"]] == [1] and [c["so"] for c in p["6"]["cam"]] == [2] and "điểm 1" in p["6"]["ghi_chu"])
 kt("H4c: điểm 2 chưa có trong lượt kiểm từ xa → lấy bằng chứng lúc cài (ảnh + giờ)", p["2"]["cam"][0]["dat"] and os.path.exists(p["2"]["cam"][0]["anh"]) and "26/11/2026" in p["2"]["cam"][0]["gio"])
 kt("H4e: cam 2 ở ghim 6 (dùng modem điểm 1) → link + QR theo tên miền điểm 1, port cam 2", p["6"]["cam"][0]["link"] == "http://t1.ddns.net:8081/" and p["6"]["cam"][0]["qr"] == "http://admin:PassCam%40BiMat1@t1.ddns.net:8081/")
+kt("H4g: điểm KHÔNG có toạ độ → không bịa link chỉ đường; ghim 6 có toạ độ riêng → chỉ đường tới đúng ghim 6 (không phải ghim đặt modem)",
+   p["2"]["chi_duong"] == "" and p["6"]["chi_duong"].endswith("destination=11.300900,107.300000") and p["1"]["chi_duong"].endswith("destination=11.300000,107.300000"), (p["2"]["chi_duong"], p["6"]["chi_duong"]))
 da_tl = K._doc_du_an(tl); da_tl["diem"]["2"]["rieng"] = {"cam_pw": "Rieng#Diem2"}; K._ghi_du_an(tl, da_tl)
 p2 = {d["stt"]: d for d in H.du_lieu(G, tl)["diem"]}["2"]["cam"][0]
 kt("H4f: điểm có mật khẩu cam RIÊNG (chưa có lượt kiểm từ xa) → QR dùng đúng mật khẩu riêng của điểm đó", p2["qr"] == "http://admin:Rieng%23Diem2@t2.ddns.net:8080/")
@@ -114,4 +122,8 @@ src_hs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../app/s
 kt("H5a: PDF vẽ QR cho TỪNG CAM (trong vòng lặp cam), không còn câu chữ LiteMark", "QrCodeWidget(c[\"qr\"])" in src_hs and "LiteMark" not in src_hs.split("def ve_pdf")[1])
 kt("H5c: PDF KHÔNG in chữ user / mật khẩu cam; chú thích QR nói rõ là xem trực tiếp", "Mật khẩu:" not in src_hs and "User:" not in src_hs and "xem trực tiếp" in src_hs.split("def ve_pdf")[1])
 kt("H5b: lõi lưu đường ảnh của cam sau kiểm tra từ xa và sau bằng chứng lúc cài", "anh_url" in src and "anh_url" in open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../app/src/main/python/camlink_tuxa.py"), encoding="utf-8").read())
+pdf = open(K.ho_so_tao(pl), "rb").read()
+kt("H5d: trong PDF link chỉ đường BẤM ĐƯỢC (mở Google Maps) cho điểm có toạ độ", pdf.count(b"google.com/maps/dir/") >= 1, pdf.count(b"google.com/maps"))
+kt("H5e: PDF in dòng 'thực hiện bằng app CamLink' ở trang đầu và chân mọi trang; link chỉ đường cũng in ra chữ để copy",
+   "m[\"thuc_hien\"]" in src_hs.split("def ve_pdf")[1] and "onFirstPage" in src_hs and "onLaterPages" in src_hs and "p[\"chi_duong\"]" in src_hs.split("def ve_pdf")[1])
 print(f"\n✓ 2.12.20 hồ sơ hệ thống camera: {dat}/{dat} đạt")
