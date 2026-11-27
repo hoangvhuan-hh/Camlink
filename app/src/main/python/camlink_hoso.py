@@ -257,7 +257,34 @@ def ve_pdf(m, duong):
     SimpleDocTemplate(tam, pagesize=A4, leftMargin=16 * mm, rightMargin=16 * mm, topMargin=16 * mm, bottomMargin=14 * mm,
                       title=f"Hồ sơ hệ thống camera hiện tại — {m['du_an']}", author="CamLink").build(e, onFirstPage=chan, onLaterPages=chan)
     os.replace(tam, duong)
+    try:      # dấu phiên bản app đã vẽ file này → cập nhật app xong, lần mở kế tiếp biết phải vẽ lại
+        import camlink_phien_ban as PB
+        with open(duong + ".ban", "w", encoding="utf-8") as fh:
+            fh.write(PB.PHIEN_BAN)
+    except Exception:
+        pass
     return duong
+
+
+def can_ve_lai(goc, ma):
+    """File hồ sơ đang có còn ĐÚNG không? Phải vẽ lại khi: chưa có file · file do bản app khác vẽ (vừa cập nhật app) ·
+    dữ liệu của dự án (file dự án, lượt kiểm tra từ xa, bằng chứng lúc cài) mới hơn file. Không chạm mạng."""
+    import glob
+    import camlink_core as K
+    import camlink_tuxa as T
+    import camlink_phien_ban as PB
+    f = tep(goc, ma)
+    if not os.path.exists(f):
+        return True
+    try:
+        with open(f + ".ban", encoding="utf-8") as fh:
+            if fh.read().strip() != PB.PHIEN_BAN:
+                return True
+    except OSError:
+        return True
+    t = os.path.getmtime(f)
+    nguon = [os.path.join(K._thu_muc_du_an(), ma + ".json"), T._f_lich_su(goc, ma)] + glob.glob(os.path.join(goc, "ketqua", f"sodo_{ma}_*.json"))
+    return any(os.path.exists(x) and os.path.getmtime(x) > t for x in nguon)
 
 
 def tao(goc, ma):

@@ -1039,7 +1039,7 @@ def ho_so_tu_dong(ma):
 
 
 def ho_so_ds():
-    """Mục 'Hồ sơ hệ thống camera hiện tại': mỗi dự án ĐÃ CÀI cam một dòng {ma, ten, cam, dat, chua, luc, tep}. Thiếu file thì tự tạo."""
+    """Mục 'Hồ sơ hệ thống camera hiện tại': mỗi dự án ĐÃ CÀI cam một dòng {ma, ten, cam, dat, chua, luc, tep}. File chưa có, do bản app CŨ vẽ, hoặc dữ liệu đã đổi thì vẽ lại ngay khi mở mục này."""
     import camlink_hoso as H
     out = []
     for r in ds_du_an_kiem():
@@ -1047,7 +1047,7 @@ def ho_so_ds():
         try:
             m = H.du_lieu(GOC, ma)
             f = H.tep(GOC, ma)
-            if not os.path.exists(f):
+            if H.can_ve_lai(GOC, ma):      # chưa có · do bản app cũ vẽ · dữ liệu mới hơn file → vẽ lại, mở ra luôn là bản hiện tại
                 f = H.ve_pdf(m, f)
             out.append({"ma": ma, "ten": m["du_an"], "cam": m["tong"]["cam"], "dat": m["tong"]["dat"], "chua": m["tong"]["chua"],
                         "luc": time.strftime("%H:%M %d/%m/%Y", time.localtime(os.path.getmtime(f))), "tep": f})

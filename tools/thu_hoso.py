@@ -126,6 +126,20 @@ pdf = open(K.ho_so_tao(pl), "rb").read()
 kt("H5d: trong PDF link chỉ đường BẤM ĐƯỢC (mở Google Maps) cho điểm có toạ độ", pdf.count(b"google.com/maps/dir/") >= 1, pdf.count(b"google.com/maps"))
 kt("H5e: PDF in dòng 'thực hiện bằng app CamLink' ở trang đầu và chân mọi trang; link chỉ đường cũng in ra chữ để copy",
    "m[\"thuc_hien\"]" in src_hs.split("def ve_pdf")[1] and "onFirstPage" in src_hs and "onLaterPages" in src_hs and "p[\"chi_duong\"]" in src_hs.split("def ve_pdf")[1])
+# 2.13.4 — anh Huan 27/11 17:50: cập nhật app xong mở Hồ sơ trên điện thoại vẫn ra bản CŨ (app chỉ tạo file khi chưa có) → mở là phải ra bản mới
+import camlink_phien_ban as PB
+fp = H.tep(G, pl)
+open(fp, "wb").write(b"%PDF-BAN-CU do ban app truoc ve"); open(fp + ".ban", "w").write("2.12.22")      # giả: file do bản app cũ vẽ
+ds_ = json.loads(K.ho_so_ds()); moi = open(fp, "rb").read()
+kt("H6a: file hồ sơ do bản app CŨ vẽ → mở mục Hồ sơ là app vẽ lại bằng bản hiện tại (có link chỉ đường, không còn file cũ)",
+   b"BAN-CU" not in moi and b"google.com/maps/dir/" in moi and open(fp + ".ban").read().strip() == PB.PHIEN_BAN, moi[:40])
+t0 = os.path.getmtime(fp); time.sleep(1.1); K.ho_so_ds()
+kt("H6b: cùng bản app, dữ liệu không đổi → mở lại KHÔNG vẽ lại (không bắt người dùng chờ vô ích)", os.path.getmtime(fp) == t0)
+time.sleep(1.1); da_pl = K._doc_du_an(pl); da_pl["toa_do"]["8"] = [11.5, 107.9]; K._ghi_du_an(pl, da_pl); K.ho_so_ds()
+kt("H6c: dữ liệu dự án vừa đổi (sửa toạ độ ghim 8) → mở Hồ sơ là thấy toạ độ mới, không phải chờ lượt kiểm tra từ xa", b"destination=11.500000,107.900000" in open(fp, "rb").read())
+os.remove(fp + ".ban"); open(fp, "wb").write(b"%PDF-BAN-CU"); K.ho_so_ds()
+kt("H6d: file cũ không có dấu phiên bản (do bản 2.13.3 trở về trước vẽ) → cũng vẽ lại", b"BAN-CU" not in open(fp, "rb").read())
+
 # 2.13.3 — anh Huan 27/11 17:14: chữ CamLink đang bị mờ, phải nhấn cho nổi
 vp = src_hs.split("def ve_pdf")[1]
 kt("H5f: chữ CamLink được NHẤN (chữ đậm, màu riêng, to hơn chữ thường) ở trang đầu và ở chân trang — không in chung màu xám mờ với cả dòng",

@@ -74,3 +74,5 @@ python3 tools/chay_test.py thu_hoiquy     # một bài
 - 27/11/2026 — Hồ sơ có toạ độ nhưng không có đường đi: bên nhận không dùng LiteMark là "mù đường". Mỗi thông tin in ra phải kèm cách DÙNG nó ngay
   (toạ độ → link chỉ đường bấm được, cam → QR xem trực tiếp); và hồ sơ gửi ra ngoài phải mang tên app làm ra nó.
 - 27/11/2026 — Dòng "thực hiện bằng app CamLink" tôi in chữ xám nhỏ như chú thích → anh Huan thấy tên app "bị làm mờ ẩn". Thứ thêm vào để QUẢNG BÁ thì phải nổi (đậm, màu riêng), đừng trình bày như chữ phụ.
+- 27/11/2026 — Sửa hồ sơ 4 bản liền nhưng trên máy anh Huan mở ra vẫn là file cũ: app chỉ vẽ PDF khi CHƯA có file, nên cập nhật app xong file do bản cũ vẽ vẫn nằm đó.
+  File app tự sinh phải ghi dấu phiên bản đã sinh ra nó và sinh lại khi phiên bản / dữ liệu đổi; "xem file mẫu trên máy mình" không phải là "người dùng đã thấy".
