@@ -24,7 +24,7 @@ def anh(ten):
 def cam(ma, stt, so, len_=True, dom=None):
     c = {"so": so, "http": 8079 + so, "rtsp": 554 if so == 1 else 5540 + so - 1, "muc": "xanh" if len_ else "do",
          "nhan": "ĐẠT" if len_ else "Mất kết nối", "nguyen_nhan": "" if len_ else "Cam không trả lời — nghi mất điện tại cột",
-         "live": f"rtsp://admin:PassCam@BiMat1@{dom or f"pl{stt}.ddns.net"}:{554 if so == 1 else 5540 + so - 1}/", "user": "admin", "pass": "PassCam@BiMat1", "anh": anh(f"tuxa_{ma}_{stt}_p{8079 + so}.jpg") if len_ else ""}
+         "live": f"rtsp://admin:PassCam@BiMat1@{dom or 'pl' + str(stt) + '.ddns.net'}:{554 if so == 1 else 5540 + so - 1}/", "user": "admin", "pass": "PassCam@BiMat1", "anh": anh(f"tuxa_{ma}_{stt}_p{8079 + so}.jpg") if len_ else ""}
     return c
 
 # ---- kiểu Phú Lý: 11 điểm, 23 cam (điểm 8 có 3 cam); điểm 6 đang rớt cả 2 cam

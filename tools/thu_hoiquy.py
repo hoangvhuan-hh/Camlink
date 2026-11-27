@@ -17,6 +17,7 @@
 #   13 Sửa từ xa không bao giờ chạy 2 việc trên modem (mất luật mở port vẫn bảo "ra điểm") . thu_suamodem.py (M1, M2)
 #   14 Cập nhật app xong, mở Hồ sơ vẫn ra file do bản cũ vẽ (app chỉ tạo file khi chưa có) . thu_hoso.py (H6a–H6d)
 #   15 Quét QR hồ sơ chỉ ra trang đăng nhập của cam (không tự vào, không thấy live) . thu_trangxem.py (X11–X27) + thu_hoso.py (H1i–H1i3)
+#   16 Bài thử dùng cú pháp chỉ có ở Python 3.12+ → xanh trên máy viết, đỏ trên CI (3.11) . HQ16 (file này)
 import os, sys, json, shutil, tempfile, time, socket
 os.environ["CAMLINK_THU_NOI_BO"] = "1"
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "../app/src/main/python"))
@@ -129,5 +130,16 @@ K._ghi_du_an("hq10", {"ten": "HQ10", "toa_do": {}, "kho_ddns": [], "diem": {
 kt("HQ10a: điểm chưa có tên miền được nhận ra (rỗng)", K.ten_mien_diem("hq10", "1") == "")
 kt("HQ10b: tên miền nhập sai dạng bị từ chối, không lưu bừa", K.dat_ten_mien_tay("hq10", "1", "abc xyz") != "" and K.ten_mien_diem("hq10", "1") == "")
 kt("HQ10c: nhập đúng thì lưu và điểm sẵn sàng cài", K.dat_ten_mien_tay("hq10", "1", "hq10-01.ddns.net", "u", "p") == "" and K.ten_mien_diem("hq10", "1") == "hq10-01.ddns.net")
+
+# ---------------------------------------------------------------- HQ16: mã phải chạy được trên Python 3.11 (bản CI và app dùng), không chỉ trên máy viết
+import glob, shutil, subprocess
+goc_kho = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+tep_py = sorted(glob.glob(os.path.join(goc_kho, "app/src/main/python/*.py")) + glob.glob(os.path.join(goc_kho, "tools/*.py")))
+py311 = shutil.which("python3.11") or (sys.executable if sys.version_info[:2] == (3, 11) else "")
+if py311:
+    loi = [os.path.basename(x) for x in tep_py if subprocess.run([py311, "-c", "import sys; compile(open(sys.argv[1], encoding='utf-8').read(), sys.argv[1], 'exec')", x], capture_output=True).returncode != 0]
+    kt("HQ16: mọi tệp Python (lõi app + bài thử) đúng cú pháp Python 3.11", loi == [], loi) if "them" in kt.__code__.co_varnames else kt("HQ16: mọi tệp Python (lõi app + bài thử) đúng cú pháp Python 3.11 " + str(loi), loi == [])
+else:
+    print("· (máy này không có python3.11 → bỏ qua HQ16; CI chạy bằng 3.11)")
 
 print(f"\n✓ HỒI QUY: {dat}/{dat} mục đạt — 10 lỗi cũ đều có nơi canh (xem bảng đầu file)")
