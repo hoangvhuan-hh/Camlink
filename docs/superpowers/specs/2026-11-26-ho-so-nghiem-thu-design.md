@@ -120,3 +120,12 @@ chẳng khác gì backdoor, và ai vào tài khoản admin cũng thấy nó, xo�
 - Sau bàn giao, người quản trị hệ thống chủ động đổi mật khẩu; lúc đó QR tự hết tác dụng và app cũng báo "Sai user/pass cam" khi scan — không còn gì nằm lại trên cam.
 - KHÔNG làm nút "gỡ xemhoso" (anh Huan chốt bỏ). Các cam Phú Lý đã bị 2.14.2/2.14.3 tạo `xemhoso`: anh Huan tự xử lý trên cam nếu muốn.
 - Tính năng admin thủ công `qt_tao_tai_khoan_xem` (chủ động cấp tài khoản xem cho khách, có mã PIN) GIỮ NGUYÊN — đó là hành động có chủ đích của chủ app, không phải tự tạo ngầm.
+
+## 2.14.5 — tăng tốc quét từ xa (~5x) và vẽ hồ sơ (~2x) (anh Huan chốt 27/11/2026 23:53)
+
+Chỗ chậm: việc qua mạng bị NỐI TIẾP. Mỗi cam hỏi cam ~8–10 lượt nối nhau; các cam trong một điểm lại quét lần lượt; phân loại cam/web cũng co() từng port nối tiếp. Vẽ hồ sơ: QR vẽ vector từng mã (CPU).
+- `camlink_tuxa._kiem_diem_goc`: tách phần hỏi từng cam ra hàm `_mot_cam`, chạy SONG SONG trong điểm (ThreadPoolExecutor); phân loại cam/web cũng song song; số điểm chạy cùng lúc 4→10. Công tắc `CAMLINK_TUAN_TU=1` ép nối tiếp để bộ đo so baseline.
+- `camlink_dt`: thêm van `_MANG` (BoundedSemaphore, mặc định 24, chỉnh bằng CAMLINK_MANG) bọc mọi lượt hỏi cam (goi + tải ảnh) → song song nhưng không dồn 4G. Giữ nguyên bước đo lại lượt 2 chống báo rớt sai.
+- `camlink_hoso`: `_qr_png` dựng mã QR ra ảnh PNG (nhanh ~4 lần vẽ vector), `_dung_qr_song_song` dựng trước mọi mã song song rồi nhúng.
+- Đo (`tools/thu_tocdo.py`, cam giả gắn trễ 0,15s/lượt, so cũ/mới trong một lần chạy): quét 6 điểm × 3 cam 12,8s → 2,5s (~5x); hồ sơ 100 cam 2,0s → ~1,1s (~2x). QR mã hoá là CPU thuần, Android không chạy đa tiến trình nên hồ sơ dừng ở ~2x.
+- Không đổi kết quả quét: 18/18 cam vẫn ĐẠT, bước đo lại chống nhiễu giữ nguyên; cả bộ thử xanh.

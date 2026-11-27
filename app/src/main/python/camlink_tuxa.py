@@ -232,13 +232,12 @@ def _kiem_diem_goc(stt, d, cd, anh_dir, ma, ho_so=None):
     with ThreadPoolExecutor(16) as ex:
         ket = dict(zip(cong, ex.map(lambda x: cham_tg(dom, x), cong)))
     mo = [x for x in cong if ket[x][0] == "mo" and x not in rtsp_du_kien and x not in RTSP_CHUNG]
-    cam_port, web_khac = [], []
-    for x in mo:
-        ov = C.Onvif(dom, x, cu, cp)
-        if ov.co() or camlink_oryza.la_oryza(dom, x, 4):
-            cam_port.append(x)
-        else:
-            web_khac.append(x)
+    def _la_cam(x):
+        return C.Onvif(dom, x, cu, cp).co() or camlink_oryza.la_oryza(dom, x, 4)
+    with ThreadPoolExecutor(min(8, len(mo) or 1)) as _ex:      # phân loại cam/web SONG SONG (trước đây co() từng port nối tiếp)
+        la = dict(zip(mo, _ex.map(_la_cam, mo)))
+    cam_port = [x for x in mo if la[x]]
+    web_khac = [x for x in mo if not la[x]]
     if web_khac:
         x = web_khac[0]
         kq["web_modem"] = f"{'https' if x == 443 else 'http'}://{dom}:{x}"
@@ -286,8 +285,8 @@ def _kiem_diem_goc(stt, d, cd, anh_dir, ma, ho_so=None):
     ghi_quet = (f"Quét {dom}: thấy {len(cam_port)} cam (port {', '.join(map(str, cam_port)) or 'không có'})"
                 f"; cấu hình {so} cam ({nguon_so})")
 
-    # Tầng 4–5 — từng cam
-    for c in cams:
+    # Tầng 4–5 — từng cam, chạy SONG SONG (mỗi cam ~8–10 lượt hỏi cam nối nhau; nối tiếp từng cam là chỗ chậm nhất của quét)
+    def _mot_cam(c):
         c["t_http"], c["ms_http"] = ket.get(c["http"], cham_tg(dom, c["http"]))
         if c["http"] not in cam_port:
             c["khong_thay"] = True   # vị trí file ghi có cam nhưng quét tên miền không thấy
@@ -311,7 +310,7 @@ def _kiem_diem_goc(stt, d, cd, anh_dir, ma, ho_so=None):
                      ["khoi_dong_modem"], "Port mở nhưng cam không trả lời")
             if c["rtsp"]:
                 c["t_rtsp"], c["ms_rtsp"] = ket.get(c["rtsp"], ("im_lang", 0))
-            continue
+            return
         ov = C.Onvif(dom, c["http"], cu, cp)
         c["onvif"] = "trả lời (chưa đăng nhập)"
         tt, loi_dn = None, None
@@ -327,7 +326,7 @@ def _kiem_diem_goc(stt, d, cd, anh_dir, ma, ho_so=None):
             c["onvif"] = f"trả lời chậm/lỗi ({str(loi_dn)[:60]})"
             _ket(c, VANG, "Cam có mạng nhưng trả lời chậm (bận hoặc mạng yếu) — CHƯA kết luận sai user/pass",
                  ["Mở xem trực tiếp: có hình là cam vẫn tốt.", "Kiểm tra lại sau vài phút."], nhan="Cam trả lời chậm")
-            continue
+            return
         try:
             if tt is None:
                 raise loi_dn
@@ -343,7 +342,7 @@ def _kiem_diem_goc(stt, d, cd, anh_dir, ma, ho_so=None):
             _ket(c, VANG, "Cam có mạng nhưng user/pass cam lưu trong app SAI",
                  ["Sửa user/pass cam ở nút \"User / pass cam và modem\" rồi kiểm tra lại.",
                   "Nếu pass đúng mà vẫn báo: có người đã đổi pass cam → hỏi đơn vị quản lý."], nhan="Sai user/pass cam")
-            continue
+            return
         try:
             um = ov.url_media()
             tk = ov.profile_dau(um)
@@ -356,7 +355,7 @@ def _kiem_diem_goc(stt, d, cd, anh_dir, ma, ho_so=None):
         except Exception as e:
             _ket(c, VANG, f"Cam trả lời nhưng không ra hình ({str(e)[:60]}) → cam treo",
                  ["Bấm Sửa từ xa để khởi động lại cam, chờ 2 phút rồi kiểm tra lại."], ["khoi_dong_cam"], "Cam treo")
-            continue
+            return
         # cổng video THẬT của cam (đọc từ cam), không đoán theo quy ước
         rtsp_cam = 0
         try:
@@ -390,7 +389,7 @@ def _kiem_diem_goc(stt, d, cd, anh_dir, ma, ho_so=None):
             else:
                 _ket(c, VANG, f"Có hình nhưng port RTSP {c['rtsp']} chưa mở trên modem → IOC không xem được video",
                      [f"Bấm Sửa từ xa để thêm luật NAT {c['rtsp']} (cần vào được web modem)."], ["them_nat"], "Thiếu NAT RTSP")
-            continue
+            return
         if c.get("them"):
             mac_hs = {x.get("mac", "").upper() for x in (ho_so or {}).get("cam", []) if x.get("mac")}
             cua_minh = bool(c.get("mac")) and c["mac"].upper() in mac_hs
@@ -400,17 +399,20 @@ def _kiem_diem_goc(stt, d, cd, anh_dir, ma, ho_so=None):
                  ["Hệ thống có thêm thiết bị mà hồ sơ không có: hoặc đơn vị khác nâng cấp/lắp thêm không báo, hoặc có người biết pass modem/cam đã thêm hoặc can thiệp.",
                   "Xác minh với đơn vị quản lý điểm: ai lắp, khi nào. Nếu không ai nhận → đổi pass modem và pass cam cả điểm.",
                   "Nếu là cam hợp lệ: bổ sung vào file khảo sát để lần sau không báo lạ."], [], "CAM LẠ (ngoài hồ sơ)")
-            continue
+            return
         if c.get("loi_cau_hinh"):
             _ket(c, VANG, "Cam đang chạy (có hình) nhưng cấu hình trong cam chưa đúng: " + c["loi_cau_hinh"][0],
                  ["Cam đang chạy nên app KHÔNG tự sửa, chỉ báo cáo."] + c["loi_cau_hinh"] +
                  ["Muốn sửa: bấm nút Sửa từ xa bên dưới hoặc ra điểm chạy lại CamLink."],
                  (["nhap_lai_ddns"] if c.get("ddns_sai") else []) + (["khoi_phuc_mang"] if c.get("mang_sai") else []),
                  "Cấu hình trong cam chưa đúng")
-            continue
+            return
         _ket(c, XANH, "Xem được từ ngoài: có ảnh chụp qua tên miền, port web + video mở, cấu hình trong cam đúng", [], nhan="Đạt")
     # Cùng điểm: số cam quét được = số theo file, có vị trí "không thấy" và có "cam lạ" → cam ĐỔI PORT,
     # không phải cam lạ, cũng không phải cam mất
+    _sl = 1 if os.environ.get("CAMLINK_TUAN_TU") else min(8, len(cams) or 1)      # CAMLINK_TUAN_TU=1: ép nối tiếp để bộ đo so sánh baseline
+    with ThreadPoolExecutor(_sl) as ex:
+        list(ex.map(_mot_cam, cams))
     thieu = [c for c in cams if c.get("khong_thay")]
     la = [c for c in cams if c.get("them")]
     if thieu and la and len(cam_port) == so:
@@ -752,7 +754,8 @@ def kiem_du_an(goc, da, ma, cd, log=print, chi_diem=None, tu_sua=True, nhanh=Fal
         tien_do(5 + 70 * n / max(len(quet_ds), 1), f"Lượt 1: xong {n}/{len(quet_ds)} điểm cần quét" + (f" (+{len(tai_su_dung)} điểm lấy từ lịch sử)" if tai_su_dung else ""))
         return r
 
-    with ThreadPoolExecutor(4) as ex:
+    _sd = 4 if os.environ.get("CAMLINK_TUAN_TU") else min(10, len(quet_ds) or 1)
+    with ThreadPoolExecutor(_sd) as ex:
         kq_quet = dict(zip(quet_ds, ex.map(mot, quet_ds)))
     kqs = []
     for k in ds:

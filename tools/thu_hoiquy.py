@@ -19,6 +19,7 @@
 #   15 Quét QR hồ sơ chỉ ra trang đăng nhập của cam (không tự vào, không thấy live) . thu_trangxem.py (X11–X27) + thu_hoso.py (H1i–H1i3)
 #   16 Bài thử dùng cú pháp chỉ có ở Python 3.12+ → xanh trên máy viết, đỏ trên CI (3.11) . HQ16 (file này)
 #   17 Trang xem hiện mật khẩu sai dạng %40; iPhone bấm "Mở trang cam" bị trắng trong trình duyệt nhúng . thu_trangxem.py (X2d, X2e, X28–X31)
+#   18 Quét từ xa / vẽ hồ sơ chậm (nối tiếp từng cam, QR vẽ vector) → song song hoá + QR PNG . thu_tocdo.py (so cũ/mới ≥5x, hồ sơ <1,6s)
 import os, sys, json, shutil, tempfile, time, socket
 os.environ["CAMLINK_THU_NOI_BO"] = "1"
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "../app/src/main/python"))

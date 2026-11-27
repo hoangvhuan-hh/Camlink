@@ -122,7 +122,7 @@ kt("H4f: điểm có mật khẩu cam RIÊNG → QR và chữ in dùng đúng m�
 f2 = K.ho_so_tao(tl)
 kt("H4d: PDF Tà Lài 3 định vị · 3 cam gói trong tối đa 2 trang (trước là 4)", len(re.findall(rb"/Type\s*/Page(?![a-zA-Z])", open(f2, "rb").read())) <= 2)
 src_hs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../app/src/main/python/camlink_hoso.py"), encoding="utf-8").read()
-kt("H5a: PDF vẽ QR cho TỪNG CAM (trong vòng lặp cam), không còn câu chữ LiteMark", "QrCodeWidget(c[\"qr\"]" in src_hs and "LiteMark" not in src_hs.split("def ve_pdf")[1])
+kt("H5a: PDF nhúng QR cho TỪNG CAM (QR dựng sẵn PNG), không còn câu chữ LiteMark", "qr_png[c[\"qr\"]]" in src_hs and "_dung_qr_song_song" in src_hs and "LiteMark" not in src_hs.split("def ve_pdf")[1])
 kt("H5c: PDF in cạnh mã: 'xem ảnh cam chụp ngay lúc quét' + user + mật khẩu + link trang cam; không còn lời mời cài app",
    all(x in src_hs.split("def ve_pdf")[1] for x in ("xem ảnh cam chụp ngay lúc quét", "User:", "Mật khẩu:", "Trang cam:")) and "bằng app <font" not in src_hs.split("def ve_pdf")[1])
 kt("H5b: lõi lưu đường ảnh của cam sau kiểm tra từ xa và sau bằng chứng lúc cài", "anh_url" in src and "anh_url" in open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../app/src/main/python/camlink_tuxa.py"), encoding="utf-8").read())

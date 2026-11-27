@@ -170,6 +170,9 @@ def _lop_xu_ly(cam):
             pass
 
         def _gui(self, ma, than, kieu="text/html", dau=None):
+            _tre = float(os.environ.get("CAMLINK_GIA_TRE") or 0)      # độ trễ mạng giả (giây/lượt) để đo tốc độ quét; 0 = tắt
+            if _tre:
+                time.sleep(_tre)
             if isinstance(than, str):
                 than = than.encode()
             self.send_response(ma)

@@ -93,6 +93,33 @@ def giai_ma_xem(ma):
     return d
 
 
+def _qr_png(data, qz=4, vien=4):
+    """Dựng mã QR ra ảnh PNG (nhanh hơn ~4 lần so với vẽ vector của reportlab khi hồ sơ có cả trăm cam). Trả bytes PNG."""
+    import io
+    from reportlab.graphics.barcode.qr import QrCodeWidget
+    from PIL import Image as _PILImage
+    w = QrCodeWidget(data, barLevel="L"); w.qr.make()
+    n = w.qr.getModuleCount(); side = n + 2 * vien
+    im = _PILImage.new("1", (side, side), 1); px = im.load()
+    for r in range(n):
+        hang = w.qr.modules[r]
+        for col in range(n):
+            if hang[col]:
+                px[col + vien, r + vien] = 0
+    im = im.resize((side * qz, side * qz), _PILImage.NEAREST)
+    buf = io.BytesIO(); im.save(buf, "PNG"); return buf.getvalue()
+
+
+def _dung_qr_song_song(ds_ma):
+    """Dựng trước mọi mã QR (mỗi mã một lần) — chạy song song để vẽ hồ sơ nhiều cam nhanh. Trả {chuỗi: bytes PNG}."""
+    from concurrent.futures import ThreadPoolExecutor
+    ma = sorted({x for x in ds_ma if x})
+    if not ma:
+        return {}
+    with ThreadPoolExecutor(min(8, len(ma))) as ex:
+        return dict(zip(ma, ex.map(_qr_png, ma)))
+
+
 def link_anh(anh_url, user, pw):
     """Link nằm trong QR: đường ảnh của cam (qua tên miền) kèm tài khoản → quét là cam chụp và trả ảnh NGAY LÚC ĐÓ. Luôn http."""
     m = re.match(r"^https?://(?:[^@/]*@)?(.+)$", anh_url or "")
@@ -252,6 +279,8 @@ def ve_pdf(m, duong):
     # Mỗi điểm: 1 dòng tên + kết quả, 1 dòng toạ độ / chỉ đường / tên miền; mỗi cam MỘT hàng: ảnh | QR | kết quả, giờ chụp, port, tài khoản, link.
     e += [Spacer(1, 20 * mm), HRFlowable(width="100%", thickness=0.8, color=VIEN, spaceAfter=3 * mm)]      # chừa chỗ ký rồi nối luôn các điểm, không ngắt trang
     fd = lambda s_, mau: f'<font name="{dam}" color="{mau}">{s_}</font>'
+    import io as _io
+    qr_png = _dung_qr_song_song([c.get("qr") for p in m["diem"] for c in p["cam"]])
     for p in m["diem"]:
         n, ok = len(p["cam"]), sum(1 for c in p["cam"] if c["dat"])
         kq_d = f"ĐẠT {ok}/{n} cam" if n and ok == n else (f"CHƯA ĐẠT {n - ok}/{n} cam" if n else "Chưa có cam")
@@ -281,11 +310,8 @@ def ve_pdf(m, duong):
                 except Exception:
                     o_anh = P("không đọc được ảnh", 8, mau=DO)
             o_qr = ""
-            if c.get("qr"):
-                w = QrCodeWidget(c["qr"], barLevel="L")      # link ngắn (đường ảnh của cam) + mức sửa lỗi thấp → ô vuông vẫn to dù mã in nhỏ
-                x0, y0, x1, y1 = w.getBounds()
-                o_qr = Drawing(R_QR, R_QR, transform=[R_QR / (x1 - x0), 0, 0, R_QR / (y1 - y0), 0, 0])
-                o_qr.add(w)
+            if c.get("qr") and qr_png.get(c["qr"]):
+                o_qr = Image(_io.BytesIO(qr_png[c["qr"]]), width=R_QR, height=R_QR)      # QR dựng sẵn thành PNG → nhúng nhanh
             chu = [Paragraph(f'<font name="{dam}">Cam {c["so"]}</font>   ' + fd("ĐẠT" if c["dat"] else "CHƯA ĐẠT", "#067647" if c["dat"] else "#B42318")
                              + (f'   ·   chụp {_xml(c["gio"])}' if c["dat"] and c["gio"] else ""), st(9))]
             if not c["dat"] and c["ly_do"]:

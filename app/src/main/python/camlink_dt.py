@@ -8,7 +8,7 @@ Tự làm: tìm cam trong mạng → DDNS (cam 1) → port HTTP/RTSP → gateway
 → mở port trên modem (UPnP) → kiểm tra IP WAN, CGNAT, tên miền.
 Quy ước VINA LITE: cam1 .200 8080/554 · cam2 .201 8081/5541 · cam3 .202 8082/5542.
 """
-import base64, datetime, hashlib, ipaddress, json, os, re, socket, sys, time, zipfile
+import base64, datetime, hashlib, ipaddress, json, os, re, socket, sys, threading, time, zipfile
 from concurrent.futures import ThreadPoolExecutor
 
 try:
@@ -158,6 +158,9 @@ def _x(v):
             .replace('"', '&quot;').replace("'", '&apos;'))
 
 
+_MANG = threading.BoundedSemaphore(int(os.environ.get("CAMLINK_MANG") or 24))   # tối đa 16 lượt hỏi cam cùng lúc trên toàn app (quét song song nhưng không dồn 4G)
+
+
 class Onvif:
     def __init__(self, ip, port, user, pw):
         self.ip, self.port, self.user, self.pw = ip, port, user, pw
@@ -183,8 +186,9 @@ class Onvif:
     def goi(self, than, xac_thuc=True, cho=8, url=None):
         env = f'<?xml version="1.0" encoding="UTF-8"?><s:Envelope {NS}>' + \
               (self._bao_mat() if xac_thuc else "") + f"<s:Body>{than}</s:Body></s:Envelope>"
-        r = requests.post(url or self.url, data=env.encode(), timeout=cho,
-                          headers={"Content-Type": "application/soap+xml; charset=utf-8"})
+        with _MANG:
+            r = requests.post(url or self.url, data=env.encode(), timeout=cho,
+                              headers={"Content-Type": "application/soap+xml; charset=utf-8"})
         if r.status_code != 200 or "Fault" in r.text[:3000]:
             ly_do = re.search(r"<[^>]*Text[^>]*>(.*?)</", r.text)
             raise RuntimeError(f"ONVIF {r.status_code}: {ly_do.group(1) if ly_do else r.text[:120]}")
@@ -295,7 +299,8 @@ class Onvif:
             raise RuntimeError("cam không cho lấy ảnh chụp")
         u = self._doi_host(m.group(1).replace("&amp;", "&"), self.port)
         for au in (HTTPDigestAuth(self.user, self.pw), (self.user, self.pw)):
-            r = requests.get(u, auth=au, timeout=12)
+            with _MANG:
+                r = requests.get(u, auth=au, timeout=12)
             if r.status_code == 200 and r.content[:2] == b"\xff\xd8":
                 self.anh_url = u      # đường ảnh của cam (qua tên miền) — hồ sơ dùng làm QR mở thẳng ảnh cam
                 return r.content
