@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>CamLink - Xem camera trực tiếp</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#EEF2F7;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#1F2933;line-height:1.5}
+.the{max-width:440px;margin:0 auto;padding:20px 16px 28px;background:#fff;min-height:100vh}
+.ten{display:flex;align-items:center;gap:8px;font-size:22px;font-weight:700;color:#175CD3;margin-bottom:14px}
+.ten svg{width:26px;height:26px}
+.da{font-size:14px;color:#5B6776;margin:0}
+.cam{font-size:21px;font-weight:700;margin:2px 0 16px}
+.nut{display:block;width:100%;border:0;border-radius:12px;font-size:17px;font-weight:700;padding:15px 12px;text-align:center;text-decoration:none;cursor:pointer}
+.chinh{background:#175CD3;color:#fff}
+.phu{background:#fff;color:#175CD3;border:1.5px solid #175CD3}
+.nhat{background:#fff;color:#1F2933;border:1px solid #C9D1DA;font-weight:600;font-size:15px;padding:12px}
+.duoi{font-size:14px;color:#5B6776;text-align:center;margin:8px 0 18px}
+.khoi{background:#EAF2FE;border-radius:12px;padding:14px}
+.khoi h2{font-size:17px;margin:0 0 8px;color:#175CD3}
+.khoi ul{list-style:none;margin:0 0 12px;padding:0;font-size:15px}
+.khoi li{padding:3px 0 3px 26px;position:relative}
+.khoi li:before{content:"\2713";position:absolute;left:2px;color:#175CD3;font-weight:700}
+.bao{background:#FFF4E5;border:1px solid #F5C26B;border-radius:10px;padding:10px 12px;font-size:14px;margin:0 0 14px;display:none}
+.tu{border-top:1px solid #E1E6EC;margin-top:20px;padding-top:14px}
+.tu h3{font-size:15px;margin:0 0 8px;color:#5B6776;font-weight:600}
+.dong{display:flex;align-items:center;gap:8px;font-size:15px;padding:5px 0}
+.dong span:first-child{width:82px;color:#5B6776}
+.dong b{flex:1;word-break:break-all;font-weight:600}
+.dong button{border:1px solid #C9D1DA;background:#fff;border-radius:8px;padding:5px 10px;font-size:13px;color:#175CD3}
+.chan{font-size:13px;color:#8693A2;text-align:center;margin-top:20px}
+.an{display:none}
+</style>
+</head>
+<body>
+<div class="the">
+  <div class="ten">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7h1a2 2 0 0 0 2-2 1 1 0 0 1 1-1h6a1 1 0 0 1 1 1 2 2 0 0 0 2 2h1a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2"/><circle cx="12" cy="13" r="3"/></svg>
+    CamLink
+  </div>
+  <p class="da" id="da"></p>
+  <p class="cam" id="cam">Xem camera trực tiếp</p>
+
+  <div class="bao" id="bao"></div>
+
+  <div id="khoi-live">
+    <a class="nut chinh" id="nut-live" href="#">&#9654;&nbsp; Xem live ngay</a>
+    <p class="duoi">Tự đăng nhập, không phải gõ mật khẩu</p>
+  </div>
+
+  <div class="tu" id="khoi-tu">
+    <h3>Mở trang cam và tự nhập</h3>
+    <div class="dong"><span>User</span><b id="u"></b><button type="button" data-chep="u">Sao chép</button></div>
+    <div class="dong"><span>Mật khẩu</span><b id="p"></b><button type="button" data-chep="p">Sao chép</button></div>
+    <a class="nut nhat" id="nut-web" href="#" style="margin-top:8px">Mở trang cam</a>
+    <p class="duoi an" id="goi-y-ios" style="margin:8px 0 0">Nếu trang cam trắng: bấm dấu ··· rồi chọn "Mở bằng Safari".</p>
+  </div>
+
+  <p class="chan">CamLink: app cài đặt và kiểm tra camera cho thợ thi công</p>
+</div>
+<script>
+(function () {
+  // 2.14.2 (anh Huan 27/11 20:40): trang này chỉ còn phục vụ mã QR của hồ sơ 2.14.0 / 2.14.1 đã phát. KHÔNG còn nút tải app ở đây.
+  var $ = function (i) { return document.getElementById(i); };
+  var ma = (location.hash || "").replace(/^#/, "");
+  var j = null;
+  try {
+    var s = ma.replace(/-/g, "+").replace(/_/g, "/");
+    while (s.length % 4) s += "=";
+    var b = atob(s), a = new Uint8Array(b.length);
+    for (var i = 0; i < b.length; i++) a[i] = b.charCodeAt(i);
+    j = JSON.parse(new TextDecoder("utf-8").decode(a));
+  } catch (e) { j = null; }
+  var bao = function (t) { $("bao").textContent = t; $("bao").style.display = "block"; };
+  if (!j || typeof j !== "object") {
+    bao("Mã không hợp lệ hoặc thiếu. Hãy quét lại mã QR trong hồ sơ.");
+    $("khoi-live").className = "an"; $("khoi-tu").className = "an";
+    return;
+  }
+  // Mã giữ ngắn cho QR dễ quét: tên miền, user, mật khẩu tách từ link video j.l (cùng quy tắc với camlink_hoso.tach_link_video):
+  // user = tới dấu ':' đầu tiên; mật khẩu = tới dấu '@' cuối cùng trước dấu '/' đầu tiên.
+  var m = /^rtsp:\/\/(?:([^\/]*)@)?([^@\/:]+)/.exec(j.l || "");
+  if (m) {
+    var tk = m[1] || "", c = tk.indexOf(":");
+    // link app lấy từ cam đã đổi ký tự lạ thành %xx (vd @ → %40) → đổi ngược lại để hiện đúng mật khẩu thật
+    var nguoc = function (t) { try { return decodeURIComponent(t); } catch (e) { return t; } };
+    if (!j.u) j.u = nguoc(c < 0 ? tk : tk.slice(0, c));
+    if (!j.p) j.p = nguoc(c < 0 ? "" : tk.slice(c + 1));
+    if (!j.h) j.h = m[2];
+  }
+  if (!j.w && j.h && j.wp) j.w = "http://" + j.h + ":" + j.wp + "/";
+  $("da").textContent = j.da || "";
+  $("cam").textContent = j.t || "Xem camera trực tiếp";
+  document.title = "CamLink - " + (j.t || "Xem camera");
+  $("u").textContent = j.u || ""; $("p").textContent = j.p || "";
+  if (j.w) $("nut-web").href = j.w; else $("nut-web").className = "an";
+  var nut = document.querySelectorAll("[data-chep]");
+  for (var k = 0; k < nut.length; k++) nut[k].addEventListener("click", function () {
+    var o = this, t = $(o.getAttribute("data-chep")).textContent;
+    var xong = function () { o.textContent = "Đã chép"; setTimeout(function () { o.textContent = "Sao chép"; }, 1500); };
+    try { navigator.clipboard.writeText(t).then(xong, function () {}); } catch (e) {
+      try { var r = document.createRange(); r.selectNodeContents($(o.getAttribute("data-chep"))); var g = getSelection(); g.removeAllRanges(); g.addRange(r); document.execCommand("copy"); xong(); } catch (e2) {}
+    }
+  });
+
+  var ua = navigator.userAgent || "";
+  var laAndroid = /Android/i.test(ua), laIos = /iPhone|iPad|iPod/i.test(ua);
+  var chua = /[?&]chua=1/.test(location.search);
+  if (laIos) {
+    $("khoi-live").className = "an";
+    bao("CamLink hiện có cho điện thoại Android. Trên iPhone, hãy mở trang cam và nhập user, mật khẩu bên dưới.");
+    if (j.w) {
+      // Đã ở Safari (link có web=1) → vào thẳng trang cam qua tên miền.
+      if (/[?&]web=1/.test(location.search)) { location.replace(j.w); return; }
+      // Trang cam hay bị trắng trong trình duyệt nhúng của app quét mã (27/11) → bấm nút thì thử chuyển sang Safari trước;
+      // máy không nhận kiểu link này thì sau 1,5 giây mở thẳng trang cam như cũ.
+      var quaSafari = "x-safari-https://" + location.host + location.pathname + "?web=1#" + ma;
+      $("goi-y-ios").className = "duoi"; $("goi-y-ios").style.display = "block";
+      $("nut-web").addEventListener("click", function (e) {
+        e.preventDefault();
+        var daRoi = false, roi = function () { daRoi = true; };
+        document.addEventListener("visibilitychange", roi); window.addEventListener("pagehide", roi);
+        location.href = quaSafari;
+        setTimeout(function () { if (!daRoi && !document.hidden) location.href = j.w; }, 1500);
+      });
+    }
+    return;
+  }
+  if (!j.l) { $("khoi-live").className = "an"; bao("Cam này chưa có link xem trực tiếp. Hãy mở trang cam và nhập user, mật khẩu bên dưới."); return; }
+  var lui = location.origin + location.pathname + "?chua=1#" + ma;
+  var mo = "intent://xem?d=" + ma + "#Intent;scheme=camlink;package=vn.vinalite.camlink;S.browser_fallback_url=" + encodeURIComponent(lui) + ";end";
+  $("nut-live").href = laAndroid ? mo : "camlink://xem?d=" + ma;
+  if (chua) {
+    $("khoi-live").className = "an";
+    bao("Máy này chưa có CamLink. Hãy mở trang cam và nhập user, mật khẩu bên dưới.");
+    return;
+  }
+  if (!laAndroid) { bao("Xem live bằng CamLink chạy trên điện thoại Android. Trên máy tính, hãy mở trang cam và nhập user, mật khẩu bên dưới."); return; }
+  // Máy đã có CamLink: thử mở app ngay (một số trình duyệt chặn tự mở, khi đó bấm nút "Xem live ngay").
+  var daThu = false;
+  try { daThu = sessionStorage.getItem("thu") === ma; sessionStorage.setItem("thu", ma); } catch (e) {}
+  if (!daThu) setTimeout(function () { location.href = mo; }, 350);
+})();
+</script>
+</body>
+</html>
