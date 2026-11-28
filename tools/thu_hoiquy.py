@@ -21,6 +21,7 @@
 #   17 Trang xem hiện mật khẩu sai dạng %40; iPhone bấm "Mở trang cam" bị trắng trong trình duyệt nhúng . thu_trangxem.py (X2d, X2e, X28–X31)
 #   18 Quét từ xa / vẽ hồ sơ chậm (nối tiếp từng cam, QR vẽ vector) → song song hoá + QR PNG . thu_tocdo.py (so cũ/mới ≥5x, hồ sơ <1,6s)
 #   19 Gỡ tài khoản chỉ xem xemhoso lỡ tạo trên cam (go_tai_khoan_xem) . thu_goxem.py (tạo trên cam giả → gỡ → đọc lại hết sạch; cam tắt thì báo)
+#   20 Nút gỡ chạy im (không thấy tiến trình) → go_tien_do báo i/N % . thu_goxem.py (G6)
 import os, sys, json, shutil, tempfile, time, socket
 os.environ["CAMLINK_THU_NOI_BO"] = "1"
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "../app/src/main/python"))

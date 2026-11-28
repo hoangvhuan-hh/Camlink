@@ -62,6 +62,31 @@ class QuanTriActivity : Activity() {
 
     private fun bao(t: String) = AlertDialog.Builder(this).setMessage(t).setPositiveButton("OK", null).show()
 
+    // Gỡ tài khoản chỉ xem: chạy nền + hiện tiến độ % để không tưởng app treo mà bấm lại
+    private fun goTaiKhoanXem(ma: String) {
+        val tv = TextView(this).apply { textSize = 15f; setPadding(48, 40, 48, 20); text = "Đang chuẩn bị…" }
+        val hop = AlertDialog.Builder(this).setTitle("Gỡ tài khoản chỉ xem").setView(tv).setCancelable(false).show()
+        val tay = android.os.Handler(android.os.Looper.getMainLooper())
+        val xong = java.util.concurrent.atomic.AtomicReference<String?>(null)
+        Thread {
+            val r = try { JSONObject(core.callAttr("go_tai_khoan_xem", ma).toString()) } catch (e: Exception) { JSONObject().put("tom_tat", loi(e)) }
+            val ds = r.optJSONArray("loi"); val sb = StringBuilder(r.optString("tom_tat"))
+            if (ds != null && ds.length() > 0) { sb.append("\n\nChưa xử lý được:"); for (i in 0 until ds.length()) sb.append("\n• ").append(ds.optString(i)) }
+            xong.set(sb.toString())
+        }.start()
+        val lap = object : Runnable {
+            override fun run() {
+                val kq = xong.get()
+                if (kq != null) { hop.dismiss(); bao(kq); return }
+                try { val td = JSONObject(core.callAttr("go_tien_do").toString())
+                    val n = td.optInt("n"); val i = td.optInt("i"); val pt = td.optInt("phan_tram")
+                    tv.text = if (n == 0) "Đang tìm danh sách cam…" else "Đang gỡ: $i/$n cam ($pt%)\n${td.optString("cam")}" } catch (_: Exception) {}
+                tay.postDelayed(this, 400)
+            }
+        }
+        tay.postDelayed(lap, 300)
+    }
+
     // ------------------------------------------------------------------ vẽ theo vai
     private fun ve() {
         goc.removeAllViews()
@@ -122,11 +147,7 @@ class QuanTriActivity : Activity() {
         nut("➕ Tạo tài khoản Xem cho khách") { chonDuAn { ma -> chonDiem(ma) { stt ->
             hoi("Tên tài khoản Xem", "vd khach", false) { u -> hoi("Mật khẩu Xem", "mật khẩu", false) { p -> try {
                 val tb = core.callAttr("qt_tao_tai_khoan_xem", pin, may(), ma, stt, u, p).toString(); bao(tb) } catch (e: Exception) { bao(loi(e)) } } } } } }
-        nut("🧹 Gỡ tài khoản \"chỉ xem\" khỏi cam") { chonDuAn { ma -> Thread {
-            val r = try { JSONObject(core.callAttr("go_tai_khoan_xem", ma).toString()) } catch (e: Exception) { JSONObject().put("tom_tat", loi(e)) }
-            val ds = r.optJSONArray("loi"); val sb = StringBuilder(r.optString("tom_tat"))
-            if (ds != null && ds.length() > 0) { sb.append("\n\nChưa xử lý được:"); for (i in 0 until ds.length()) sb.append("\n• ").append(ds.optString(i)) }
-            runOnUiThread { bao(sb.toString()) } }.start() } }
+        nut("🧹 Gỡ tài khoản \"chỉ xem\" khỏi cam") { chonDuAn { ma -> goTaiKhoanXem(ma) } }
         nut("🆘 Khôi phục khi quên mật khẩu") { chonDuAn { ma -> chonDiem(ma) { stt ->
             hoi("Tên miền cam", "vd phuly-chuaphapbao.ddns.net", false) { dom -> hoi("Port web cam", "vd 8080", false) { ht -> Thread {
                 val r = try { JSONObject(core.callAttr("qt_khoi_phuc_doc_ma", ma, stt, dom, ht.toIntOrNull() ?: 8080).toString()) } catch (e: Exception) { JSONObject().put("loi", loi(e)) }

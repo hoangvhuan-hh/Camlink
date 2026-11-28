@@ -135,3 +135,8 @@ Chỗ chậm: việc qua mạng bị NỐI TIẾP. Mỗi cam hỏi cam ~8–10 l
 Dọn các cam đã bị bản 2.14.2/2.14.3 lỡ tạo 'xemhoso'. `camlink_core.go_tai_khoan_xem(ma)`: duyệt cam của dự án (qua `camlink_hoso.du_lieu` → tên miền + cổng + tài khoản admin),
 vào từng cam, `camlink_xem.go` xoá 'xemhoso' nếu có rồi đọc lại danh sách xác nhận; trả {xong, khong_co, loi[], tom_tat}. Cam không vào được (tắt / đổi mật khẩu) → đưa vào `loi` để xoá tay, không nói suông đã sạch.
 Nút ở màn Quản trị (QuanTriActivity) "🧹 Gỡ tài khoản chỉ xem khỏi cam": chọn dự án → chạy nền → hiện tóm tắt + danh sách cam chưa xử lý. `camlink_xem.py` chỉ còn phần GỠ (không còn tạo).
+
+## 2.14.7 — tiến độ % cho nút gỡ tài khoản chỉ xem (anh Huan 28/11/2026 08:05)
+
+Nút gỡ 2.14.6 chạy im, anh Huan tưởng treo nên bấm lại. `go_tai_khoan_xem` cập nhật `_GO_TD {i, n, chay, cam}`; `go_tien_do()` trả i/N/phan_tram/cam cho màn hình; lượt đang chạy khoá, bấm lại trả "đang gỡ, vui lòng đợi".
+QuanTriActivity.goTaiKhoanXem: hộp thoại không huỷ được, Handler hỏi go_tien_do mỗi 0,4s hiện "Đang gỡ: i/N cam (%)" + tên cam, xong thì đóng và hiện tóm tắt.

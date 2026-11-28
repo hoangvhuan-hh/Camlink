@@ -1777,37 +1777,63 @@ def _lich_su_kiem(ma):
         return {}
 
 
-def go_tai_khoan_xem(ma, log=None):
-    """GỠ tài khoản chỉ xem 'xemhoso' (bản 2.14.2/2.14.3 lỡ tạo) khỏi mọi cam của một dự án.
-    Dùng tài khoản admin khách cấp vào từng cam, xoá nếu có, rồi ĐỌC LẠI từ cam để xác nhận. Cam không vào được thì báo để xoá tay.
-    → {"xong": số cam đã gỡ, "khong_co": số cam vốn không có, "loi": [câu báo từng cam không xử lý được], "tom_tat": câu tiếng Việt}."""
+_GO_TD = {"i": 0, "n": 0, "chay": False, "cam": ""}      # tiến độ gỡ tài khoản chỉ xem (màn Quản trị hỏi qua go_tien_do)
+
+
+def go_tien_do():
+    """Tiến độ nút gỡ, cho màn hình hiện %: {i: đã xong, n: tổng, phan_tram, chay: đang chạy, cam: cam đang xử lý}."""
+    d = dict(_GO_TD)
+    d["phan_tram"] = int(d["i"] * 100 / d["n"]) if d["n"] else 0
+    return json.dumps(d, ensure_ascii=False)
+
+
+def _diem_cam_cua_du_an(ma):
+    """[(tên hiển thị, tên miền, cổng web, user, pass)] mỗi cam một lần — để gỡ tài khoản / thao tác hàng loạt."""
     import camlink_hoso as H
-    import camlink_xem as XEM
     m = H.du_lieu(GOC, ma)
-    xong, khong, loi, da_lam = 0, 0, [], set()
+    ra, da = [], set()
     for p in m.get("diem", []):
         for c in p.get("cam", []):
             g = re.match(r"https?://([^:/]+):(\d+)", c.get("link") or "")
             if not g:
                 continue
             dom, http = g.group(1), int(g.group(2))
-            if (dom, http) in da_lam:
+            if (dom, http) in da:
                 continue
-            da_lam.add((dom, http))
-            ten_d = f"{p.get('ten') or ('Điểm ' + str(p.get('stt')))} · cổng {http}"
-            ov = C.Onvif(dom, http, c.get("user") or "admin", c.get("pass") or "")
+            da.add((dom, http))
+            ra.append((f"{p.get('ten') or ('Điểm ' + str(p.get('stt')))} · cổng {http}", dom, http, c.get("user") or "admin", c.get("pass") or ""))
+    return ra
+
+
+def go_tai_khoan_xem(ma, log=None):
+    """GỠ tài khoản chỉ xem 'xemhoso' (bản 2.14.2/2.14.3 lỡ tạo) khỏi mọi cam của một dự án.
+    Dùng tài khoản admin khách cấp vào từng cam, xoá nếu có, rồi ĐỌC LẠI từ cam để xác nhận. Cam không vào được thì báo để xoá tay.
+    Cập nhật _GO_TD để màn hình hiện %. → {"xong", "khong_co", "loi"[], "tom_tat"}."""
+    import camlink_xem as XEM
+    if _GO_TD["chay"]:
+        return {"xong": 0, "khong_co": 0, "loi": [], "tom_tat": "Đang gỡ, vui lòng đợi lượt hiện tại xong."}
+    ds = _diem_cam_cua_du_an(ma)
+    _GO_TD.update(i=0, n=len(ds), chay=True, cam="")
+    xong, khong, loi = 0, 0, []
+    try:
+        for ten_d, dom, http, u, p in ds:
+            _GO_TD["cam"] = ten_d
+            ov = C.Onvif(dom, http, u, p)
             if not ov.co():
                 loi.append(f"{ten_d}: không vào được cam (có thể cam tắt hoặc đã đổi mật khẩu) — xoá tay nếu cần")
-                continue
-            ok, ghi = XEM.go(ov, dom, http)
-            if ok and ghi == "":
-                xong += 1
-                if log:
-                    log(f"   Đã gỡ tài khoản chỉ xem trên {ten_d}")
-            elif ok:
-                khong += 1
             else:
-                loi.append(f"{ten_d}: {ghi}")
+                ok, ghi = XEM.go(ov, dom, http)
+                if ok and ghi == "":
+                    xong += 1
+                    if log:
+                        log(f"   Đã gỡ tài khoản chỉ xem trên {ten_d}")
+                elif ok:
+                    khong += 1
+                else:
+                    loi.append(f"{ten_d}: {ghi}")
+            _GO_TD["i"] += 1
+    finally:
+        _GO_TD["chay"] = False
     tom = f"Đã gỡ tài khoản chỉ xem trên {xong} cam."
     if khong:
         tom += f" {khong} cam vốn không có."

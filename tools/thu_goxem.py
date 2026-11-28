@@ -45,5 +45,9 @@ kt("G4: cam không vào được (điểm 2 cam 2, đang tắt) → báo rõ đ�
 kq2 = K.go_tai_khoan_xem(ma)
 kt("G5: bấm lại → không còn cam nào bị gỡ (0), không lỗi mới trên cam còn sống", kq2["xong"] == 0, kq2)
 
+import json as _json
+td = _json.loads(K.go_tien_do())
+kt("G6: tiến độ báo đủ 4 cam, đã xong hết, không còn chạy (để màn hình hiện %)", td["n"] == 4 and td["i"] == 4 and td["phan_tram"] == 100 and not td["chay"], td)
+
 S.tat_het()
 print(f"\nKẾT QUẢ: {dat} mục đạt")
