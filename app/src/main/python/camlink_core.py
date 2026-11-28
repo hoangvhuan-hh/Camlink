@@ -1777,6 +1777,47 @@ def _lich_su_kiem(ma):
         return {}
 
 
+def go_tai_khoan_xem(ma, log=None):
+    """GỠ tài khoản chỉ xem 'xemhoso' (bản 2.14.2/2.14.3 lỡ tạo) khỏi mọi cam của một dự án.
+    Dùng tài khoản admin khách cấp vào từng cam, xoá nếu có, rồi ĐỌC LẠI từ cam để xác nhận. Cam không vào được thì báo để xoá tay.
+    → {"xong": số cam đã gỡ, "khong_co": số cam vốn không có, "loi": [câu báo từng cam không xử lý được], "tom_tat": câu tiếng Việt}."""
+    import camlink_hoso as H
+    import camlink_xem as XEM
+    m = H.du_lieu(GOC, ma)
+    xong, khong, loi, da_lam = 0, 0, [], set()
+    for p in m.get("diem", []):
+        for c in p.get("cam", []):
+            g = re.match(r"https?://([^:/]+):(\d+)", c.get("link") or "")
+            if not g:
+                continue
+            dom, http = g.group(1), int(g.group(2))
+            if (dom, http) in da_lam:
+                continue
+            da_lam.add((dom, http))
+            ten_d = f"{p.get('ten') or ('Điểm ' + str(p.get('stt')))} · cổng {http}"
+            ov = C.Onvif(dom, http, c.get("user") or "admin", c.get("pass") or "")
+            if not ov.co():
+                loi.append(f"{ten_d}: không vào được cam (có thể cam tắt hoặc đã đổi mật khẩu) — xoá tay nếu cần")
+                continue
+            ok, ghi = XEM.go(ov, dom, http)
+            if ok and ghi == "":
+                xong += 1
+                if log:
+                    log(f"   Đã gỡ tài khoản chỉ xem trên {ten_d}")
+            elif ok:
+                khong += 1
+            else:
+                loi.append(f"{ten_d}: {ghi}")
+    tom = f"Đã gỡ tài khoản chỉ xem trên {xong} cam."
+    if khong:
+        tom += f" {khong} cam vốn không có."
+    if loi:
+        tom += f" {len(loi)} cam chưa xử lý được (xem chi tiết)."
+    else:
+        tom += " Không còn tài khoản 'xemhoso' nào trên các cam vào được."
+    return {"xong": xong, "khong_co": khong, "loi": loi, "tom_tat": tom}
+
+
 def diem_da_cai(da, stt, ls=None):
     """Điểm coi là ĐÃ CÀI khi: app cài đạt (da_xong) · hoặc có hồ sơ lúc cài · hoặc từng thấy cam của điểm (dấu vết MAC) ·
     hoặc lần kiểm tra từ xa gần nhất có cam của điểm đang lên. Trả câu mô tả ('' nếu chưa cài)."""

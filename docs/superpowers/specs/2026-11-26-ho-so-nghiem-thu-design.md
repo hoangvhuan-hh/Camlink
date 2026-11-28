@@ -129,3 +129,9 @@ Chỗ chậm: việc qua mạng bị NỐI TIẾP. Mỗi cam hỏi cam ~8–10 l
 - `camlink_hoso`: `_qr_png` dựng mã QR ra ảnh PNG (nhanh ~4 lần vẽ vector), `_dung_qr_song_song` dựng trước mọi mã song song rồi nhúng.
 - Đo (`tools/thu_tocdo.py`, cam giả gắn trễ 0,15s/lượt, so cũ/mới trong một lần chạy): quét 6 điểm × 3 cam 12,8s → 2,5s (~5x); hồ sơ 100 cam 2,0s → ~1,1s (~2x). QR mã hoá là CPU thuần, Android không chạy đa tiến trình nên hồ sơ dừng ở ~2x.
 - Không đổi kết quả quét: 18/18 cam vẫn ĐẠT, bước đo lại chống nhiễu giữ nguyên; cả bộ thử xanh.
+
+## 2.14.6 — nút "Gỡ tài khoản chỉ xem" khỏi cam (anh Huan chốt 28/11/2026 07:42)
+
+Dọn các cam đã bị bản 2.14.2/2.14.3 lỡ tạo 'xemhoso'. `camlink_core.go_tai_khoan_xem(ma)`: duyệt cam của dự án (qua `camlink_hoso.du_lieu` → tên miền + cổng + tài khoản admin),
+vào từng cam, `camlink_xem.go` xoá 'xemhoso' nếu có rồi đọc lại danh sách xác nhận; trả {xong, khong_co, loi[], tom_tat}. Cam không vào được (tắt / đổi mật khẩu) → đưa vào `loi` để xoá tay, không nói suông đã sạch.
+Nút ở màn Quản trị (QuanTriActivity) "🧹 Gỡ tài khoản chỉ xem khỏi cam": chọn dự án → chạy nền → hiện tóm tắt + danh sách cam chưa xử lý. `camlink_xem.py` chỉ còn phần GỠ (không còn tạo).

@@ -89,3 +89,5 @@ python3 tools/chay_test.py thu_hoiquy     # một bài
   và ai vào admin cũng thấy. Không bao giờ tự tạo / để lại tài khoản, cấu hình hay dấu vết trên thiết bị của bên khác; app chỉ DÙNG thứ họ đã cấp. Giải pháp "bảo mật" mà thêm quyền cho mình trên máy người khác là sai, dù ý tốt.
 - 28/11/2026 — Quét từ xa chậm vì từng cam hỏi cam ~10 lượt NỐI TIẾP và các cam trong điểm quét lần lượt; vẽ hồ sơ chậm vì QR vẽ vector từng cái.
   Chỗ chậm của việc qua mạng là SỐ LƯỢT NỐI TIẾP, không phải CPU: song song hoá cam trong điểm + phân loại cam/web + nâng số điểm (van _MANG giữ 4G an toàn) → quét ~5x; QR dựng sẵn PNG thay vẽ vector → hồ sơ ~2x. Đo bằng cam giả gắn độ trễ (thu_tocdo), so cũ/mới trong một lần chạy, không nói cảm giác.
+- 28/11/2026 — Bản 2.14.2/2.14.3 lỡ tạo 'xemhoso' trên cam Phú Lý; dọn tay 21 cam thì mệt. Thêm nút "Gỡ tài khoản chỉ xem" (go_tai_khoan_xem): vào từng cam bằng admin, xoá, ĐỌC LẠI từ cam xác nhận, cam không vào được thì báo để xoá tay.
+  Việc dọn dấu vết trên thiết bị bên khác cũng phải đi TRỌN đường trên cam giả có tác dụng thật (tạo → gỡ → đọc lại hết sạch), và luôn chừa đường báo "cam nào chưa xử lý được" thay vì nói suông "đã sạch".
